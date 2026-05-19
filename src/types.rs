@@ -61,7 +61,7 @@ impl fmt::Display for TradeId {
 /// A fixed-size symbol identifier (e.g., "AAPL", "MSFT").
 ///
 /// Stored inline as `[u8; 8]` with a length byte — no heap allocation, `Copy`,
-/// and suitable for use as a hash map key. Maximum 8 ASCII bytes.
+/// and suitable for use as a hash map key. Maximum 8 UTF-8 bytes.
 ///
 /// ```
 /// use nanobook::Symbol;
@@ -121,8 +121,10 @@ impl Symbol {
     /// Returns the symbol as a string slice.
     #[inline]
     pub fn as_str(&self) -> &str {
-        // Safety: we only accept valid str input in constructors (new, try_new, from_str_truncated)
-        // Debug assert to catch invariant violations during testing
+        // SAFETY: `Symbol` fields are private. The only constructors copy bytes from
+        // valid `str` inputs, and `from_str_truncated` backs up to `valid_up_to()`
+        // when an 8-byte prefix would split a multi-byte UTF-8 scalar. Therefore
+        // `buf[..len]` is always valid UTF-8 for every safe `Symbol` value.
         debug_assert!(std::str::from_utf8(&self.buf[..self.len as usize]).is_ok());
         unsafe { std::str::from_utf8_unchecked(&self.buf[..self.len as usize]) }
     }
@@ -217,6 +219,47 @@ mod tests {
     #[test]
     fn symbol_try_new_too_long() {
         assert!(Symbol::try_new("123456789").is_none());
+    }
+
+    #[test]
+    fn symbol_try_new_allows_valid_utf8_up_to_8_bytes() {
+        let sym = Symbol::try_new("éééé").expect("four two-byte chars fit exactly");
+        assert_eq!(sym.as_str(), "éééé");
+    }
+
+    #[test]
+    fn symbol_truncated_preserves_valid_utf8_at_byte_boundary() {
+        let cases = [
+            ("123456789", "12345678"),
+            ("ééééX", "éééé"),
+            ("abcdefgé", "abcdefg"),
+            ("abcdef😀", "abcdef"),
+            ("😀😀😀", "😀😀"),
+            ("€€€", "€€"),
+        ];
+
+        for (input, expected) in cases {
+            let sym = Symbol::from_str_truncated(input);
+            assert_eq!(sym.as_str(), expected, "input: {input:?}");
+            assert_eq!(sym.as_str().as_bytes(), &input.as_bytes()[..expected.len()]);
+        }
+    }
+
+    proptest::proptest! {
+        #![proptest_config(proptest::test_runner::Config {
+            failure_persistence: None,
+            ..proptest::test_runner::Config::default()
+        })]
+
+        #[test]
+        fn symbol_truncated_always_returns_valid_utf8_prefix(input in ".*") {
+            let sym = Symbol::from_str_truncated(&input);
+            let truncated = sym.as_str();
+
+            proptest::prop_assert!(truncated.len() <= 8);
+            proptest::prop_assert!(input.starts_with(truncated));
+            proptest::prop_assert!(Symbol::try_new(truncated).is_some());
+        }
     }
 
     #[test]

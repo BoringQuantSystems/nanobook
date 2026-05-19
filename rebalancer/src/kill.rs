@@ -321,11 +321,22 @@ pub fn forceful_cancel_open_orders(broker: &dyn Broker) -> ForcefulCancelReport 
 }
 
 pub fn kill_timeout_from_sources(config: &Config, cli_timeout_secs: Option<u64>) -> Duration {
+    kill_timeout_from_parts(
+        config,
+        cli_timeout_secs,
+        std::env::var("NANOBOOK_KILL_TIMEOUT_SECS").ok().as_deref(),
+    )
+}
+
+fn kill_timeout_from_parts(
+    config: &Config,
+    cli_timeout_secs: Option<u64>,
+    env_timeout_secs: Option<&str>,
+) -> Duration {
     let timeout_secs = cli_timeout_secs
         .filter(|seconds| *seconds > 0)
         .or_else(|| {
-            std::env::var("NANOBOOK_KILL_TIMEOUT_SECS")
-                .ok()
+            env_timeout_secs
                 .and_then(|value| value.parse::<u64>().ok())
                 .filter(|seconds| *seconds > 0)
         })
@@ -618,6 +629,7 @@ mod tests {
         Account, BrokerOrder, BrokerOrderStatus, OrderId, OrderState, Position, Quote,
     };
     use std::cell::{Cell, RefCell};
+    #[cfg(feature = "guaranteed_kill_switch")]
     use std::sync::{Mutex, OnceLock};
     use std::time::SystemTime;
     use tempfile::NamedTempFile;
@@ -743,7 +755,8 @@ mod tests {
         assert_eq!(active_kill_workflow(), KillWorkflow::TwoPhase);
     }
 
-    fn env_lock() -> &'static Mutex<()> {
+    #[cfg(feature = "guaranteed_kill_switch")]
+    fn process_state_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         LOCK.get_or_init(|| Mutex::new(()))
     }
@@ -795,55 +808,60 @@ timeout_secs = {timeout_secs}
 
     #[test]
     fn timeout_defaults_to_config() {
-        let _guard = match env_lock().lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        unsafe {
-            std::env::remove_var("NANOBOOK_KILL_TIMEOUT_SECS");
-        }
         let config = test_config_with_kill_timeout(17);
 
         assert_eq!(
-            kill_timeout_from_sources(&config, None),
+            kill_timeout_from_parts(&config, None, None),
             Duration::from_secs(17)
         );
     }
 
     #[test]
     fn timeout_uses_environment_override() {
-        let _guard = match env_lock().lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
         let config = test_config_with_kill_timeout(17);
-        unsafe {
-            std::env::set_var("NANOBOOK_KILL_TIMEOUT_SECS", "19");
-        }
-        let timeout = kill_timeout_from_sources(&config, None);
-        unsafe {
-            std::env::remove_var("NANOBOOK_KILL_TIMEOUT_SECS");
-        }
+        let timeout = kill_timeout_from_parts(&config, None, Some("19"));
 
         assert_eq!(timeout, Duration::from_secs(19));
     }
 
     #[test]
     fn timeout_uses_cli_override_before_environment() {
-        let _guard = match env_lock().lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
         let config = test_config_with_kill_timeout(17);
-        unsafe {
-            std::env::set_var("NANOBOOK_KILL_TIMEOUT_SECS", "19");
-        }
-        let timeout = kill_timeout_from_sources(&config, Some(23));
-        unsafe {
-            std::env::remove_var("NANOBOOK_KILL_TIMEOUT_SECS");
-        }
+        let timeout = kill_timeout_from_parts(&config, Some(23), Some("19"));
 
         assert_eq!(timeout, Duration::from_secs(23));
+    }
+
+    #[test]
+    fn timeout_ignores_invalid_environment_override() {
+        let config = test_config_with_kill_timeout(17);
+        let timeout = kill_timeout_from_parts(&config, None, Some("not-a-timeout"));
+
+        assert_eq!(timeout, Duration::from_secs(17));
+    }
+
+    #[test]
+    fn timeout_ignores_zero_environment_override() {
+        let config = test_config_with_kill_timeout(17);
+        let timeout = kill_timeout_from_parts(&config, None, Some("0"));
+
+        assert_eq!(timeout, Duration::from_secs(17));
+    }
+
+    #[test]
+    fn timeout_zero_cli_falls_through_to_environment() {
+        let config = test_config_with_kill_timeout(17);
+        let timeout = kill_timeout_from_parts(&config, Some(0), Some("19"));
+
+        assert_eq!(timeout, Duration::from_secs(19));
+    }
+
+    #[test]
+    fn timeout_zero_cli_falls_through_to_config_without_environment() {
+        let config = test_config_with_kill_timeout(17);
+        let timeout = kill_timeout_from_parts(&config, Some(0), None);
+
+        assert_eq!(timeout, Duration::from_secs(17));
     }
 
     #[test]
@@ -879,7 +897,7 @@ timeout_secs = {timeout_secs}
     #[test]
     #[cfg(feature = "guaranteed_kill_switch")]
     fn run_kill_reports_nonexistent_pid_from_pid_file() {
-        let _guard = match env_lock().lock() {
+        let _guard = match process_state_lock().lock() {
             Ok(guard) => guard,
             Err(poisoned) => poisoned.into_inner(),
         };
@@ -901,7 +919,7 @@ timeout_secs = {timeout_secs}
     #[test]
     #[cfg(feature = "guaranteed_kill_switch")]
     fn run_kill_reports_missing_pid_file() {
-        let _guard = match env_lock().lock() {
+        let _guard = match process_state_lock().lock() {
             Ok(guard) => guard,
             Err(poisoned) => poisoned.into_inner(),
         };
