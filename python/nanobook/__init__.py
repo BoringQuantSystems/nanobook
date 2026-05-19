@@ -6,6 +6,10 @@ These aliases provide clean v0.9 names for new callers.
 
 from .nanobook import *  # noqa: F401,F403
 
+FillPolicy.SignalBarClose = FillPolicy.signal_bar_close()
+FillPolicy.NextBarOpen = FillPolicy.next_bar_open()
+FillPolicy.NextBarTypical = FillPolicy.next_bar_typical()
+
 
 def capabilities():
     return py_capabilities()
@@ -15,7 +19,8 @@ def backtest_weights(
     weight_schedule,
     price_schedule,
     initial_cash,
-    cost_bps,
+    cost_model,
+    fill_policy,
     periods_per_year=252.0,
     risk_free=0.0,
     stop_cfg=None,
@@ -24,7 +29,8 @@ def backtest_weights(
         weight_schedule,
         price_schedule,
         initial_cash,
-        cost_bps,
+        cost_model,
+        fill_policy,
         periods_per_year,
         risk_free,
         stop_cfg,

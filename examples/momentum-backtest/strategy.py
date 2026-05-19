@@ -197,7 +197,7 @@ def run_backtest(
 
     # Initialize portfolio
     cost_model = nanobook.CostModel(
-        commission_bps=commission_bps, slippage_bps=slippage_bps, min_trade_fee=0
+        commission_bps=float(commission_bps), slippage_bps=float(slippage_bps), min_commission=0
     )
     portfolio = nanobook.Portfolio(initial_cash, cost_model)
 

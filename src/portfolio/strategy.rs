@@ -224,9 +224,9 @@ mod tests {
     #[test]
     fn backtest_with_costs() {
         let cost_model = CostModel {
-            commission_bps: 10,
-            slippage_bps: 5,
-            min_trade_fee: 0,
+            commission_bps: 10.0,
+            slippage_bps: 5.0,
+            min_commission: 0,
         };
 
         let prices = vec![

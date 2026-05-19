@@ -77,6 +77,8 @@ fn nanobook(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<portfolio::PyPortfolio>()?;
     m.add_class::<position::PyPosition>()?;
     m.add_class::<metrics::PyMetrics>()?;
+    m.add_class::<backtest_bridge::PyBarPrices>()?;
+    m.add_class::<backtest_bridge::PyFillPolicy>()?;
 
     // v0.7 functions
     m.add_function(wrap_pyfunction!(metrics::py_compute_metrics, m)?)?;

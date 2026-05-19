@@ -337,6 +337,6 @@ def test_portfolio_total_equity_multiple_stocks():
     assert equity == 10600
 
 def test_cost_model_min_fee():
-    model = nanobook.CostModel(commission_bps=0, slippage_bps=0, min_trade_fee=100)
+    model = nanobook.CostModel(commission_bps=0.0, slippage_bps=0.0, min_commission=100)
     assert model.compute_cost(1000) == 100
     assert model.compute_cost(1000000) == 100

@@ -51,6 +51,21 @@ pub struct BacktestBridgeOptions {
     pub stop_cfg: Option<BacktestStopConfig>,
 }
 
+#[derive(Clone, Debug, Copy)]
+pub struct BarPrices {
+    pub open: i64,
+    pub high: i64,
+    pub low: i64,
+    pub close: i64,
+}
+
+#[derive(Clone, Debug, Copy, PartialEq)]
+pub enum FillPolicy {
+    SignalBarClose,
+    NextBarOpen,
+    NextBarTypical,
+}
+
 /// Stop event emitted by stop-aware backtest simulation.
 #[derive(Clone, Debug)]
 pub struct BacktestStopEvent {
@@ -114,6 +129,8 @@ pub struct BacktestBridgeResult {
     pub symbol_returns: Vec<Vec<(Symbol, f64)>>,
     /// Stop-trigger events (empty when stop simulation disabled or no triggers).
     pub stop_events: Vec<BacktestStopEvent>,
+    /// Rebalance indices skipped when the fill policy needs the next bar.
+    pub skipped_rebalances: Vec<usize>,
 }
 
 /// Simulate portfolio returns from a pre-computed weight schedule.
@@ -121,9 +138,10 @@ pub struct BacktestBridgeResult {
 /// Compatibility wrapper (v0.7/v0.8 behavior): stop simulation disabled.
 pub fn backtest_weights(
     weight_schedule: &[Vec<(Symbol, f64)>],
-    price_schedule: &[Vec<(Symbol, i64)>],
+    price_schedule: &[Vec<(Symbol, BarPrices)>],
     initial_cash_cents: i64,
-    cost_bps: u32,
+    cost_model: CostModel,
+    fill_policy: FillPolicy,
     periods_per_year: f64,
     risk_free: f64,
 ) -> BacktestBridgeResult {
@@ -131,7 +149,8 @@ pub fn backtest_weights(
         weight_schedule,
         price_schedule,
         initial_cash_cents,
-        cost_bps,
+        cost_model,
+        fill_policy,
         periods_per_year,
         risk_free,
         BacktestBridgeOptions::default(),
@@ -142,22 +161,19 @@ pub fn backtest_weights(
 ///
 /// Returns an empty result (no returns, no metrics) for invalid inputs:
 /// mismatched schedule lengths, non-positive cash, NaN/Inf weights,
-/// negative prices, or cost > 100%.
+/// or negative prices.
+#[allow(clippy::too_many_arguments)]
 pub fn backtest_weights_with_options(
     weight_schedule: &[Vec<(Symbol, f64)>],
-    price_schedule: &[Vec<(Symbol, i64)>],
+    price_schedule: &[Vec<(Symbol, BarPrices)>],
     initial_cash_cents: i64,
-    cost_bps: u32,
+    cost_model: CostModel,
+    fill_policy: FillPolicy,
     periods_per_year: f64,
     risk_free: f64,
     options: BacktestBridgeOptions,
 ) -> BacktestBridgeResult {
-    if !valid_inputs(
-        weight_schedule,
-        price_schedule,
-        initial_cash_cents,
-        cost_bps,
-    ) {
+    if !valid_inputs(weight_schedule, price_schedule, initial_cash_cents) {
         return empty_result(initial_cash_cents);
     }
 
@@ -166,12 +182,6 @@ pub fn backtest_weights_with_options(
         .as_ref()
         .and_then(BacktestStopConfig::sanitized);
 
-    let cost_model = CostModel {
-        commission_bps: cost_bps,
-        slippage_bps: 0,
-        min_trade_fee: 0,
-    };
-
     let mut portfolio = Portfolio::new(initial_cash_cents, cost_model);
     let mut equity_curve = Vec::with_capacity(weight_schedule.len() + 1);
     equity_curve.push(initial_cash_cents);
@@ -179,19 +189,25 @@ pub fn backtest_weights_with_options(
     let mut holdings = Vec::with_capacity(weight_schedule.len());
     let mut symbol_returns = Vec::with_capacity(weight_schedule.len());
     let mut stop_events = Vec::new();
+    let mut skipped_rebalances = Vec::new();
 
     let mut prev_prices: HashMap<Symbol, i64> = HashMap::new();
     let mut stop_trackers: HashMap<Symbol, StopTracker> = HashMap::new();
 
-    for (period_index, (weights, prices)) in weight_schedule
+    for (period_index, (weights, bars)) in weight_schedule
         .iter()
         .zip(price_schedule.iter())
         .enumerate()
     {
-        let price_map: HashMap<Symbol, i64> = prices.iter().copied().collect();
+        let close_prices: Vec<(Symbol, i64)> = bars
+            .iter()
+            .map(|&(symbol, bar_prices)| (symbol, bar_prices.close))
+            .collect();
+        let price_map: HashMap<Symbol, i64> = close_prices.iter().copied().collect();
 
-        let mut period_symbol_returns = Vec::with_capacity(prices.len());
-        for &(sym, px) in prices {
+        let mut period_symbol_returns = Vec::with_capacity(bars.len());
+        for &(sym, bp) in bars {
+            let px = bp.close;
             let ret = prev_prices
                 .get(&sym)
                 .copied()
@@ -208,8 +224,12 @@ pub fn backtest_weights_with_options(
         period_symbol_returns.sort_by_key(|(sym, _)| *sym);
         symbol_returns.push(period_symbol_returns);
 
-        // Rebalance to target weights first.
-        portfolio.rebalance_simple(weights, prices);
+        if let Some(fill_prices) = fill_prices_for_period(price_schedule, period_index, fill_policy)
+        {
+            portfolio.rebalance_simple(weights, &fill_prices);
+        } else {
+            skipped_rebalances.push(period_index);
+        }
 
         // Optional stop simulation runs after target rebalance on each bar.
         if let Some(cfg) = stop_cfg.as_ref() {
@@ -224,14 +244,14 @@ pub fn backtest_weights_with_options(
         }
 
         // Record return for this period.
-        portfolio.record_return(prices);
+        portfolio.record_return(&close_prices);
 
         // Track holdings and equity.
-        let mut period_holdings = portfolio.current_weights(prices);
+        let mut period_holdings = portfolio.current_weights(&close_prices);
         period_holdings.sort_by_key(|(sym, _)| *sym);
         holdings.push(period_holdings);
 
-        let equity = portfolio.total_equity(prices);
+        let equity = portfolio.total_equity(&close_prices);
         equity_curve.push(equity);
 
         prev_prices = price_map;
@@ -248,6 +268,43 @@ pub fn backtest_weights_with_options(
         holdings,
         symbol_returns,
         stop_events,
+        skipped_rebalances,
+    }
+}
+
+fn fill_prices_for_period(
+    price_schedule: &[Vec<(Symbol, BarPrices)>],
+    period_index: usize,
+    fill_policy: FillPolicy,
+) -> Option<Vec<(Symbol, i64)>> {
+    match fill_policy {
+        FillPolicy::SignalBarClose => Some(
+            price_schedule[period_index]
+                .iter()
+                .map(|&(symbol, bar_prices)| (symbol, bar_prices.close))
+                .collect(),
+        ),
+        FillPolicy::NextBarOpen => {
+            let next = price_schedule.get(period_index + 1)?;
+            Some(
+                next.iter()
+                    .map(|&(symbol, bar_prices)| (symbol, bar_prices.open))
+                    .collect(),
+            )
+        }
+        FillPolicy::NextBarTypical => {
+            let next = price_schedule.get(period_index + 1)?;
+            Some(
+                next.iter()
+                    .map(|&(symbol, bar_prices)| {
+                        (
+                            symbol,
+                            (bar_prices.high + bar_prices.low + bar_prices.close) / 3,
+                        )
+                    })
+                    .collect(),
+            )
+        }
     }
 }
 
@@ -407,9 +464,8 @@ pub fn decompose_backtest(
 
 fn valid_inputs(
     weight_schedule: &[Vec<(Symbol, f64)>],
-    price_schedule: &[Vec<(Symbol, i64)>],
+    price_schedule: &[Vec<(Symbol, BarPrices)>],
     initial_cash_cents: i64,
-    cost_bps: u32,
 ) -> bool {
     if weight_schedule.len() != price_schedule.len() {
         return false;
@@ -417,18 +473,17 @@ fn valid_inputs(
     if initial_cash_cents <= 0 {
         return false;
     }
-    if cost_bps > 10_000 {
-        return false;
-    }
-
     for (weights, prices) in weight_schedule.iter().zip(price_schedule.iter()) {
         for &(_, w) in weights {
             if !w.is_finite() {
                 return false;
             }
         }
-        for &(_, p) in prices {
-            if p < 0 {
+        for &(_, bp) in prices {
+            if bp.open < 0 || bp.high < 0 || bp.low < 0 || bp.close < 0 {
+                return false;
+            }
+            if bp.high < bp.low {
                 return false;
             }
         }
@@ -446,6 +501,7 @@ fn empty_result(initial_cash_cents: i64) -> BacktestBridgeResult {
         holdings: Vec::new(),
         symbol_returns: Vec::new(),
         stop_events: Vec::new(),
+        skipped_rebalances: Vec::new(),
     }
 }
 
@@ -636,14 +692,137 @@ mod tests {
     fn msft() -> Symbol {
         Symbol::new("MSFT")
     }
+    fn bar(p: i64) -> BarPrices {
+        BarPrices {
+            open: p,
+            high: p,
+            low: p,
+            close: p,
+        }
+    }
+
+    #[test]
+    fn signal_bar_close_parity_with_degenerate_ohlc() {
+        let weights = vec![vec![(aapl(), 1.0)]; 3];
+        let close_prices = [100_00i64, 110_00, 99_00];
+        let prices: Vec<Vec<(Symbol, BarPrices)>> = close_prices
+            .iter()
+            .map(|&p| vec![(aapl(), bar(p))])
+            .collect();
+        let result = backtest_weights(
+            &weights,
+            &prices,
+            1_000_000_00,
+            CostModel::zero(),
+            FillPolicy::SignalBarClose,
+            252.0,
+            0.0,
+        );
+        assert_eq!(result.equity_curve.len(), 4);
+        assert!(result.skipped_rebalances.is_empty());
+        assert!(result.equity_curve[2] > result.equity_curve[0]);
+    }
+
+    #[test]
+    fn next_bar_open_fills_at_open_t_plus_1() {
+        let n = 4usize;
+        let closes = [100_00i64, 101_00, 102_00, 103_00];
+        let opens = [99_00i64, 100_00 + 100, 101_00 + 100, 102_00 + 100];
+        let prices: Vec<Vec<(Symbol, BarPrices)>> = (0..n)
+            .map(|i| {
+                vec![(
+                    aapl(),
+                    BarPrices {
+                        open: opens[i],
+                        high: opens[i].max(closes[i]),
+                        low: opens[i].min(closes[i]),
+                        close: closes[i],
+                    },
+                )]
+            })
+            .collect();
+        let weights = vec![vec![(aapl(), 1.0)]; n];
+        let result = backtest_weights(
+            &weights,
+            &prices,
+            1_000_000_00,
+            CostModel::zero(),
+            FillPolicy::NextBarOpen,
+            252.0,
+            0.0,
+        );
+        assert!(result.skipped_rebalances.contains(&(n - 1)));
+        assert_eq!(result.equity_curve.len(), n + 1);
+    }
+
+    #[test]
+    fn next_bar_typical_fill_price_is_hlc3() {
+        let base = 100_00i64;
+        let h1 = base * 102 / 100;
+        let l1 = base * 99 / 100;
+        let c1 = base;
+        let prices = vec![
+            vec![(aapl(), bar(base))],
+            vec![(
+                aapl(),
+                BarPrices {
+                    open: c1,
+                    high: h1,
+                    low: l1,
+                    close: c1,
+                },
+            )],
+        ];
+        let weights = vec![vec![(aapl(), 1.0)]; 2];
+        let result = backtest_weights(
+            &weights,
+            &prices,
+            1_000_000_00,
+            CostModel::zero(),
+            FillPolicy::NextBarTypical,
+            252.0,
+            0.0,
+        );
+        assert!(result.skipped_rebalances.contains(&1));
+        assert_eq!(result.equity_curve.len(), 3);
+    }
+
+    #[test]
+    fn last_bar_skip_with_next_bar_open() {
+        let n = 3usize;
+        let p = 100_00i64;
+        let prices: Vec<Vec<(Symbol, BarPrices)>> =
+            (0..n).map(|_| vec![(aapl(), bar(p))]).collect();
+        let weights: Vec<Vec<(Symbol, f64)>> = (0..n).map(|_| vec![(aapl(), 1.0)]).collect();
+        let result = backtest_weights(
+            &weights,
+            &prices,
+            1_000_000_00,
+            CostModel::zero(),
+            FillPolicy::NextBarOpen,
+            252.0,
+            0.0,
+        );
+        assert!(result.skipped_rebalances.contains(&(n - 1)));
+        assert_eq!(result.equity_curve.len(), n + 1);
+        assert_eq!(result.returns.len(), n);
+    }
 
     #[test]
     fn tear_sheet_contains_reporting_payload() {
         let weights = vec![vec![(aapl(), 1.0)]; 24];
-        let prices: Vec<Vec<(Symbol, i64)>> = (0..24)
-            .map(|i| vec![(aapl(), 100_00 + i as i64 * 100)])
+        let prices: Vec<Vec<(Symbol, BarPrices)>> = (0..24)
+            .map(|i| vec![(aapl(), bar(100_00 + i as i64 * 100))])
             .collect();
-        let result = backtest_weights(&weights, &prices, 1_000_000_00, 0, 252.0, 0.0);
+        let result = backtest_weights(
+            &weights,
+            &prices,
+            1_000_000_00,
+            CostModel::zero(),
+            FillPolicy::SignalBarClose,
+            252.0,
+            0.0,
+        );
 
         let sheet = tear_sheet(&result, 5, 252);
 
@@ -729,11 +908,19 @@ mod tests {
             vec![(aapl(), 1.0)],
         ];
         let prices = vec![
-            vec![(aapl(), 100_00)],
-            vec![(aapl(), 110_00)],
-            vec![(aapl(), 99_00)],
+            vec![(aapl(), bar(100_00))],
+            vec![(aapl(), bar(110_00))],
+            vec![(aapl(), bar(99_00))],
         ];
-        let backtest = backtest_weights(&weights, &prices, 1_000_000_00, 0, 252.0, 0.0);
+        let backtest = backtest_weights(
+            &weights,
+            &prices,
+            1_000_000_00,
+            CostModel::zero(),
+            FillPolicy::SignalBarClose,
+            252.0,
+            0.0,
+        );
 
         let attribution = decompose_backtest(&backtest.holdings, &backtest.symbol_returns);
 
@@ -761,11 +948,23 @@ mod tests {
             vec![(aapl(), 0.3), (msft(), 0.7)],
         ];
         let prices = vec![
-            vec![(aapl(), 150_00), (msft(), 300_00)],
-            vec![(aapl(), 155_00), (msft(), 310_00)],
+            vec![(aapl(), bar(150_00)), (msft(), bar(300_00))],
+            vec![(aapl(), bar(155_00)), (msft(), bar(310_00))],
         ];
 
-        let result = backtest_weights(&weights, &prices, 1_000_000_00, 10, 252.0, 0.0);
+        let result = backtest_weights(
+            &weights,
+            &prices,
+            1_000_000_00,
+            CostModel {
+                commission_bps: 10.0,
+                slippage_bps: 0.0,
+                min_commission: 0,
+            },
+            FillPolicy::SignalBarClose,
+            252.0,
+            0.0,
+        );
 
         assert_eq!(result.returns.len(), 2);
         assert_eq!(result.equity_curve.len(), 3); // initial + 2 periods
@@ -777,9 +976,17 @@ mod tests {
     #[test]
     fn zero_cost_preserves_equity() {
         let weights = vec![vec![(aapl(), 0.5)]];
-        let prices = vec![vec![(aapl(), 100_00)]];
+        let prices = vec![vec![(aapl(), bar(100_00))]];
 
-        let result = backtest_weights(&weights, &prices, 1_000_000_00, 0, 252.0, 0.0);
+        let result = backtest_weights(
+            &weights,
+            &prices,
+            1_000_000_00,
+            CostModel::zero(),
+            FillPolicy::SignalBarClose,
+            252.0,
+            0.0,
+        );
 
         // With zero cost and no price movement, equity should be ~initial
         let final_eq = *result
@@ -791,7 +998,19 @@ mod tests {
 
     #[test]
     fn empty_schedule() {
-        let result = backtest_weights(&[], &[], 1_000_000_00, 10, 252.0, 0.0);
+        let result = backtest_weights(
+            &[],
+            &[],
+            1_000_000_00,
+            CostModel {
+                commission_bps: 10.0,
+                slippage_bps: 0.0,
+                min_commission: 0,
+            },
+            FillPolicy::SignalBarClose,
+            252.0,
+            0.0,
+        );
         assert!(result.returns.is_empty());
         assert!(result.metrics.is_none());
         assert_eq!(result.equity_curve.len(), 1);
@@ -802,7 +1021,7 @@ mod tests {
     #[test]
     fn fixed_stop_triggers_exit() {
         let weights = vec![vec![(aapl(), 1.0)], vec![(aapl(), 1.0)]];
-        let prices = vec![vec![(aapl(), 100_00)], vec![(aapl(), 85_00)]];
+        let prices = vec![vec![(aapl(), bar(100_00))], vec![(aapl(), bar(85_00))]];
 
         let options = BacktestBridgeOptions {
             stop_cfg: Some(BacktestStopConfig {
@@ -813,8 +1032,16 @@ mod tests {
             }),
         };
 
-        let result =
-            backtest_weights_with_options(&weights, &prices, 100_000_00, 0, 252.0, 0.0, options);
+        let result = backtest_weights_with_options(
+            &weights,
+            &prices,
+            100_000_00,
+            CostModel::zero(),
+            FillPolicy::SignalBarClose,
+            252.0,
+            0.0,
+            options,
+        );
 
         assert_eq!(result.stop_events.len(), 1);
         assert_eq!(result.stop_events[0].reason, "fixed");
@@ -832,9 +1059,9 @@ mod tests {
             vec![(aapl(), 1.0)],
         ];
         let prices = vec![
-            vec![(aapl(), 100_00)],
-            vec![(aapl(), 110_00)],
-            vec![(aapl(), 95_00)],
+            vec![(aapl(), bar(100_00))],
+            vec![(aapl(), bar(110_00))],
+            vec![(aapl(), bar(95_00))],
         ];
 
         let options = BacktestBridgeOptions {
@@ -846,8 +1073,16 @@ mod tests {
             }),
         };
 
-        let result =
-            backtest_weights_with_options(&weights, &prices, 100_000_00, 0, 252.0, 0.0, options);
+        let result = backtest_weights_with_options(
+            &weights,
+            &prices,
+            100_000_00,
+            CostModel::zero(),
+            FillPolicy::SignalBarClose,
+            252.0,
+            0.0,
+            options,
+        );
 
         assert!(!result.stop_events.is_empty());
         assert_eq!(result.stop_events[0].reason, "trailing");
@@ -861,9 +1096,9 @@ mod tests {
             vec![(aapl(), 1.0)],
         ];
         let prices = vec![
-            vec![(aapl(), 100_00)],
-            vec![(aapl(), 90_00)], // fixed 10% stop breaches here
-            vec![(aapl(), 89_00)], // reopened, new stop basis, no second trigger
+            vec![(aapl(), bar(100_00))],
+            vec![(aapl(), bar(90_00))], // fixed 10% stop breaches here
+            vec![(aapl(), bar(89_00))], // reopened, new stop basis, no second trigger
         ];
 
         let options = BacktestBridgeOptions {
@@ -875,8 +1110,16 @@ mod tests {
             }),
         };
 
-        let result =
-            backtest_weights_with_options(&weights, &prices, 100_000_00, 0, 252.0, 0.0, options);
+        let result = backtest_weights_with_options(
+            &weights,
+            &prices,
+            100_000_00,
+            CostModel::zero(),
+            FillPolicy::SignalBarClose,
+            252.0,
+            0.0,
+            options,
+        );
 
         assert_eq!(result.stop_events.len(), 1);
         assert_eq!(result.stop_events[0].period_index, 1);
@@ -891,9 +1134,9 @@ mod tests {
             vec![(aapl(), 1.0)],
         ];
         let prices = vec![
-            vec![(aapl(), 100_00)],
-            vec![(aapl(), 110_00)], // updates trailing reference
-            vec![(aapl(), 103_00)], // breaches trailing(104.5) but not fixed(90)
+            vec![(aapl(), bar(100_00))],
+            vec![(aapl(), bar(110_00))], // updates trailing reference
+            vec![(aapl(), bar(103_00))], // breaches trailing(104.5) but not fixed(90)
         ];
 
         let options = BacktestBridgeOptions {
@@ -905,8 +1148,16 @@ mod tests {
             }),
         };
 
-        let result =
-            backtest_weights_with_options(&weights, &prices, 100_000_00, 0, 252.0, 0.0, options);
+        let result = backtest_weights_with_options(
+            &weights,
+            &prices,
+            100_000_00,
+            CostModel::zero(),
+            FillPolicy::SignalBarClose,
+            252.0,
+            0.0,
+            options,
+        );
 
         assert_eq!(result.stop_events.len(), 1);
         assert_eq!(result.stop_events[0].reason, "trailing");
@@ -923,10 +1174,10 @@ mod tests {
         ];
         // High volatility: 100 -> 110 -> 95 -> 85 (large moves)
         let prices = vec![
-            vec![(aapl(), 100_00)],
-            vec![(aapl(), 110_00)],
-            vec![(aapl(), 95_00)],
-            vec![(aapl(), 85_00)],
+            vec![(aapl(), bar(100_00))],
+            vec![(aapl(), bar(110_00))],
+            vec![(aapl(), bar(95_00))],
+            vec![(aapl(), bar(85_00))],
         ];
 
         let options = BacktestBridgeOptions {
@@ -938,8 +1189,16 @@ mod tests {
             }),
         };
 
-        let result =
-            backtest_weights_with_options(&weights, &prices, 100_000_00, 0, 252.0, 0.0, options);
+        let result = backtest_weights_with_options(
+            &weights,
+            &prices,
+            100_000_00,
+            CostModel::zero(),
+            FillPolicy::SignalBarClose,
+            252.0,
+            0.0,
+            options,
+        );
 
         // Should trigger on high volatility
         assert!(!result.stop_events.is_empty());
@@ -950,7 +1209,7 @@ mod tests {
     fn short_position_fixed_stop_triggers_on_rise() {
         let weights = vec![vec![(aapl(), -1.0)], vec![(aapl(), -1.0)]];
         // Short position: stop triggers when price rises
-        let prices = vec![vec![(aapl(), 100_00)], vec![(aapl(), 115_00)]];
+        let prices = vec![vec![(aapl(), bar(100_00))], vec![(aapl(), bar(115_00))]];
 
         let options = BacktestBridgeOptions {
             stop_cfg: Some(BacktestStopConfig {
@@ -961,8 +1220,16 @@ mod tests {
             }),
         };
 
-        let result =
-            backtest_weights_with_options(&weights, &prices, 100_000_00, 0, 252.0, 0.0, options);
+        let result = backtest_weights_with_options(
+            &weights,
+            &prices,
+            100_000_00,
+            CostModel::zero(),
+            FillPolicy::SignalBarClose,
+            252.0,
+            0.0,
+            options,
+        );
 
         assert_eq!(result.stop_events.len(), 1);
         assert_eq!(result.stop_events[0].reason, "fixed");
@@ -979,9 +1246,9 @@ mod tests {
         ];
         // Short: trailing stop moves down as price falls, then triggers on a rebound.
         let prices = vec![
-            vec![(aapl(), 100_00)],
-            vec![(aapl(), 90_00)], // profit, trailing stop adjusts down to 94.50
-            vec![(aapl(), 98_00)], // rebounds through adjusted stop
+            vec![(aapl(), bar(100_00))],
+            vec![(aapl(), bar(90_00))], // profit, trailing stop adjusts down to 94.50
+            vec![(aapl(), bar(98_00))], // rebounds through adjusted stop
         ];
 
         let options = BacktestBridgeOptions {
@@ -993,8 +1260,16 @@ mod tests {
             }),
         };
 
-        let result =
-            backtest_weights_with_options(&weights, &prices, 100_000_00, 0, 252.0, 0.0, options);
+        let result = backtest_weights_with_options(
+            &weights,
+            &prices,
+            100_000_00,
+            CostModel::zero(),
+            FillPolicy::SignalBarClose,
+            252.0,
+            0.0,
+            options,
+        );
 
         assert_eq!(result.stop_events.len(), 1);
         assert_eq!(result.stop_events[0].reason, "trailing");
@@ -1010,8 +1285,8 @@ mod tests {
         ];
         // AAPL drops 15% (triggers 10% stop), MSFT drops 5% (no trigger)
         let prices = vec![
-            vec![(aapl(), 100_00), (msft(), 100_00)],
-            vec![(aapl(), 85_00), (msft(), 95_00)],
+            vec![(aapl(), bar(100_00)), (msft(), bar(100_00))],
+            vec![(aapl(), bar(85_00)), (msft(), bar(95_00))],
         ];
 
         let options = BacktestBridgeOptions {
@@ -1023,8 +1298,16 @@ mod tests {
             }),
         };
 
-        let result =
-            backtest_weights_with_options(&weights, &prices, 100_000_00, 0, 252.0, 0.0, options);
+        let result = backtest_weights_with_options(
+            &weights,
+            &prices,
+            100_000_00,
+            CostModel::zero(),
+            FillPolicy::SignalBarClose,
+            252.0,
+            0.0,
+            options,
+        );
 
         assert_eq!(result.stop_events.len(), 1);
         assert_eq!(result.stop_events[0].symbol, aapl());
@@ -1039,9 +1322,9 @@ mod tests {
             vec![(aapl(), -1.0)],
         ];
         let prices = vec![
-            vec![(aapl(), 100_00)],
-            vec![(aapl(), 95_00)],
-            vec![(aapl(), 110_00)], // short stop would trigger at 105
+            vec![(aapl(), bar(100_00))],
+            vec![(aapl(), bar(95_00))],
+            vec![(aapl(), bar(110_00))], // short stop would trigger at 105
         ];
 
         let options = BacktestBridgeOptions {
@@ -1053,8 +1336,16 @@ mod tests {
             }),
         };
 
-        let result =
-            backtest_weights_with_options(&weights, &prices, 100_000_00, 0, 252.0, 0.0, options);
+        let result = backtest_weights_with_options(
+            &weights,
+            &prices,
+            100_000_00,
+            CostModel::zero(),
+            FillPolicy::SignalBarClose,
+            252.0,
+            0.0,
+            options,
+        );
 
         // Should trigger on short position after flip
         assert_eq!(result.stop_events.len(), 1);
@@ -1071,10 +1362,10 @@ mod tests {
         ];
         // Low volatility: small price moves
         let prices = vec![
-            vec![(aapl(), 100_00)],
-            vec![(aapl(), 101_00)],
-            vec![(aapl(), 102_00)],
-            vec![(aapl(), 101_50)],
+            vec![(aapl(), bar(100_00))],
+            vec![(aapl(), bar(101_00))],
+            vec![(aapl(), bar(102_00))],
+            vec![(aapl(), bar(101_50))],
         ];
 
         let options = BacktestBridgeOptions {
@@ -1086,8 +1377,16 @@ mod tests {
             }),
         };
 
-        let result =
-            backtest_weights_with_options(&weights, &prices, 100_000_00, 0, 252.0, 0.0, options);
+        let result = backtest_weights_with_options(
+            &weights,
+            &prices,
+            100_000_00,
+            CostModel::zero(),
+            FillPolicy::SignalBarClose,
+            252.0,
+            0.0,
+            options,
+        );
 
         // Should not trigger - low volatility keeps ATR small
         assert!(result.stop_events.is_empty());
@@ -1101,9 +1400,9 @@ mod tests {
             vec![(aapl(), 0.6), (msft(), 0.4)],
         ];
         let prices = vec![
-            vec![(aapl(), 100_00), (msft(), 100_00)],
-            vec![(aapl(), 95_00), (msft(), 95_00)], // both drop
-            vec![(aapl(), 85_00), (msft(), 95_00)], // AAPL triggers
+            vec![(aapl(), bar(100_00)), (msft(), bar(100_00))],
+            vec![(aapl(), bar(95_00)), (msft(), bar(95_00))], // both drop
+            vec![(aapl(), bar(85_00)), (msft(), bar(95_00))], // AAPL triggers
         ];
 
         let options = BacktestBridgeOptions {
@@ -1115,8 +1414,16 @@ mod tests {
             }),
         };
 
-        let result =
-            backtest_weights_with_options(&weights, &prices, 100_000_00, 0, 252.0, 0.0, options);
+        let result = backtest_weights_with_options(
+            &weights,
+            &prices,
+            100_000_00,
+            CostModel::zero(),
+            FillPolicy::SignalBarClose,
+            252.0,
+            0.0,
+            options,
+        );
 
         // AAPL should trigger, MSFT should continue
         assert_eq!(result.stop_events.len(), 1);

@@ -1,12 +1,15 @@
 //! PyO3 binding for the fast backtest bridge.
 
 use nanobook::Symbol;
-use nanobook::backtest_bridge::{self, BacktestBridgeOptions, BacktestStopConfig};
+use nanobook::backtest_bridge::{
+    self, BacktestBridgeOptions, BacktestStopConfig, BarPrices, FillPolicy,
+};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 
 use crate::metrics::PyMetrics;
+use crate::portfolio::PyCostModel;
 use crate::types::parse_symbol;
 
 fn parse_symbol_schedule<T: Copy>(
@@ -23,6 +26,108 @@ fn parse_symbol_schedule<T: Copy>(
         .collect()
 }
 
+#[pyclass(name = "BarPrices")]
+#[derive(Clone)]
+pub struct PyBarPrices {
+    pub inner: BarPrices,
+}
+
+#[pymethods]
+impl PyBarPrices {
+    #[new]
+    #[pyo3(signature = (open, high, low, close))]
+    fn new(open: i64, high: i64, low: i64, close: i64) -> Self {
+        Self {
+            inner: BarPrices {
+                open,
+                high,
+                low,
+                close,
+            },
+        }
+    }
+
+    #[getter]
+    fn open(&self) -> i64 {
+        self.inner.open
+    }
+
+    #[getter]
+    fn high(&self) -> i64 {
+        self.inner.high
+    }
+
+    #[getter]
+    fn low(&self) -> i64 {
+        self.inner.low
+    }
+
+    #[getter]
+    fn close(&self) -> i64 {
+        self.inner.close
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "BarPrices(open={}, high={}, low={}, close={})",
+            self.inner.open, self.inner.high, self.inner.low, self.inner.close
+        )
+    }
+}
+
+#[pyclass(name = "FillPolicy")]
+#[derive(Clone)]
+pub struct PyFillPolicy {
+    pub inner: FillPolicy,
+}
+
+#[pymethods]
+impl PyFillPolicy {
+    #[staticmethod]
+    fn signal_bar_close() -> Self {
+        Self {
+            inner: FillPolicy::SignalBarClose,
+        }
+    }
+
+    #[staticmethod]
+    fn next_bar_open() -> Self {
+        Self {
+            inner: FillPolicy::NextBarOpen,
+        }
+    }
+
+    #[staticmethod]
+    fn next_bar_typical() -> Self {
+        Self {
+            inner: FillPolicy::NextBarTypical,
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        let name = match self.inner {
+            FillPolicy::SignalBarClose => "SignalBarClose",
+            FillPolicy::NextBarOpen => "NextBarOpen",
+            FillPolicy::NextBarTypical => "NextBarTypical",
+        };
+        format!("FillPolicy.{}", name)
+    }
+}
+
+fn parse_bar_prices_schedule(
+    schedule: &[Vec<(String, PyBarPrices)>],
+) -> PyResult<Vec<Vec<(Symbol, BarPrices)>>> {
+    schedule
+        .iter()
+        .map(|period| {
+            period
+                .iter()
+                .map(|(symbol, bp)| Ok((parse_symbol(symbol)?, bp.inner)))
+                .collect::<PyResult<Vec<_>>>()
+        })
+        .collect()
+}
+
 /// Simulate portfolio returns from a pre-computed weight schedule.
 ///
 /// Python computes weights (factors, signals), Rust simulates the execution loop.
@@ -33,7 +138,7 @@ fn parse_symbol_schedule<T: Copy>(
 ///     price_schedule: List of price dicts, one per period (parallel with weight_schedule).
 ///         Each dict maps symbol (str) to price_cents (int).
 ///     initial_cash: Starting cash in cents (e.g., 1_000_000_00 = $1M).
-///     cost_bps: Transaction cost in basis points (e.g., 15).
+///     cost_model: Transaction cost model.
 ///     periods_per_year: Annualization factor (252 for daily, 12 for monthly).
 ///     risk_free: Risk-free rate per period.
 ///     stop_cfg: Optional stop simulation config dictionary with supported keys:
@@ -43,21 +148,22 @@ fn parse_symbol_schedule<T: Copy>(
 ///     ``returns``, ``equity_curve``, ``final_cash``, ``metrics``, ``holdings``,
 ///     ``symbol_returns``, ``stop_events``.
 #[pyfunction]
-#[pyo3(signature = (weight_schedule, price_schedule, initial_cash, cost_bps, periods_per_year=252.0, risk_free=0.0, stop_cfg=None))]
+#[pyo3(signature = (weight_schedule, price_schedule, initial_cash, cost_model, fill_policy, periods_per_year=252.0, risk_free=0.0, stop_cfg=None))]
 #[allow(clippy::too_many_arguments)]
 pub fn backtest_weights(
     py: Python<'_>,
     weight_schedule: Vec<Vec<(String, f64)>>,
-    price_schedule: Vec<Vec<(String, i64)>>,
+    price_schedule: Vec<Vec<(String, PyBarPrices)>>,
     initial_cash: i64,
-    cost_bps: u32,
+    cost_model: PyCostModel,
+    fill_policy: PyFillPolicy,
     periods_per_year: f64,
     risk_free: f64,
     stop_cfg: Option<Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
     // Convert Python types to Rust types.
     let rust_weights = parse_symbol_schedule(&weight_schedule)?;
-    let rust_prices = parse_symbol_schedule(&price_schedule)?;
+    let rust_prices = parse_bar_prices_schedule(&price_schedule)?;
 
     let options = BacktestBridgeOptions {
         stop_cfg: parse_stop_cfg(stop_cfg)?,
@@ -69,7 +175,8 @@ pub fn backtest_weights(
             &rust_weights,
             &rust_prices,
             initial_cash,
-            cost_bps,
+            cost_model.inner,
+            fill_policy.inner,
             periods_per_year,
             risk_free,
             options,
@@ -82,6 +189,7 @@ pub fn backtest_weights(
     dict.set_item("equity_curve", result.equity_curve)?;
     dict.set_item("final_cash", result.final_cash)?;
     dict.set_item("metrics", result.metrics.map(PyMetrics::from))?;
+    dict.set_item("skipped_rebalances", result.skipped_rebalances)?;
 
     let holdings: Vec<Vec<(String, f64)>> = result
         .holdings
@@ -214,6 +322,7 @@ pub fn py_tear_sheet(
         holdings,
         symbol_returns,
         stop_events: Vec::new(),
+        skipped_rebalances: Vec::new(),
     };
     let sheet =
         py.detach(|| backtest_bridge::tear_sheet(&result, rolling_window, periods_per_year));
@@ -245,14 +354,15 @@ pub fn py_tear_sheet(
 
 /// Backward-compatible alias for older callers using ``py_backtest_weights``.
 #[pyfunction]
-#[pyo3(signature = (weight_schedule, price_schedule, initial_cash, cost_bps, periods_per_year=252.0, risk_free=0.0, stop_cfg=None))]
+#[pyo3(signature = (weight_schedule, price_schedule, initial_cash, cost_model, fill_policy, periods_per_year=252.0, risk_free=0.0, stop_cfg=None))]
 #[allow(clippy::too_many_arguments)]
 pub fn py_backtest_weights(
     py: Python<'_>,
     weight_schedule: Vec<Vec<(String, f64)>>,
-    price_schedule: Vec<Vec<(String, i64)>>,
+    price_schedule: Vec<Vec<(String, PyBarPrices)>>,
     initial_cash: i64,
-    cost_bps: u32,
+    cost_model: PyCostModel,
+    fill_policy: PyFillPolicy,
     periods_per_year: f64,
     risk_free: f64,
     stop_cfg: Option<Bound<'_, PyDict>>,
@@ -262,7 +372,8 @@ pub fn py_backtest_weights(
         weight_schedule,
         price_schedule,
         initial_cash,
-        cost_bps,
+        cost_model,
+        fill_policy,
         periods_per_year,
         risk_free,
         stop_cfg,

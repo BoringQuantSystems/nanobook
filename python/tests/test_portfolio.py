@@ -11,9 +11,11 @@ def test_cost_model_zero():
 
 
 def test_cost_model_custom():
-    model = nanobook.CostModel(commission_bps=10, slippage_bps=5)
+    model = nanobook.CostModel(commission_bps=10.0, slippage_bps=5.0)
     cost = model.compute_cost(1_000_000)
-    assert cost == 1500  # 15 bps on $10,000
+    # ADR-0003: slippage_bps now price impact in execute_fill, not part of compute_cost.
+    # Old: 1500 (15 bps), new: 1000 (commission-only 10 bps).
+    assert cost == 1000
 
 
 def test_cost_model_repr():

@@ -19,19 +19,20 @@ Add a `FillPolicy` enum threaded through the simulator call:
 pub enum FillPolicy {
     SignalBarClose,  // fills at close[t] — legacy behavior, true MoC semantics
     NextBarOpen,     // fills at open[t+1] — default
-    NextBarVwap,     // fills at (high[t+1] + low[t+1] + close[t+1]) / 3 — HLC/3 VWAP proxy
+    NextBarTypical,     // fills at (high[t+1] + low[t+1] + close[t+1]) / 3 — typical price (HLC/3)
 }
 ```
 
 The default is `NextBarOpen`. Rationale: for EOD signal-generation strategies that submit orders after the signal-bar close, the next-bar open is the earliest honest fill price. It avoids structural lookahead while remaining realistically achievable as a market-on-open order.
 
-**Last-bar edge case:** When `FillPolicy` is `NextBarOpen` or `NextBarVwap`, the final rebalance in the schedule requires a `t+1` bar that does not exist. The chosen behavior: the final rebalance is **skipped**, and a diagnostic entry is added to the result indicating how many shares could not be filled. The alternative — fall back to signal-bar close on the final bar — is rejected because it silently mixes two policies in a single run. The returned diagnostic makes the skip explicit and auditable.
+**Last-bar edge case:** When `FillPolicy` is `NextBarOpen` or `NextBarTypical`, the final rebalance in the schedule requires a `t+1` bar that does not exist. The chosen behavior: the final rebalance is **skipped**, and a diagnostic entry is added to the result indicating how many shares could not be filled. The alternative — fall back to signal-bar close on the final bar — is rejected because it silently mixes two policies in a single run. The returned diagnostic makes the skip explicit and auditable.
 
 ## Alternatives Considered
 
 1. **Per-symbol `FillPolicy`** — each symbol can have a different policy. Rejected: no realistic use case; complicates the interface and the simulation loop without benefit.
 2. **Make `SignalBarClose` the default for backwards compatibility.** Rejected: backwards compatibility would defeat the purpose of the change. Existing tests that need the old behavior should pass `FillPolicy::SignalBarClose` explicitly. Parity tests are required in Phase 1b.
-3. **`bool fill_next_bar: bool`** — a simple flag. Rejected: does not extend cleanly to `NextBarVwap` or future policies (e.g. TWAP, VWAP over N bars).
+3. **`bool fill_next_bar: bool`** — a simple flag. Rejected: does not extend cleanly to `NextBarTypical` or future policies (e.g. TWAP, true VWAP over N bars with volume).
+4. **Name the variant `NextBarVwap`.** Rejected: the formula `(H + L + C) / 3` is the "typical price" of standard technical analysis literature, not a volume-weighted average. Calling it VWAP would mislead callers who read it as `Σ(price × volume) / Σ(volume)`. A real `NextBarVwap` variant can be added later when `BarPrices` carries volume.
 4. **Fall back to signal-bar close on the last bar when `NextBarOpen` has no `t+1`.** Rejected: silently mixes policies; the equity curve for the last period would use a different fill convention than every other period, which is invisible to callers.
 
 ## Consequences

@@ -608,7 +608,8 @@ proptest! {
 #[cfg(feature = "portfolio")]
 mod backtest_props {
     use nanobook::Symbol;
-    use nanobook::backtest_bridge::backtest_weights;
+    use nanobook::backtest_bridge::{BarPrices, FillPolicy, backtest_weights};
+    use nanobook::portfolio::CostModel;
     use proptest::prelude::*;
 
     proptest! {
@@ -624,11 +625,26 @@ mod backtest_props {
             let weights: Vec<Vec<(Symbol, f64)>> = (0..n_periods)
                 .map(|_| vec![(sym, 0.5)])
                 .collect();
-            let prices: Vec<Vec<(Symbol, i64)>> = (0..n_periods)
-                .map(|i| vec![(sym, 100_00 + (i as i64 * 5_00))])
+            let prices: Vec<Vec<(Symbol, BarPrices)>> = (0..n_periods)
+                .map(|i| {
+                    let p = 100_00 + (i as i64 * 5_00);
+                    vec![(sym, BarPrices { open: p, high: p, low: p, close: p })]
+                })
                 .collect();
 
-            let result = backtest_weights(&weights, &prices, initial_cash, 10, 252.0, 0.0);
+            let result = backtest_weights(
+                &weights,
+                &prices,
+                initial_cash,
+                CostModel {
+                    commission_bps: 10.0,
+                    slippage_bps: 0.0,
+                    min_commission: 0,
+                },
+                FillPolicy::SignalBarClose,
+                252.0,
+                0.0,
+            );
 
             for &eq in &result.equity_curve {
                 prop_assert!(eq >= 0, "negative equity: {}", eq);
@@ -644,11 +660,23 @@ mod backtest_props {
             let weights: Vec<Vec<(Symbol, f64)>> = (0..n_periods)
                 .map(|_| vec![(sym, 0.5)])
                 .collect();
-            let prices: Vec<Vec<(Symbol, i64)>> = (0..n_periods)
-                .map(|_| vec![(sym, 150_00)])
+            let prices: Vec<Vec<(Symbol, BarPrices)>> = (0..n_periods)
+                .map(|_| vec![(sym, BarPrices { open: 150_00, high: 150_00, low: 150_00, close: 150_00 })])
                 .collect();
 
-            let result = backtest_weights(&weights, &prices, 1_000_000_00, 10, 252.0, 0.0);
+            let result = backtest_weights(
+                &weights,
+                &prices,
+                1_000_000_00,
+                CostModel {
+                    commission_bps: 10.0,
+                    slippage_bps: 0.0,
+                    min_commission: 0,
+                },
+                FillPolicy::SignalBarClose,
+                252.0,
+                0.0,
+            );
             prop_assert_eq!(result.returns.len(), n_periods);
             prop_assert_eq!(result.equity_curve.len(), n_periods + 1);
         }
@@ -664,11 +692,23 @@ mod backtest_props {
             let weights: Vec<Vec<(Symbol, f64)>> = (0..w_len)
                 .map(|_| vec![(sym, 0.5)])
                 .collect();
-            let prices: Vec<Vec<(Symbol, i64)>> = (0..p_len)
-                .map(|_| vec![(sym, 150_00)])
+            let prices: Vec<Vec<(Symbol, BarPrices)>> = (0..p_len)
+                .map(|_| vec![(sym, BarPrices { open: 150_00, high: 150_00, low: 150_00, close: 150_00 })])
                 .collect();
 
-            let result = backtest_weights(&weights, &prices, 1_000_000_00, 10, 252.0, 0.0);
+            let result = backtest_weights(
+                &weights,
+                &prices,
+                1_000_000_00,
+                CostModel {
+                    commission_bps: 10.0,
+                    slippage_bps: 0.0,
+                    min_commission: 0,
+                },
+                FillPolicy::SignalBarClose,
+                252.0,
+                0.0,
+            );
             prop_assert!(result.returns.is_empty());
         }
 
@@ -679,9 +719,21 @@ mod backtest_props {
         ) {
             let sym = Symbol::new("AAPL");
             let weights = vec![vec![(sym, bad_weight)]];
-            let prices = vec![vec![(sym, 150_00)]];
+            let prices = vec![vec![(sym, BarPrices { open: 150_00, high: 150_00, low: 150_00, close: 150_00 })]];
 
-            let result = backtest_weights(&weights, &prices, 1_000_000_00, 10, 252.0, 0.0);
+            let result = backtest_weights(
+                &weights,
+                &prices,
+                1_000_000_00,
+                CostModel {
+                    commission_bps: 10.0,
+                    slippage_bps: 0.0,
+                    min_commission: 0,
+                },
+                FillPolicy::SignalBarClose,
+                252.0,
+                0.0,
+            );
             prop_assert!(result.returns.is_empty());
         }
     }
@@ -703,15 +755,15 @@ mod portfolio_props {
         /// Cost model with max-range notional — no overflow
         #[test]
         fn cost_model_no_overflow(
-            commission_bps in 0u32..1000,
-            slippage_bps in 0u32..1000,
+            commission_bps in 0.0f64..1000.0f64,
+            slippage_bps in 0.0f64..1000.0f64,
             min_fee in 0i64..1_000_000,
             notional in -1_000_000_000_000i64..1_000_000_000_000i64,
         ) {
             let model = CostModel {
                 commission_bps,
                 slippage_bps,
-                min_trade_fee: min_fee,
+                min_commission: min_fee,
             };
             let cost = model.compute_cost(notional);
             prop_assert!(cost >= 0, "negative cost: {}", cost);

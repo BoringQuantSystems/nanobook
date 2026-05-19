@@ -460,21 +460,25 @@ impl Portfolio {
         if qty == 0 {
             return;
         }
+        // [Inference: rounding mode] round() = round-half-away-from-zero; a plausible default
+        // but arguable. Flag: effective_price rounding mode unspecified by ADR-0003.
+        let sign = if qty > 0 { 1.0_f64 } else { -1.0_f64 };
+        let slippage_factor = 1.0 + sign * self.cost_model.slippage_bps / 10_000.0;
+        let effective_price_f = price as f64 * slippage_factor;
+        let effective_price = effective_price_f.round() as i64;
 
-        let notional = qty.saturating_abs().saturating_mul(price);
+        let notional = qty.saturating_abs().saturating_mul(effective_price);
         let cost = self.cost_model.compute_cost(notional);
 
-        // Update position
         let pos = self
             .positions
             .entry(symbol)
             .or_insert_with(|| Position::new(symbol));
-        pos.apply_fill(qty, price);
+        pos.apply_fill(qty, effective_price);
 
-        // Adjust cash: buying decreases cash, selling increases it
         self.cash = self
             .cash
-            .saturating_sub(qty.saturating_mul(price).saturating_add(cost));
+            .saturating_sub(qty.saturating_mul(effective_price).saturating_add(cost));
     }
 }
 
@@ -545,9 +549,9 @@ mod tests {
     #[test]
     fn cost_model_deducts_fees() {
         let model = CostModel {
-            commission_bps: 10,
-            slippage_bps: 0,
-            min_trade_fee: 0,
+            commission_bps: 10.0,
+            slippage_bps: 0.0,
+            min_commission: 0,
         };
         let mut portfolio = Portfolio::new(1_000_000_00, model);
         let prices = [(aapl(), 150_00)];

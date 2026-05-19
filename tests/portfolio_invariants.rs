@@ -38,9 +38,9 @@ fn equity_conserved_simple_rebalance() {
 #[test]
 fn equity_decreases_with_costs() {
     let model = CostModel {
-        commission_bps: 10,
-        slippage_bps: 5,
-        min_trade_fee: 0,
+        commission_bps: 10.0,
+        slippage_bps: 5.0,
+        min_commission: 0,
     };
     let mut portfolio = Portfolio::new(1_000_000_00, model);
     let prices = [(aapl(), 150_00)];
@@ -189,9 +189,9 @@ fn metrics_risk_free_rate() {
 #[test]
 fn cost_model_non_negative() {
     let model = CostModel {
-        commission_bps: 100,
-        slippage_bps: 50,
-        min_trade_fee: 5_00,
+        commission_bps: 100.0,
+        slippage_bps: 50.0,
+        min_commission: 5_00,
     };
 
     for notional in &[0, 100, 1_000, 1_000_000, -500_000] {
@@ -205,9 +205,9 @@ fn cost_model_non_negative() {
 #[test]
 fn cost_model_min_fee_floor() {
     let model = CostModel {
-        commission_bps: 1,
-        slippage_bps: 0,
-        min_trade_fee: 10_00, // $10 minimum
+        commission_bps: 1.0,
+        slippage_bps: 0.0,
+        min_commission: 10_00, // $10 minimum
     };
 
     // Small trade: bps cost < min fee → min fee wins

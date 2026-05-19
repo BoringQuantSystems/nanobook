@@ -54,20 +54,41 @@ fn symbol_truncated_all_ascii_normal() {
 #[cfg(feature = "portfolio")]
 mod backtest {
     use nanobook::Symbol;
-    use nanobook::backtest_bridge::backtest_weights;
+    use nanobook::backtest_bridge::{BarPrices, FillPolicy, backtest_weights};
+    use nanobook::portfolio::CostModel;
 
     fn aapl() -> Symbol {
         Symbol::new("AAPL")
+    }
+    fn bar(p: i64) -> BarPrices {
+        BarPrices {
+            open: p,
+            high: p,
+            low: p,
+            close: p,
+        }
     }
 
     #[test]
     fn mismatched_schedule_lengths() {
         let weights = vec![vec![(aapl(), 0.5)]];
         let prices = vec![
-            vec![(aapl(), 100_00)],
-            vec![(aapl(), 110_00)], // extra period
+            vec![(aapl(), bar(100_00))],
+            vec![(aapl(), bar(110_00))], // extra period
         ];
-        let result = backtest_weights(&weights, &prices, 1_000_000_00, 10, 252.0, 0.0);
+        let result = backtest_weights(
+            &weights,
+            &prices,
+            1_000_000_00,
+            CostModel {
+                commission_bps: 10.0,
+                slippage_bps: 0.0,
+                min_commission: 0,
+            },
+            FillPolicy::SignalBarClose,
+            252.0,
+            0.0,
+        );
         assert!(result.returns.is_empty());
         assert!(result.metrics.is_none());
     }
@@ -75,54 +96,147 @@ mod backtest {
     #[test]
     fn nan_weight_returns_empty() {
         let weights = vec![vec![(aapl(), f64::NAN)]];
-        let prices = vec![vec![(aapl(), 100_00)]];
-        let result = backtest_weights(&weights, &prices, 1_000_000_00, 10, 252.0, 0.0);
+        let prices = vec![vec![(aapl(), bar(100_00))]];
+        let result = backtest_weights(
+            &weights,
+            &prices,
+            1_000_000_00,
+            CostModel {
+                commission_bps: 10.0,
+                slippage_bps: 0.0,
+                min_commission: 0,
+            },
+            FillPolicy::SignalBarClose,
+            252.0,
+            0.0,
+        );
         assert!(result.returns.is_empty());
     }
 
     #[test]
     fn inf_weight_returns_empty() {
         let weights = vec![vec![(aapl(), f64::INFINITY)]];
-        let prices = vec![vec![(aapl(), 100_00)]];
-        let result = backtest_weights(&weights, &prices, 1_000_000_00, 10, 252.0, 0.0);
+        let prices = vec![vec![(aapl(), bar(100_00))]];
+        let result = backtest_weights(
+            &weights,
+            &prices,
+            1_000_000_00,
+            CostModel {
+                commission_bps: 10.0,
+                slippage_bps: 0.0,
+                min_commission: 0,
+            },
+            FillPolicy::SignalBarClose,
+            252.0,
+            0.0,
+        );
         assert!(result.returns.is_empty());
     }
 
     #[test]
     fn negative_price_returns_empty() {
         let weights = vec![vec![(aapl(), 0.5)]];
-        let prices = vec![vec![(aapl(), -100)]];
-        let result = backtest_weights(&weights, &prices, 1_000_000_00, 10, 252.0, 0.0);
+        let prices = vec![vec![(
+            aapl(),
+            BarPrices {
+                open: -100,
+                high: -100,
+                low: -100,
+                close: -100,
+            },
+        )]];
+        let result = backtest_weights(
+            &weights,
+            &prices,
+            1_000_000_00,
+            CostModel {
+                commission_bps: 10.0,
+                slippage_bps: 0.0,
+                min_commission: 0,
+            },
+            FillPolicy::SignalBarClose,
+            252.0,
+            0.0,
+        );
         assert!(result.returns.is_empty());
     }
 
     #[test]
     fn zero_initial_cash_returns_empty() {
         let weights = vec![vec![(aapl(), 0.5)]];
-        let prices = vec![vec![(aapl(), 100_00)]];
-        let result = backtest_weights(&weights, &prices, 0, 10, 252.0, 0.0);
+        let prices = vec![vec![(aapl(), bar(100_00))]];
+        let result = backtest_weights(
+            &weights,
+            &prices,
+            0,
+            CostModel {
+                commission_bps: 10.0,
+                slippage_bps: 0.0,
+                min_commission: 0,
+            },
+            FillPolicy::SignalBarClose,
+            252.0,
+            0.0,
+        );
         assert!(result.returns.is_empty());
     }
 
     #[test]
     fn negative_initial_cash_returns_empty() {
         let weights = vec![vec![(aapl(), 0.5)]];
-        let prices = vec![vec![(aapl(), 100_00)]];
-        let result = backtest_weights(&weights, &prices, -1, 10, 252.0, 0.0);
+        let prices = vec![vec![(aapl(), bar(100_00))]];
+        let result = backtest_weights(
+            &weights,
+            &prices,
+            -1,
+            CostModel {
+                commission_bps: 10.0,
+                slippage_bps: 0.0,
+                min_commission: 0,
+            },
+            FillPolicy::SignalBarClose,
+            252.0,
+            0.0,
+        );
         assert!(result.returns.is_empty());
     }
 
     #[test]
-    fn cost_bps_over_100_percent() {
+    fn large_commission_bps_no_guard() {
         let weights = vec![vec![(aapl(), 0.5)]];
-        let prices = vec![vec![(aapl(), 100_00)]];
-        let result = backtest_weights(&weights, &prices, 1_000_000_00, 10_001, 252.0, 0.0);
-        assert!(result.returns.is_empty());
+        let prices = vec![vec![(aapl(), bar(100_00))]];
+        let result = backtest_weights(
+            &weights,
+            &prices,
+            1_000_000_00,
+            CostModel {
+                commission_bps: 10_001.0,
+                slippage_bps: 0.0,
+                min_commission: 0,
+            },
+            FillPolicy::SignalBarClose,
+            252.0,
+            0.0,
+        );
+        // ADR-0003: cost_bps > 10_000 guard removed; high commission is expensive but not invalid.
+        assert!(!result.equity_curve.is_empty());
     }
 
     #[test]
     fn empty_schedules_still_work() {
-        let result = backtest_weights(&[], &[], 1_000_000_00, 10, 252.0, 0.0);
+        let result = backtest_weights(
+            &[],
+            &[],
+            1_000_000_00,
+            CostModel {
+                commission_bps: 10.0,
+                slippage_bps: 0.0,
+                min_commission: 0,
+            },
+            FillPolicy::SignalBarClose,
+            252.0,
+            0.0,
+        );
         assert!(result.returns.is_empty());
         assert_eq!(result.equity_curve.len(), 1);
         assert_eq!(result.final_cash, 1_000_000_00);

@@ -7,14 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-05-19 - Backtest fill realism
+
+Breaking-change release driven by an audit of the portfolio backtester (`nanotrade/docs/audit/2026-05-19-nanobook-fill-model.md`). The Python binding `backtest_weights` is replaced in-place per ADR-0004; the only Python caller is nanotrade, which bumps to 0.6.0 in lockstep.
+
 ### Added
 
-- **Public documentation set**: Restored selected public docs for versioning policy, ubiquitous language, event-log schema, API-surface audit, public API baselines, oracle design, ITCH replay learnings, portfolio parity learnings, and unsafe-code audit summary.
-- **Operations documentation index**: Added `docs/README.md` and public rebalancer operations docs for write-ahead audit logging, warm restart, graceful shutdown, kill switch, and operations hardening.
+- **`BarPrices` struct** (`src/backtest_bridge.rs`): `{ open, high, low, close: i64 }` replaces the single-price `i64` previously used in `price_schedule`. Enables fill policies that need bars other than close. See `docs/adr/0001-backtest-bar-prices.md`.
+- **`FillPolicy` enum** (`src/backtest_bridge.rs`): `SignalBarClose` (parity / true MoC), `NextBarOpen` (default — realistic EOD fill), `NextBarTypical` ((H+L+C)/3 of t+1). Final-bar rebalances under `NextBarOpen`/`NextBarTypical` are skipped with a returned diagnostic rather than silently falling back. See `docs/adr/0002-fill-policy.md`.
+- **`BacktestBridgeResult.skipped_rebalances: Vec<usize>`**: indices in the schedule that the simulator could not fill (e.g. last-bar `NextBarOpen` with no `t+1`). Empty when nothing was skipped.
+- **Decision records**: `docs/adr/0001-backtest-bar-prices.md`, `0002-fill-policy.md`, `0003-cost-model-semantics.md`, `0004-binding-breaking-change.md`.
+- **Test coverage**: parity test (`signal_bar_close_parity_with_degenerate_ohlc`), fill-policy proofs (`next_bar_open_fills_at_open_t_plus_1`, `next_bar_typical_fill_price_is_hlc3`), last-bar edge case (`last_bar_skip_with_next_bar_open`), CostModel parity (`parity_no_slippage_matches_old_formula`), and matching Python tests in `python/tests/test_fill_policy.py`.
 
 ### Changed
 
-- **Sanitized operations docs**: Renamed internal phase documents into public operation-oriented pages under `docs/operations/` and removed private planning, task-tracker, soak, and private-integration references from the published set.
+- **BREAKING: `CostModel` struct** (`src/portfolio/cost_model.rs`): three fields with corrected types and semantics.
+  - `commission_bps: f64` (was `u32`) — fractional bps allowed; commission billed as cash charge subject to `min_commission` floor.
+  - `slippage_bps: f64` (was `u32`) — now applied as **price impact** in `Portfolio::execute_fill` (fill price adjusted before recording the position), no longer collapsed into the cash charge.
+  - `min_commission: i64` (renamed from `min_trade_fee`) — floor on commission, preserves the prior `max()` semantics with an unambiguous name.
+- **BREAKING: Python binding `backtest_weights`** (`python/src/backtest_bridge.rs`): replaces `cost_bps: u32` with `cost_model: CostModel`; adds `fill_policy: FillPolicy`; changes `price_schedule` element type from `(str, i64)` to `(str, BarPrices)`. Returned dict gains `skipped_rebalances`.
+- **`compute_cost` formula**: `max(|notional| * commission_bps / 10_000, min_commission)`. Slippage is no longer summed in; it lives in `execute_fill`.
+
+### Fixed
+
+- **Slippage attribution**: Previously, slippage was deducted from cash alongside commission, leaving per-position cost basis unchanged. After this release, position cost basis reflects slippage (matching TradingView's `strategy(slippage=N)` semantics and live broker microstructure).
+- **Hardwired `slippage_bps=0`, `min_trade_fee=0` in Python binding**: the old `backtest_weights` PyFunction silently zeroed two `CostModel` fields. Half-implemented feature now fully exposed.
+
+### Migration
+
+- nanotrade 0.6.0 bumps the `nanobook` pin to `>=0.16,<0.17` and rewrites `calc/nb_backtest.py:run_backtest_nb` to call the new binding. No other Python callers exist.
 
 ## [0.15.1] - 2026-05-17 - Ops Hardening & Optimization
 

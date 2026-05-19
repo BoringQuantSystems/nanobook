@@ -12,11 +12,11 @@ use crate::types::parse_symbol;
 /// Args:
 ///     commission_bps: Commission in basis points (1 bps = 0.01%)
 ///     slippage_bps: Slippage estimate in basis points
-///     min_trade_fee: Minimum fee per trade in cents
+///     min_commission: Minimum commission per fill in cents
 ///
 /// Example::
 ///
-///     model = CostModel(commission_bps=10, slippage_bps=5, min_trade_fee=100)
+///     model = CostModel(commission_bps=10.0, slippage_bps=5.0, min_commission=100)
 ///     zero = CostModel.zero()
 ///
 #[pyclass(name = "CostModel")]
@@ -28,13 +28,13 @@ pub struct PyCostModel {
 #[pymethods]
 impl PyCostModel {
     #[new]
-    #[pyo3(signature = (commission_bps=0, slippage_bps=0, min_trade_fee=0))]
-    fn new(commission_bps: u32, slippage_bps: u32, min_trade_fee: i64) -> Self {
+    #[pyo3(signature = (commission_bps=0.0, slippage_bps=0.0, min_commission=0))]
+    fn new(commission_bps: f64, slippage_bps: f64, min_commission: i64) -> Self {
         Self {
             inner: CostModel {
                 commission_bps,
                 slippage_bps,
-                min_trade_fee,
+                min_commission,
             },
         }
     }
@@ -54,8 +54,8 @@ impl PyCostModel {
 
     fn __repr__(&self) -> String {
         format!(
-            "CostModel(commission_bps={}, slippage_bps={}, min_trade_fee={})",
-            self.inner.commission_bps, self.inner.slippage_bps, self.inner.min_trade_fee
+            "CostModel(commission_bps={}, slippage_bps={}, min_commission={})",
+            self.inner.commission_bps, self.inner.slippage_bps, self.inner.min_commission
         )
     }
 }

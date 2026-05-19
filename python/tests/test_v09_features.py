@@ -20,6 +20,10 @@ def _assert_long_only_weights(weights: dict[str, float], symbols: list[str]):
     assert abs(sum(weights.values()) - 1.0) < 1e-6
 
 
+def _bar(p: int):
+    return nanobook.BarPrices(open=p, high=p, low=p, close=p)
+
+
 def test_capabilities_surface():
     caps = set(nanobook.py_capabilities())
     expected = {
@@ -62,23 +66,27 @@ def test_optimizers_return_valid_weights():
 def test_backtest_weights_v09_payload():
     result = nanobook.py_backtest_weights(
         weight_schedule=[[('AAPL', 1.0)], [('AAPL', 1.0)]],
-        price_schedule=[[('AAPL', 100_00)], [('AAPL', 102_00)]],
+        price_schedule=[[('AAPL', _bar(100_00))], [('AAPL', _bar(102_00))]],
         initial_cash=100_000_00,
-        cost_bps=0,
+        cost_model=nanobook.CostModel.zero(),
+        fill_policy=nanobook.FillPolicy.SignalBarClose,
     )
 
     assert "holdings" in result
     assert "symbol_returns" in result
     assert "stop_events" in result
+    assert "skipped_rebalances" in result
     assert len(result["holdings"]) == 2
     assert len(result["symbol_returns"]) == 2
     assert result["stop_events"] == []
+    assert result["skipped_rebalances"] == []
 
     clean = nanobook.backtest_weights(
         weight_schedule=[[("AAPL", 1.0)], [("AAPL", 1.0)]],
-        price_schedule=[[("AAPL", 100_00)], [("AAPL", 102_00)]],
+        price_schedule=[[("AAPL", _bar(100_00))], [("AAPL", _bar(102_00))]],
         initial_cash=100_000_00,
-        cost_bps=0,
+        cost_model=nanobook.CostModel.zero(),
+        fill_policy=nanobook.FillPolicy.SignalBarClose,
     )
     assert clean.keys() == result.keys()
 
@@ -86,9 +94,10 @@ def test_backtest_weights_v09_payload():
 def test_backtest_weights_fixed_stop():
     result = nanobook.py_backtest_weights(
         weight_schedule=[[('AAPL', 1.0)], [('AAPL', 1.0)]],
-        price_schedule=[[('AAPL', 100_00)], [('AAPL', 85_00)]],
+        price_schedule=[[('AAPL', _bar(100_00))], [('AAPL', _bar(85_00))]],
         initial_cash=100_000_00,
-        cost_bps=0,
+        cost_model=nanobook.CostModel.zero(),
+        fill_policy=nanobook.FillPolicy.SignalBarClose,
         stop_cfg={"fixed_stop_pct": 0.10},
     )
 
@@ -104,9 +113,10 @@ def test_backtest_weights_fixed_stop():
 def test_backtest_first_breach_once_per_position_lifecycle():
     result = nanobook.py_backtest_weights(
         weight_schedule=[[("AAPL", 1.0)], [("AAPL", 1.0)], [("AAPL", 1.0)]],
-        price_schedule=[[("AAPL", 100_00)], [("AAPL", 90_00)], [("AAPL", 89_00)]],
+        price_schedule=[[("AAPL", _bar(100_00))], [("AAPL", _bar(90_00))], [("AAPL", _bar(89_00))]],
         initial_cash=100_000_00,
-        cost_bps=0,
+        cost_model=nanobook.CostModel.zero(),
+        fill_policy=nanobook.FillPolicy.SignalBarClose,
         stop_cfg={"fixed_stop_pct": 0.10},
     )
 
@@ -118,9 +128,10 @@ def test_backtest_first_breach_once_per_position_lifecycle():
 def test_backtest_reports_tightest_stop_reason():
     result = nanobook.py_backtest_weights(
         weight_schedule=[[("AAPL", 1.0)], [("AAPL", 1.0)], [("AAPL", 1.0)]],
-        price_schedule=[[("AAPL", 100_00)], [("AAPL", 110_00)], [("AAPL", 103_00)]],
+        price_schedule=[[("AAPL", _bar(100_00))], [("AAPL", _bar(110_00))], [("AAPL", _bar(103_00))]],
         initial_cash=100_000_00,
-        cost_bps=0,
+        cost_model=nanobook.CostModel.zero(),
+        fill_policy=nanobook.FillPolicy.SignalBarClose,
         stop_cfg={"fixed_stop_pct": 0.10, "trailing_stop_pct": 0.05},
     )
 

@@ -16,9 +16,9 @@ fn main() {
 
     // Start with $1,000,000 and 5 bps round-trip cost
     let cost_model = CostModel {
-        commission_bps: 3,
-        slippage_bps: 2,
-        min_trade_fee: 1_00, // $1 minimum per trade
+        commission_bps: 3.0,
+        slippage_bps: 2.0,
+        min_commission: 1_00, // $1 minimum per trade
     };
     let mut portfolio = Portfolio::new(1_000_000_00, cost_model);
 
