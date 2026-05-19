@@ -52,10 +52,10 @@ impl Position {
             // Opening a new position
             self.quantity = qty;
             self.avg_entry_price = price;
-            self.total_cost = qty * price;
+            self.total_cost = qty.saturating_mul(price);
         } else if same_direction {
             // Adding to position — update VWAP
-            self.total_cost += qty * price;
+            self.total_cost = self.total_cost.saturating_add(qty.saturating_mul(price));
             self.quantity += qty;
             self.avg_entry_price = self.total_cost / self.quantity;
         } else {
@@ -66,7 +66,9 @@ impl Position {
             } else {
                 self.avg_entry_price - price // short: buy lower = profit
             };
-            self.realized_pnl += pnl_per_unit * close_qty;
+            self.realized_pnl = self
+                .realized_pnl
+                .saturating_add(pnl_per_unit.saturating_mul(close_qty));
 
             let net = self.quantity + qty;
             if net == 0 {
@@ -77,14 +79,16 @@ impl Position {
             } else if (net > 0) == (self.quantity > 0) {
                 // Partially closed, same side — subtract closed portion's cost
                 // to preserve any fractional remainder in total_cost
-                self.total_cost -= close_qty * self.avg_entry_price;
+                self.total_cost = self
+                    .total_cost
+                    .saturating_sub(close_qty.saturating_mul(self.avg_entry_price));
                 self.quantity = net;
                 self.avg_entry_price = self.total_cost / self.quantity;
             } else {
                 // Flipped sides
                 self.quantity = net;
                 self.avg_entry_price = price;
-                self.total_cost = net * price;
+                self.total_cost = net.saturating_mul(price);
             }
         }
     }
@@ -92,7 +96,7 @@ impl Position {
     /// Current market value at the given price (cents).
     #[inline]
     pub fn market_value(&self, price: i64) -> i64 {
-        self.quantity * price
+        self.quantity.saturating_mul(price)
     }
 
     /// Unrealized PnL at the given market price (cents).
@@ -101,7 +105,9 @@ impl Position {
         if self.quantity == 0 {
             return 0;
         }
-        (price - self.avg_entry_price) * self.quantity
+        price
+            .saturating_sub(self.avg_entry_price)
+            .saturating_mul(self.quantity)
     }
 
     /// Returns true if the position is flat (zero quantity).

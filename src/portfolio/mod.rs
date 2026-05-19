@@ -33,9 +33,9 @@ pub mod strategy;
 pub mod sweep;
 
 pub use cost_model::CostModel;
-pub use metrics::{Metrics, compute_metrics};
+pub use metrics::{compute_metrics, Metrics};
 pub use position::Position;
-pub use strategy::{BacktestResult, EqualWeight, Strategy, run_backtest};
+pub use strategy::{run_backtest, BacktestResult, EqualWeight, Strategy};
 
 use crate::types::Symbol;
 use rustc_hash::FxHashMap;
@@ -235,7 +235,7 @@ impl Portfolio {
                 .unwrap_or(0);
 
             let target_value = (equity as f64 * target_weight) as i64;
-            let diff_value = target_value - current_value;
+            let diff_value = target_value.saturating_sub(current_value);
 
             // Convert value difference to shares
             let diff_qty = diff_value / price;
@@ -282,7 +282,7 @@ impl Portfolio {
                 let mid = {
                     let (bid, ask) = ex.best_bid_ask();
                     match (bid, ask) {
-                        (Some(b), Some(a)) => b.0 + (a.0 - b.0) / 2,
+                        (Some(b), Some(a)) => b.0.saturating_add((a.0.saturating_sub(b.0)) / 2),
                         (Some(b), None) => b.0,
                         (None, Some(a)) => a.0,
                         (None, None) => return None,
@@ -344,7 +344,7 @@ impl Portfolio {
                 .unwrap_or(0);
 
             let target_value = (equity as f64 * target_weight) as i64;
-            let diff_value = target_value - current_value;
+            let diff_value = target_value.saturating_sub(current_value);
             let diff_qty = (diff_value / price).unsigned_abs();
 
             if diff_qty == 0 {
@@ -382,7 +382,7 @@ impl Portfolio {
     pub(crate) fn record_return_from_price_map(&mut self, price_map: &FxHashMap<Symbol, i64>) {
         let equity = self.total_equity_from_price_map(price_map);
         if self.prev_equity > 0 {
-            let ret = (equity - self.prev_equity) as f64 / self.prev_equity as f64;
+            let ret = equity.saturating_sub(self.prev_equity) as f64 / self.prev_equity as f64;
             self.returns.push(ret);
         }
         self.equity_curve.push(equity);
@@ -394,7 +394,10 @@ impl Portfolio {
         let price_map: FxHashMap<Symbol, i64> = prices.iter().copied().collect();
         let equity = self.total_equity_from_price_map(&price_map);
         let weights = self.current_weights_from_price_map(&price_map, equity);
-        let total_realized_pnl: i64 = self.positions.values().map(|p| p.realized_pnl).sum();
+        let total_realized_pnl: i64 = self
+            .positions
+            .values()
+            .fold(0_i64, |acc, p| acc.saturating_add(p.realized_pnl));
 
         PortfolioSnapshot {
             cash: self.cash,
@@ -424,15 +427,11 @@ impl Portfolio {
     // === Internal ===
 
     pub(crate) fn total_equity_from_price_map(&self, price_map: &FxHashMap<Symbol, i64>) -> i64 {
-        let position_value: i64 = self
-            .positions
-            .iter()
-            .map(|(sym, pos)| {
-                let price = price_map.get(sym).copied().unwrap_or(0);
-                pos.market_value(price)
-            })
-            .sum();
-        self.cash + position_value
+        let position_value: i64 = self.positions.iter().fold(0_i64, |acc, (sym, pos)| {
+            let price = price_map.get(sym).copied().unwrap_or(0);
+            acc.saturating_add(pos.market_value(price))
+        });
+        self.cash.saturating_add(position_value)
     }
 
     pub(crate) fn current_weights_from_price_map(

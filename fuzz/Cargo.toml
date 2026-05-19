@@ -16,7 +16,7 @@ members = []
 [dependencies]
 libfuzzer-sys = "0.4"
 arbitrary = { version = "1", features = ["derive"] }
-nanobook = { path = "..", features = ["event-log", "itch", "persistence"] }
+nanobook = { path = "..", features = ["event-log", "itch", "persistence", "portfolio"] }
 
 # Individual fuzz targets are declared here so `cargo fuzz list`
 # discovers them and `cargo fuzz build` compiles them separately.
@@ -30,6 +30,13 @@ bench = false
 [[bin]]
 name = "fuzz_itch"
 path = "fuzz_targets/fuzz_itch.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_execute_fill"
+path = "fuzz_targets/fuzz_execute_fill.rs"
 test = false
 doc = false
 bench = false

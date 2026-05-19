@@ -1,7 +1,7 @@
 //! Parallel parameter sweep over strategy configurations.
 
-use super::metrics::{Metrics, compute_metrics};
-use super::strategy::{BacktestResult, Strategy, run_backtest};
+use super::metrics::{compute_metrics, Metrics};
+use super::strategy::{run_backtest, BacktestResult, Strategy};
 
 /// Run a parameter sweep in parallel, computing metrics for each configuration.
 ///
@@ -130,8 +130,8 @@ mod tests {
 
     #[test]
     fn sweep_strategy_basic() {
-        use crate::Symbol;
         use crate::portfolio::{CostModel, EqualWeight};
+        use crate::Symbol;
 
         fn sym(s: &str) -> Symbol {
             Symbol::new(s)

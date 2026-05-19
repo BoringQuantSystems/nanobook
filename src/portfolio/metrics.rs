@@ -459,7 +459,11 @@ pub fn sortino(returns: &[f64], risk_free: f64, periods_per_year: f64, ddof: u32
         .iter()
         .map(|&r| {
             let excess = r - risk_free;
-            if excess < 0.0 { excess.powi(2) } else { 0.0 }
+            if excess < 0.0 {
+                excess.powi(2)
+            } else {
+                0.0
+            }
         })
         .sum();
 

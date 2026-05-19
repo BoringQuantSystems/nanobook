@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-05-20 - Position arithmetic overflow fix
+
+Patch release. Replaces bare integer arithmetic in `Position` with
+saturating variants, matching the pattern already used in
+`Portfolio::execute_fill`. Found by `fuzz_execute_fill` (added in v0.16.0
+as part of the property-based testing pass after the v0.16.0 ship).
+
+### Fixed
+
+- **`Position::market_value` overflow** (`src/portfolio/position.rs:95`):
+  `self.quantity * price` previously panicked on `i64` overflow.
+  Replaced with `saturating_mul`. Reachable via the public
+  `Portfolio::rebalance_simple` API; crash artifact preserved at
+  `fuzz/artifacts/fuzz_execute_fill/crash-330fb9097052e84d78571d06b840334680573582`.
+- **`Position::unrealized_pnl` overflow** (`position.rs:104`): same root
+  cause; both the subtraction and multiplication now saturate.
+- **`Position::apply_fill` overflow** (lines 55, 58, 69, 80, 87): all
+  intermediate products/sums switched to saturating variants. Real-world
+  trigger requires extreme quantity × price products; bug was latent
+  pre-v0.16.0 but only surfaced after the fuzz harness was added.
+- **`Portfolio::total_equity_from_price_map` overflow** (`src/portfolio/mod.rs:430-435`):
+  bare `.sum()` over `pos.market_value(price)` and bare `self.cash + position_value`
+  could panic when many large positions accumulated. Replaced with `saturating_*`.
+  Found by `fuzz_execute_fill` re-run after the position.rs fix landed (crash artifact
+  `crash-6bafbd4544cfff56e4ac3e2d68e18ebeecf6c2d7`).
+- **`Portfolio::rebalance_simple` arithmetic** (`src/portfolio/mod.rs:238, 285, 346, 385`):
+  defensive `saturating_*` replacements at five other i64 arithmetic sites in
+  the rebalance / equity / price-mid paths. Each was a latent overflow risk
+  reachable through the public API under extreme inputs.
+- **`Portfolio::snapshot` `total_realized_pnl` overflow** (`src/portfolio/mod.rs:397`)
+  [Inference]: bare `.sum()` over `pos.realized_pnl` fields — same pattern as the
+  `total_equity_from_price_map` bug; replaced with `saturating_add` fold. Not in the
+  original fuzz crash path but reachable from the same extreme-input scenarios.
+
+### Added
+
+- **`tests/regression_position_overflow.rs`**: integration tests that
+  assert each previously-crashing input sequence now returns a saturated
+  i64 instead of panicking. Replays the libfuzzer crash artifact by hand.
+
 ## [0.16.0] - 2026-05-19 - Backtest fill realism
 
 Breaking-change release driven by an audit of the portfolio backtester (`nanotrade/docs/audit/2026-05-19-nanobook-fill-model.md`). The Python binding `backtest_weights` is replaced in-place per ADR-0004; the only Python caller is nanotrade, which bumps to 0.6.0 in lockstep.
