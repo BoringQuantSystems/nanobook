@@ -13,15 +13,15 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       
       - name: Install OCaml
-        uses: ocaml/setup-ocaml@v2
+        uses: ocaml/setup-ocaml@8cc6339f55862749298d198ef84788b8d6acdacc # v2.2.10
         with:
           ocaml-version: 5.4
       
       - name: Cache opam
-        uses: actions/cache@v3
+        uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3.5.0
         with:
           path: ~/.opam
           key: ${{ runner.os }}-opam-${{ hashFiles('**/oracle-ocaml/dune-project') }}
@@ -37,13 +37,12 @@ jobs:
           opam exec -- dune build
       
       - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9  # master @ 2026-05-21
         with:
-          profile: minimal
           toolchain: stable
       
       - name: Cache Rust
-        uses: actions/cache@v3
+        uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3.5.0
         with:
           path: ~/.cargo
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
