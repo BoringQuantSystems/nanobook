@@ -5,8 +5,8 @@ edition = "2024"
 rust-version = "1.85"
 description = "Broker abstraction and IBKR/Binance adapters for nanobook execution workflows"
 license = "MIT"
-repository = "https://github.com/ricardofrantz/nanobook"
-homepage = "https://github.com/ricardofrantz/nanobook"
+repository = "https://github.com/BoringQuantSystems/nanobook"
+homepage = "https://github.com/BoringQuantSystems/nanobook"
 documentation = "https://docs.rs/nanobook-broker"
 
 [features]

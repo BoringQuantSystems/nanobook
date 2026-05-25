@@ -23,10 +23,10 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/ricardofrantz/nanobook"
-Repository = "https://github.com/ricardofrantz/nanobook"
+Homepage = "https://github.com/BoringQuantSystems/nanobook"
+Repository = "https://github.com/BoringQuantSystems/nanobook"
 Documentation = "https://docs.rs/nanobook"
-Issues = "https://github.com/ricardofrantz/nanobook/issues"
+Issues = "https://github.com/BoringQuantSystems/nanobook/issues"
 
 [dependency-groups]
 dev = [

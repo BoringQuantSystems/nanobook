@@ -1,14 +1,14 @@
-# nanobook
-
 <p align="center">
-  <img src="assets/nanobook1.jpg" alt="nanobook" width="900">
+  <img src="assets/nanobook-banner.png" alt="nanobook banner" width="900">
 </p>
 
-[![CI](https://github.com/ricardofrantz/nanobook/actions/workflows/ci.yml/badge.svg)](https://github.com/ricardofrantz/nanobook/actions/workflows/ci.yml)
+# nanobook
+
+[![CI](https://github.com/BoringQuantSystems/nanobook/actions/workflows/ci.yml/badge.svg)](https://github.com/BoringQuantSystems/nanobook/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/nanobook.svg)](https://crates.io/crates/nanobook)
 [![docs.rs](https://docs.rs/nanobook/badge.svg)](https://docs.rs/nanobook)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![cargo-deny](https://img.shields.io/badge/cargo--deny-audited-brightgreen)](https://github.com/ricardofrantz/nanobook/actions/workflows/ci.yml)
+[![cargo-deny](https://img.shields.io/badge/cargo--deny-audited-brightgreen)](https://github.com/BoringQuantSystems/nanobook/actions/workflows/ci.yml)
 
 **Rust execution layer for Python trading strategies.**
 
@@ -135,7 +135,7 @@ nanobook = "0.10.0"
 **From source:**
 
 ```bash
-git clone https://github.com/ricardofrantz/nanobook
+git clone https://github.com/BoringQuantSystems/nanobook
 cd nanobook
 cargo build --release
 cargo test

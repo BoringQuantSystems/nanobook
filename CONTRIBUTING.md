@@ -20,7 +20,7 @@ Thank you for your interest in contributing to nanobook!
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 # Clone and build
-git clone https://github.com/ricardofrantz/nanobook.git
+git clone https://github.com/BoringQuantSystems/nanobook.git
 cd nanobook
 cargo build
 
