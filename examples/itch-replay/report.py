@@ -15,6 +15,14 @@ import nanobook
 ROOT = Path(__file__).resolve().parent
 
 
+def placeholder(title: str) -> str:
+    safe_title = html.escape(title)
+    return (
+        f'<div class="placeholder"><h3>{safe_title}</h3>'
+        "<p>No data recorded for this section.</p></div>"
+    )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build the v0.11 ITCH replay report skeleton.")
     parser.add_argument(
