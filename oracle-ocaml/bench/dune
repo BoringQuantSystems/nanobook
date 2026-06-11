@@ -1,4 +1,4 @@
 (executable
  (name bench)
- (libraries oracle_lib)
+ (libraries oracle_lib unix)
  (modules bench))

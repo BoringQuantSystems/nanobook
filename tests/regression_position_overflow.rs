@@ -9,6 +9,8 @@
 //! This test asserts that Position never panics on extreme inputs.
 
 #![cfg(feature = "portfolio")]
+// Prices use dollar.cents grouping: 1_000_000_00 = $1,000,000.00.
+#![allow(clippy::inconsistent_digit_grouping)]
 
 use nanobook::Symbol;
 use nanobook::portfolio::{CostModel, Portfolio, Position};

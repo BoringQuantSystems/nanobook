@@ -602,16 +602,18 @@ impl Replay {
     }
 
     fn check_monotonic(&mut self, stock: &str, timestamp: u64) -> io::Result<()> {
+        // Nested rather than a let-chain: let-chains need Rust 1.88, MSRV is 1.85.
         if let Some(previous) = self
             .last_timestamp_by_symbol
             .insert(stock.to_string(), timestamp)
-            && timestamp < previous
         {
-            self.write_violation(
-                timestamp,
-                stock,
-                format!("timestamp went backwards: previous={previous}, current={timestamp}"),
-            )?;
+            if timestamp < previous {
+                self.write_violation(
+                    timestamp,
+                    stock,
+                    format!("timestamp went backwards: previous={previous}, current={timestamp}"),
+                )?;
+            }
         }
         Ok(())
     }

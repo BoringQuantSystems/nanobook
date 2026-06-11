@@ -237,7 +237,7 @@ jobs:
       - name: Run replay on slice
         working-directory: examples/itch-replay
         run: |
-          cargo run --example itch-replay -- \
+          cargo run --example itch-replay --features itch -- \
             --input data/07302019-0930-0931.itch \
             --output-dir data/replay-smoke
 
@@ -294,6 +294,9 @@ jobs:
         run: |
           uv venv
           uv pip install -r requirements.txt
+          # strategy.py imports nanobook; build the local bindings so the
+          # smoke test exercises the code under review, not a PyPI wheel.
+          uv pip install ../../python
 
       - name: Run backtest with cached data (zero cost)
         working-directory: examples/momentum-backtest

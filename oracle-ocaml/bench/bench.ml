@@ -1,5 +1,6 @@
-(* Performance benchmarks for OCaml oracle *)
-open Oracle_lib
+(* Performance benchmarks for OCaml oracle.
+   oracle_lib is unwrapped (see lib/dune), so its modules are in scope
+   directly — there is no Oracle_lib umbrella module to open. *)
 
 (* Timing helper *)
 let time f =

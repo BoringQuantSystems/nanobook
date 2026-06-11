@@ -1042,6 +1042,8 @@ mod tests {
     }
 
     #[test]
+    // Index pairs are the point here: the assertion compares corr[i][j] with corr[j][i].
+    #[allow(clippy::needless_range_loop)]
     fn correlation_matrix_is_symmetric_with_unit_diagonal() {
         let r = sample_returns();
         let corr = correlation_matrix(&r);
