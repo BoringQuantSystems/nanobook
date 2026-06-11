@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.2] - 2026-06-11 - MSRV fix + repository metadata
+
+Patch release. No behavior changes.
+
+### Fixed
+
+- **MSRV regression**: v0.16.1 did not compile on Rust 1.85 despite
+  declaring `rust-version = "1.85"` — `src/backtest_bridge.rs` used a
+  let-chain, stabilized only in Rust 1.88. Rewritten as nested `if let`.
+- `examples/itch-replay/download.sh` failed on a fresh checkout (resolved
+  the `data/` path by `cd`-ing into it before creating it).
+
+### Changed
+
+- Repository moved to the BoringQuantSystems organization; all
+  `repository`/`homepage` metadata and links updated.
+- CI: GitHub Actions pinned to commit SHAs, Dependabot enabled for
+  actions, `ocaml/setup-ocaml` bumped to v3, uv smoke jobs create a venv
+  before installing dependencies.
+
 ## [0.16.1] - 2026-05-20 - Position arithmetic overflow fix
 
 Patch release. Replaces bare integer arithmetic in `Position` with
@@ -964,7 +984,11 @@ Initial release of nanobook - a deterministic limit order book and matching engi
 - Fixed-point price representation (avoids floating-point errors)
 - Deterministic via monotonic timestamps (not system clock)
 
-[Unreleased]: https://github.com/BoringQuantSystems/nanobook/compare/v0.15.1...HEAD
+[Unreleased]: https://github.com/BoringQuantSystems/nanobook/compare/v0.16.2...HEAD
+[0.16.2]: https://github.com/BoringQuantSystems/nanobook/compare/v0.16.1...v0.16.2
+[0.16.1]: https://github.com/BoringQuantSystems/nanobook/compare/v0.16.0...v0.16.1
+[0.16.0]: https://github.com/BoringQuantSystems/nanobook/compare/v0.15.2...v0.16.0
+[0.15.2]: https://github.com/BoringQuantSystems/nanobook/compare/v0.15.1...v0.15.2
 [0.15.1]: https://github.com/BoringQuantSystems/nanobook/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/BoringQuantSystems/nanobook/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/BoringQuantSystems/nanobook/compare/v0.13.0...v0.14.0
