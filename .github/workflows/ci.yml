@@ -226,12 +226,15 @@ jobs:
         working-directory: examples/itch-replay
         run: |
           SLICE_FILE=data/07302019-0930-0931.itch
-          if [ ! -f "$SLICE_FILE" ]; then
-            cargo run --bin itch-slice -- \
-              --input data/07302019.NASDAQ_ITCH50.gz \
-              --output "$SLICE_FILE" \
-              --start-ns 34200000000000 \
-              --duration-ns 60000000000
+          # -s (not -f): an earlier broken run may have cached an empty
+          # slice. itch-slice reads raw ITCH frames, so decompress first.
+          if [ ! -s "$SLICE_FILE" ]; then
+            gunzip -c data/07302019.NASDAQ_ITCH50.gz | \
+              cargo run --bin itch-slice -- \
+                --input - \
+                --output "$SLICE_FILE" \
+                --start-ns 34200000000000 \
+                --duration-ns 60000000000
           fi
 
       - name: Run replay on slice
