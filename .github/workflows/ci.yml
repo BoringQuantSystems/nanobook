@@ -194,7 +194,10 @@ jobs:
         run: cargo bench --all-features
 
   itch-replay-smoke:
-    name: ITCH Replay Smoke (1-min slice)
+    # Runs on a small committed fixture (a few seconds of real ITCH data),
+    # no network. To regenerate the fixture from the full NASDAQ file, see
+    # examples/itch-replay/README.md (download.sh + itch-slice).
+    name: ITCH Replay Smoke (committed fixture)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -212,38 +215,17 @@ jobs:
         with:
           key: itch-replay-smoke
 
-      - name: Cache ITCH data
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: examples/itch-replay/data
-          key: itch-data-${{ hashFiles('examples/itch-replay/expected/sample.md5') }}
-
-      - name: Download full ITCH file
-        working-directory: examples/itch-replay
-        run: ./download.sh
-
-      - name: Slice to 1-minute window
+      - name: Decompress fixture
         working-directory: examples/itch-replay
         run: |
-          SLICE_FILE=data/07302019-0930-0931.itch
-          # -s (not -f): an earlier broken run may have cached an empty
-          # slice. itch-slice reads raw ITCH frames, so decompress first.
-          if [ ! -s "$SLICE_FILE" ]; then
-            gunzip -c data/07302019.NASDAQ_ITCH50.gz | \
-              cargo run --release --bin itch-slice -- \
-                --input - \
-                --output "$SLICE_FILE" \
-                --start-ns 34200000000000 \
-                --duration-ns 60000000000
-          fi
+          mkdir -p data
+          gunzip -c fixtures/smoke.itch.gz > data/smoke.itch
 
-      - name: Run replay on slice
+      - name: Run replay on fixture
         working-directory: examples/itch-replay
         run: |
-          # --release: the slice holds a full minute of market-wide ITCH
-          # traffic; a debug build takes hours where release takes seconds.
           cargo run --release --example itch-replay --features itch -- \
-            --input data/07302019-0930-0931.itch \
+            --input data/smoke.itch \
             --output-dir data/replay-smoke
 
       - name: Install Python dependencies
@@ -290,12 +272,7 @@ jobs:
         with:
           key: momentum-backtest-smoke
 
-      - name: Cache price data
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: examples/momentum-backtest/data
-          key: price-data-${{ hashFiles('examples/momentum-backtest/data/prices.md5') }}
-
+      # Price data is committed in the repo; no cache or download needed.
       - name: Install Python dependencies
         working-directory: examples/momentum-backtest
         run: |

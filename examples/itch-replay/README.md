@@ -68,11 +68,24 @@ If any invariant violation occurs, it's logged to `it-invariants.log` with detai
 
 For full reproducibility details (exact versions, hardware specs, dependency hashes), see `REPRODUCIBILITY.md` at the repo root.
 
-## CI slice
+## CI fixture
 
-GitHub Actions runs a deterministic 1-minute slice on every PR via the `examples-smoke` job. This validates the replay pipeline without downloading the full 3.5 GB dataset.
+GitHub Actions runs the replay on a small committed fixture
+(`fixtures/smoke.itch.gz`, a few seconds of real market-open data) on
+every PR — no download, runs in seconds. Expected outputs are in
+`expected/`.
 
-The slice is generated from the full dataset and byte-identical across runs. Expected outputs are in `expected/`.
+To regenerate the fixture from the full dataset:
+
+```bash
+./download.sh
+gunzip -c data/07302019.NASDAQ_ITCH50.gz | \
+  cargo run --release --bin itch-slice -- \
+    --input - --output data/smoke.itch \
+    --start-ns 34200000000000 --duration-ns 1000000000
+gzip -9 -c data/smoke.itch > fixtures/smoke.itch.gz
+# then re-run the replay on it and refresh expected/summary.txt
+```
 
 ## Report contents
 
