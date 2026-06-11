@@ -233,6 +233,10 @@ def run_backtest(
         # Rebalance portfolio
         portfolio.rebalance_simple(targets, prices)
 
+        # Record the period return; compute_metrics and the portfolio's
+        # internal equity curve are empty without this.
+        portfolio.record_return(prices)
+
         # Take snapshot AFTER rebalancing to match vectorbt timing
         snapshot = portfolio.snapshot(prices)
         snapshots.append(
@@ -248,8 +252,10 @@ def run_backtest(
     # Compute metrics
     metrics = portfolio.compute_metrics(periods_per_year=12.0, risk_free=0.0)
 
-    # Convert equity curve to dollars
-    equity_curve_usd = [e / 100.0 for e in portfolio.equity_curve()]
+    # Convert equity curve to dollars. Use the per-rebalance snapshots so
+    # the curve lines up 1:1 with the snapshot dates in the report
+    # (portfolio.equity_curve() also holds the pre-backtest initial entry).
+    equity_curve_usd = [e / 100.0 for e in equity_curve]
 
     results = {
         "equity_curve": equity_curve_usd,
@@ -279,8 +285,8 @@ def print_results(results: dict):
         print(f"  Sharpe ratio: {m.sharpe:.2f}")
         print(f"  Sortino ratio: {m.sortino:.2f}")
         print(f"  Max drawdown: {m.max_drawdown:.2%}")
-        print(f"  Annual return: {m.annual_return:.2%}")
-        print(f"  Annual volatility: {m.annual_volatility:.2%}")
+        print(f"  CAGR: {m.cagr:.2%}")
+        print(f"  Volatility: {m.volatility:.2%}")
 
     print("=" * 70)
 
@@ -358,9 +364,18 @@ def main():
                 {**s, 'date': s['date'].isoformat() if hasattr(s['date'], 'isoformat') else str(s['date'])}
                 for s in json_results['snapshots']
             ]
-        # Convert metrics to dict if it's an object
-        if 'metrics' in json_results and hasattr(json_results['metrics'], '__dict__'):
-            json_results['metrics'] = json_results['metrics'].__dict__
+        # Convert the Metrics pyclass to a plain dict (it has no __dict__)
+        m = json_results.get('metrics')
+        if m is not None and not isinstance(m, dict):
+            json_results['metrics'] = {
+                k: getattr(m, k)
+                for k in (
+                    'total_return', 'cagr', 'volatility', 'sharpe', 'sortino',
+                    'max_drawdown', 'calmar', 'num_periods', 'winning_periods',
+                    'losing_periods', 'cvar_95', 'win_rate', 'profit_factor',
+                    'payoff_ratio', 'kelly',
+                )
+            }
         
         with open(output_path, 'w') as f:
             json.dump(json_results, f, indent=2)

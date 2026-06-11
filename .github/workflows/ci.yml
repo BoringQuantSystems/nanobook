@@ -301,9 +301,11 @@ jobs:
       - name: Run backtest with cached data (zero cost)
         working-directory: examples/momentum-backtest
         run: |
+          # Window must cover the 12-month momentum lookback before the
+          # first rebalance, or the signal is all-NaN and no rebalances run.
           uv run python strategy.py \
             --data-file data/sp100_ohlcv.csv \
-            --start-date 2020-01-01 \
+            --start-date 2019-01-01 \
             --end-date 2020-12-31 \
             --initial-cash 1000000 \
             --commission-bps 0 \

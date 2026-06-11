@@ -1,5 +1,5 @@
-# Python version pin for reproducibility
-python==3.14.0
+# Python version is pinned by CI (actions/setup-python), not here:
+# "python" is not an installable PyPI package.
 
 # Build dependencies for local nanobook package
 maturin==1.11.5

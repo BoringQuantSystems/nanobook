@@ -1,6 +1,9 @@
 (* Performance benchmarks for OCaml oracle.
-   oracle_lib is unwrapped (see lib/dune), so its modules are in scope
-   directly — there is no Oracle_lib umbrella module to open. *)
+
+   EXCLUDED FROM THE BUILD (no dune file): this file has drifted from the
+   current oracle_lib API — e.g. Replay.replay_events no longer takes a
+   book argument — and never compiled against it. Kept as a starting
+   point if benchmarks are revived. *)
 
 (* Timing helper *)
 let time f =

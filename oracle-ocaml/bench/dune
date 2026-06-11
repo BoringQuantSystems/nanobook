@@ -1,4 +1,0 @@
-(executable
- (name bench)
- (libraries oracle_lib unix)
- (modules bench))

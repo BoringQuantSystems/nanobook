@@ -26,7 +26,7 @@ def plot_equity_curve(equity_curve: list, dates: list) -> str:
     
     # Convert dates to datetime objects if they're strings
     if dates and isinstance(dates[0], str):
-        dates = [datetime.strptime(d, '%Y-%m-%d') for d in dates]
+        dates = [datetime.fromisoformat(d) for d in dates]
     
     ax.plot(dates, equity_curve, linewidth=2, label='Portfolio Value')
     ax.axhline(y=equity_curve[0], color='r', linestyle='--', alpha=0.5, label='Initial')
@@ -68,7 +68,7 @@ def plot_drawdown(equity_curve: list, dates: list) -> str:
     fig, ax = plt.subplots(figsize=(12, 4))
     
     if dates and isinstance(dates[0], str):
-        dates = [datetime.strptime(d, '%Y-%m-%d') for d in dates]
+        dates = [datetime.fromisoformat(d) for d in dates]
     
     ax.fill_between(dates, drawdown, 0, alpha=0.3, color='red')
     ax.plot(dates, drawdown, color='red', linewidth=1)
@@ -183,11 +183,11 @@ def generate_html_report(results: Dict[str, Any], output_file: Path):
         </div>
         <div class="metric-card">
             <div class="metric-label">Annual Return</div>
-            <div class="metric-value">{metrics.get('annual_return', 0):.2%}</div>
+            <div class="metric-value">{metrics.get('cagr', 0):.2%}</div>
         </div>
         <div class="metric-card">
             <div class="metric-label">Annual Volatility</div>
-            <div class="metric-value">{metrics.get('annual_volatility', 0):.2%}</div>
+            <div class="metric-value">{metrics.get('volatility', 0):.2%}</div>
         </div>
     </div>
     
