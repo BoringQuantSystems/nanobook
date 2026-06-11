@@ -5,9 +5,8 @@ description:
   "Reference LOB implementation for differential testing against the Rust nanobook engine"
 depends: [
   "ocaml" {>= "4.14"}
-  "dune" {>= "3.16"}
+  "dune" {>= "3.16" & >= "3.16"}
   "yojson"
-  "crowbar"
   "odoc" {with-doc}
 ]
 build: [
