@@ -230,7 +230,7 @@ jobs:
           # slice. itch-slice reads raw ITCH frames, so decompress first.
           if [ ! -s "$SLICE_FILE" ]; then
             gunzip -c data/07302019.NASDAQ_ITCH50.gz | \
-              cargo run --bin itch-slice -- \
+              cargo run --release --bin itch-slice -- \
                 --input - \
                 --output "$SLICE_FILE" \
                 --start-ns 34200000000000 \
@@ -240,7 +240,9 @@ jobs:
       - name: Run replay on slice
         working-directory: examples/itch-replay
         run: |
-          cargo run --example itch-replay --features itch -- \
+          # --release: the slice holds a full minute of market-wide ITCH
+          # traffic; a debug build takes hours where release takes seconds.
+          cargo run --release --example itch-replay --features itch -- \
             --input data/07302019-0930-0931.itch \
             --output-dir data/replay-smoke
 
