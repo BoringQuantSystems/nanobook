@@ -243,7 +243,9 @@ jobs:
 
       - name: Install Python dependencies
         working-directory: examples/itch-replay
-        run: uv pip install -r requirements.txt
+        run: |
+          uv venv
+          uv pip install -r requirements.txt
 
       - name: Generate report
         working-directory: examples/itch-replay
@@ -289,7 +291,9 @@ jobs:
 
       - name: Install Python dependencies
         working-directory: examples/momentum-backtest
-        run: uv pip install -r requirements.txt
+        run: |
+          uv venv
+          uv pip install -r requirements.txt
 
       - name: Run backtest with cached data (zero cost)
         working-directory: examples/momentum-backtest

@@ -16,9 +16,9 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       
       - name: Install OCaml
-        uses: ocaml/setup-ocaml@8cc6339f55862749298d198ef84788b8d6acdacc # v2.2.10
+        uses: ocaml/setup-ocaml@e32b06a3e831ff2fbc6f08cf35be2085e3918014 # v3.6.1
         with:
-          ocaml-version: 5.4
+          ocaml-compiler: 5.4
       
       - name: Cache opam
         uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3.5.0

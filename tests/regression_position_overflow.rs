@@ -10,8 +10,8 @@
 
 #![cfg(feature = "portfolio")]
 
-use nanobook::portfolio::{CostModel, Portfolio, Position};
 use nanobook::Symbol;
+use nanobook::portfolio::{CostModel, Portfolio, Position};
 
 #[test]
 fn market_value_does_not_panic_on_large_quantity_times_price() {

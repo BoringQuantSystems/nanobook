@@ -33,9 +33,9 @@ pub mod strategy;
 pub mod sweep;
 
 pub use cost_model::CostModel;
-pub use metrics::{compute_metrics, Metrics};
+pub use metrics::{Metrics, compute_metrics};
 pub use position::Position;
-pub use strategy::{run_backtest, BacktestResult, EqualWeight, Strategy};
+pub use strategy::{BacktestResult, EqualWeight, Strategy, run_backtest};
 
 use crate::types::Symbol;
 use rustc_hash::FxHashMap;

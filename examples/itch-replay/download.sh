@@ -3,8 +3,9 @@ set -eu
 
 base_url="https://emi.nasdaq.com/ITCH/Nasdaq%20ITCH"
 file_name="07302019.NASDAQ_ITCH50.gz"
-data_dir="$(CDPATH= cd -- "$(dirname -- "$0")/data" && pwd)"
-expected_md5="$(CDPATH= cd -- "$(dirname -- "$0")/expected" && pwd)/sample.md5"
+script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+data_dir="$script_dir/data"
+expected_md5="$script_dir/expected/sample.md5"
 output="$data_dir/$file_name"
 url="$base_url/$file_name"
 

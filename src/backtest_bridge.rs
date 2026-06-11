@@ -651,16 +651,17 @@ fn effective_stop_level(
         candidates.push((level, "trailing"));
     }
 
-    if let Some(mult) = cfg.atr_multiple
-        && let Some(atr) = tracker.atr(cfg.atr_period)
-    {
-        let level = if tracker.side > 0 {
-            (tracker.reference_price as f64 - mult * atr).round() as i64
-        } else {
-            (tracker.reference_price as f64 + mult * atr).round() as i64
+    // Nested rather than a let-chain: let-chains need Rust 1.88, MSRV is 1.85.
+    if let Some(mult) = cfg.atr_multiple {
+        if let Some(atr) = tracker.atr(cfg.atr_period) {
+            let level = if tracker.side > 0 {
+                (tracker.reference_price as f64 - mult * atr).round() as i64
+            } else {
+                (tracker.reference_price as f64 + mult * atr).round() as i64
+            }
+            .max(1);
+            candidates.push((level, "atr"));
         }
-        .max(1);
-        candidates.push((level, "atr"));
     }
 
     if candidates.is_empty() {
