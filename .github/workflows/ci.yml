@@ -246,6 +246,8 @@ jobs:
         run: |
           uv venv
           uv pip install -r requirements.txt
+          # report.py imports nanobook; build the local bindings.
+          uv pip install ../../python
 
       - name: Generate report
         working-directory: examples/itch-replay
