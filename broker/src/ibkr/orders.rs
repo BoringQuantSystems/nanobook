@@ -75,10 +75,10 @@ use std::time::{Duration, Instant};
 
 use ibapi::client::blocking::Client;
 use ibapi::contracts::Contract;
-use ibapi::orders::order_builder::limit_order;
 #[cfg(not(feature = "strict-market-reject"))]
 use ibapi::orders::order_builder::market_order;
-use ibapi::orders::{Action as IbAction, CancelOrder, OrderData, PlaceOrder};
+use ibapi::orders::order_builder::{limit_order, stop, stop_limit};
+use ibapi::orders::{Action as IbAction, CancelOrder, Order, OrderData, PlaceOrder};
 use log::{debug, info, warn};
 
 use crate::error::BrokerError;
@@ -238,6 +238,47 @@ pub fn encode_order(
         }
 
         BrokerOrderType::Limit(price) => Ok((price.0 as f64 / 100.0, quantity)),
+        BrokerOrderType::Stop(price) => Ok((price.0 as f64 / 100.0, quantity)),
+        BrokerOrderType::StopLimit { limit, .. } => Ok((limit.0 as f64 / 100.0, quantity)),
+    }
+}
+
+fn encode_ibkr_order(
+    order: &BrokerOrder,
+    best_quote: Option<&BestQuote>,
+) -> Result<Order, BrokerError> {
+    let ib_action = match order.side {
+        BrokerSide::Buy => IbAction::Buy,
+        BrokerSide::Sell => IbAction::Sell,
+    };
+
+    match order.order_type {
+        #[cfg(feature = "strict-market-reject")]
+        BrokerOrderType::Market => Err(BrokerError::MarketOrderRejected),
+
+        #[cfg(not(feature = "strict-market-reject"))]
+        BrokerOrderType::Market => Ok(market_order(ib_action, order.quantity as f64)),
+
+        BrokerOrderType::Limit(_) => {
+            let (limit_price, quantity) = encode_order(order, best_quote)?;
+            Ok(limit_order(ib_action, quantity, limit_price))
+        }
+
+        BrokerOrderType::Stop(stop_price) => Ok(stop(
+            ib_action,
+            order.quantity as f64,
+            stop_price.0 as f64 / 100.0,
+        )),
+
+        BrokerOrderType::StopLimit {
+            stop: stop_price,
+            limit,
+        } => Ok(stop_limit(
+            ib_action,
+            order.quantity as f64,
+            limit.0 as f64 / 100.0,
+            stop_price.0 as f64 / 100.0,
+        )),
     }
 }
 
@@ -249,23 +290,7 @@ pub fn submit_order(
 ) -> Result<OrderId, BrokerError> {
     let contract = Contract::stock(order.symbol.as_str()).build();
 
-    let ib_action = match order.side {
-        BrokerSide::Buy => IbAction::Buy,
-        BrokerSide::Sell => IbAction::Sell,
-    };
-
-    let mut ib_order = match order.order_type {
-        #[cfg(feature = "strict-market-reject")]
-        BrokerOrderType::Market => return Err(BrokerError::MarketOrderRejected),
-
-        #[cfg(not(feature = "strict-market-reject"))]
-        BrokerOrderType::Market => market_order(ib_action, order.quantity as f64),
-
-        BrokerOrderType::Limit(_) => {
-            let (limit_price, quantity) = encode_order(order, best_quote)?;
-            limit_order(ib_action, quantity, limit_price)
-        }
-    };
+    let mut ib_order = encode_ibkr_order(order, best_quote)?;
 
     if let Some(cid) = &order.client_order_id {
         ib_order.order_ref = cid.as_str().to_string();
@@ -286,6 +311,23 @@ pub fn submit_order(
             order.quantity,
             order.symbol,
             price.0 as f64 / 100.0,
+            order_id
+        ),
+        BrokerOrderType::Stop(price) => info!(
+            "Submitting: {:?} {} {} @ STP ${:.2} (id={})",
+            order.side,
+            order.quantity,
+            order.symbol,
+            price.0 as f64 / 100.0,
+            order_id
+        ),
+        BrokerOrderType::StopLimit { stop, limit } => info!(
+            "Submitting: {:?} {} {} @ STP ${:.2} LMT ${:.2} (id={})",
+            order.side,
+            order.quantity,
+            order.symbol,
+            stop.0 as f64 / 100.0,
+            limit.0 as f64 / 100.0,
             order_id
         ),
     }
@@ -860,6 +902,45 @@ pub fn rate_limit_delay(interval_ms: u64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_order(order_type: BrokerOrderType) -> BrokerOrder {
+        BrokerOrder {
+            symbol: nanobook::Symbol::try_new("AAPL").unwrap(),
+            side: BrokerSide::Sell,
+            quantity: 10,
+            order_type,
+            client_order_id: None,
+        }
+    }
+
+    #[test]
+    fn test_stop_order_encodes_stop_price() {
+        let order = test_order(BrokerOrderType::Stop(nanobook::Price(18_250)));
+
+        let ib_order = encode_ibkr_order(&order, None).unwrap();
+
+        assert_eq!(ib_order.order_type, "STP");
+        assert!(matches!(ib_order.action, IbAction::Sell));
+        assert_eq!(ib_order.total_quantity, 10.0);
+        assert_eq!(ib_order.aux_price, Some(182.50));
+        assert_eq!(ib_order.limit_price, None);
+    }
+
+    #[test]
+    fn test_stop_limit_order_encodes_stop_and_limit_prices() {
+        let order = test_order(BrokerOrderType::StopLimit {
+            stop: nanobook::Price(18_250),
+            limit: nanobook::Price(18_100),
+        });
+
+        let ib_order = encode_ibkr_order(&order, None).unwrap();
+
+        assert_eq!(ib_order.order_type, "STP LMT");
+        assert!(matches!(ib_order.action, IbAction::Sell));
+        assert_eq!(ib_order.total_quantity, 10.0);
+        assert_eq!(ib_order.aux_price, Some(182.50));
+        assert_eq!(ib_order.limit_price, Some(181.00));
+    }
 
     #[test]
     fn test_dedup_cache_detects_duplicates() {

@@ -99,11 +99,12 @@ impl PyIbkrBroker {
     ///     symbol: Ticker symbol (e.g., "AAPL")
     ///     side: "buy" or "sell"
     ///     quantity: Number of shares
-    ///     order_type: "market" or "limit"
-    ///     limit_price_cents: Price in cents (required for limit orders)
+    ///     order_type: "market", "limit", "stop", or "stop_limit"
+    ///     limit_price_cents: Price in cents (required for limit and stop_limit orders)
+    ///     stop_price_cents: Stop trigger price in cents (required for stop and stop_limit orders)
     ///
     /// Returns the broker-assigned order ID.
-    #[pyo3(signature = (symbol, side, quantity, order_type="market", limit_price_cents=None, client_order_id=None))]
+    #[pyo3(signature = (symbol, side, quantity, order_type="market", limit_price_cents=None, client_order_id=None, stop_price_cents=None))]
     fn submit_order(
         &self,
         symbol: &str,
@@ -112,6 +113,7 @@ impl PyIbkrBroker {
         order_type: &str,
         limit_price_cents: Option<i64>,
         client_order_id: Option<String>,
+        stop_price_cents: Option<i64>,
     ) -> PyResult<u64> {
         let sym = parse_symbol(symbol)?;
 
@@ -135,9 +137,33 @@ impl PyIbkrBroker {
                 })?;
                 nanobook_broker::BrokerOrderType::Limit(nanobook::Price(price))
             }
+            "stop" => {
+                let price = stop_price_cents.ok_or_else(|| {
+                    pyo3::exceptions::PyValueError::new_err(
+                        "stop_price_cents required for stop orders",
+                    )
+                })?;
+                nanobook_broker::BrokerOrderType::Stop(nanobook::Price(price))
+            }
+            "stop_limit" => {
+                let stop = stop_price_cents.ok_or_else(|| {
+                    pyo3::exceptions::PyValueError::new_err(
+                        "stop_price_cents required for stop_limit orders",
+                    )
+                })?;
+                let limit = limit_price_cents.ok_or_else(|| {
+                    pyo3::exceptions::PyValueError::new_err(
+                        "limit_price_cents required for stop_limit orders",
+                    )
+                })?;
+                nanobook_broker::BrokerOrderType::StopLimit {
+                    stop: nanobook::Price(stop),
+                    limit: nanobook::Price(limit),
+                }
+            }
             _ => {
                 return Err(pyo3::exceptions::PyValueError::new_err(format!(
-                    "Invalid order_type '{order_type}'. Use 'market' or 'limit'."
+                    "Invalid order_type '{order_type}'. Use 'market', 'limit', 'stop', or 'stop_limit'."
                 )));
             }
         };

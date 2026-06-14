@@ -145,11 +145,13 @@ impl ClientOrderId {
     }
 }
 
-/// Market or limit order.
+/// Broker order type.
 #[derive(Debug, Clone, Copy)]
 pub enum BrokerOrderType {
     Market,
     Limit(Price),
+    Stop(Price),
+    StopLimit { stop: Price, limit: Price },
 }
 
 /// Live quote from the broker.

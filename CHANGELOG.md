@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **IBKR resting STOP / STOP_LIMIT orders** — `IbkrBroker.submit_order` accepts a
+  new optional `stop_price_cents` and routes `order_type="stop"` / `"stop_limit"`
+  through ibapi's `stop` / `stop_limit` order builders (`aux_price` = stop trigger,
+  `limit_price` = limit for stop-limit). Previously only market/limit were encodable.
+  Additive and backward-compatible: existing market/limit calls are unchanged and the
+  new parameter is last and optional. Enables broker-resting protective stops.
+
 ## [0.16.2] - 2026-06-11 - MSRV fix + repository metadata
 
 Patch release. No behavior changes.
