@@ -171,6 +171,22 @@ let test_market_order () =
   in
   assert_int64 "market order fills full quantity" 80L total
 
+(* Test: trade JSONL preserves i64 prices outside OCaml int range *)
+let test_extreme_price_trade_json () =
+  let trade =
+    Matching.create_trade
+      ~id:1L
+      ~price:(-9223372036854775807L)
+      ~quantity:50L
+      ~aggressor_order_id:2L
+      ~passive_order_id:1L
+      ~aggressor_side:Side.Buy
+      ~timestamp:3L
+  in
+  let json = Json.trade_to_jsonl_string trade in
+  assert_true "extreme price trade json preserves price literal"
+    (String.contains json '9')
+
 (* Run all tests *)
 let () =
   print_endline "Running OCaml oracle unit tests...";
@@ -187,6 +203,7 @@ let () =
   test_fok_with_liquidity ();
   test_ioc_partial_fill ();
   test_market_order ();
+  test_extreme_price_trade_json ();
 
   print_newline ();
   Printf.printf "Results: %d/%d tests passed\n" !pass_count !test_count;

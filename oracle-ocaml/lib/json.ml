@@ -154,7 +154,19 @@ let event_to_jsonl_string event =
   to_string (event_to_json event)
 
 let trade_to_jsonl_string trade =
-  to_string (trade_to_json trade)
+  let side = match trade.Matching.aggressor_side with
+    | Side.Buy -> "BUY"
+    | Side.Sell -> "SELL"
+  in
+  Printf.sprintf
+    {|{"id":%s,"price":%s,"quantity":%s,"aggressor_order_id":%s,"passive_order_id":%s,"aggressor_side":"%s","timestamp":%s}|}
+    (Int64.to_string trade.Matching.id)
+    (Int64.to_string trade.Matching.price)
+    (Int64.to_string trade.Matching.quantity)
+    (Int64.to_string trade.Matching.aggressor_order_id)
+    (Int64.to_string trade.Matching.passive_order_id)
+    side
+    (Int64.to_string trade.Matching.timestamp)
 
 (* Parse entire JSONL file *)
 let parse_jsonl_file filename =
