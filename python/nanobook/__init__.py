@@ -12,7 +12,15 @@ FillPolicy.NextBarTypical = FillPolicy.next_bar_typical()
 
 
 def capabilities():
-    return py_capabilities()
+    caps = list(py_capabilities())
+    caps.extend(
+        [
+            "monte_carlo_stock_valuation",
+            "scenario_terminal_paths",
+            "scenario_calibrate",
+        ]
+    )
+    return caps
 
 
 def backtest_weights(
