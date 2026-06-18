@@ -1,82 +1,128 @@
-# Golden Corpus for OCaml Oracle
+# Golden Corpus (verified)
 
-This directory contains golden corpus test cases for differential testing between the Rust nanobook implementation and the OCaml oracle.
+Byte-identical trade output from the Rust `corpus-replay` binary and the OCaml
+`replay_bin` oracle across all 18 cases below. CI runs the differential loop in
+`.github/workflows/oracle.yml`.
 
-## Structure
+## Layout
 
-Each test case consists of:
-- `input.jsonl`: Event log to replay
-- `output.jsonl`: Expected trade output (byte-identical from both implementations)
+Each case directory has:
 
-## Test Cases
+- `input.jsonl` — event log to replay
+- `output.jsonl` — expected trades (one JSON object per line, trailing newline)
 
-### 01-simple-cross
-Basic limit order crossing - sell at 10100, buy at 10100 should produce one trade.
+## Event dialect
 
-### 02-no-cross
-Limit orders with spread - sell at 10100, buy at 10000 should produce no trades.
+One JSON object per line. `type` is required; other fields depend on the type.
 
-### 03-market-order-sweep
-Market order sweeps multiple price levels.
+### SubmitLimit
 
-### 04-fok-no-match
-FOK order that cannot match - should be cancelled immediately.
-
-### 05-fok-partial-cross
-FOK order that partially crosses - should be cancelled if not fully filled.
-
-### 06-ioc-partial-fill
-IOC order that partially fills - remainder cancelled.
-
-### 07-multiple-same-price
-Multiple orders at same price level with FIFO execution.
-
-### 08-cancel-resting
-Cancel a resting order on the book.
-
-### 09-cancel-partially-filled
-Cancel a partially filled order.
-
-### 10-fok-full-fill
-FOK order that can fully fill - should execute normally.
-
-### 11-owner-basic
-Orders with owner IDs (STP disabled) - should trade normally.
-
-### 12-stp-off
-STP disabled - orders from same owner can trade freely.
-
-### 13-stp-cancel-newest
-STP CancelNewest - incoming order cancelled when self-trade detected.
-
-### 14-stp-cancel-oldest
-STP CancelOldest - resting order cancelled when self-trade detected.
-
-### 15-stp-decrement
-STP DecrementAndCancel - smaller (incoming) order cancelled.
-
-### 16-stp-decrement-equal
-STP DecrementAndCancel - equal quantities, resting order cancelled.
-
-## Running Tests
-
-```bash
-# Run OCaml oracle on input
-cd oracle-ocaml
-opam exec -- dune exec bin/replay_bin.exe -- test/corpus/01-simple-cross/input.jsonl /tmp/ocaml-output.jsonl
-
-# Run Rust oracle on input (when implemented)
-cargo run --release --features event-log -- --input test/corpus/01-simple-cross/input.jsonl --output /tmp/rust-output.jsonl
-
-# Compare outputs
-diff /tmp/ocaml-output.jsonl test/corpus/01-simple-cross/output.jsonl
-diff /tmp/rust-output.jsonl test/corpus/01-simple-cross/output.jsonl
+```json
+{"type":"SubmitLimit","side":"BUY","price":10100,"quantity":100,"time_in_force":"GTC"}
 ```
 
-## Adding New Test Cases
+| Field | Required | Values |
+|-------|----------|--------|
+| `side` | yes | `"BUY"`, `"SELL"` |
+| `price` | yes | integer or decimal string (i64 cents) |
+| `quantity` | yes | positive integer |
+| `time_in_force` | yes | `"GTC"`, `"IOC"`, `"FOK"` |
+| `owner` | no | integer or `null` (STP participant id) |
+| `stp_policy` | no | `"Off"` (default), `"CancelNewest"`, `"CancelOldest"`, `"DecrementAndCancel"` |
 
-1. Create `test/corpus/NN-descriptor/` directory
-2. Add `input.jsonl` with events
-3. Run through OCaml oracle to generate `output.jsonl`
-4. Add description to this README
-5. Commit both files
+### SubmitMarket
+
+```json
+{"type":"SubmitMarket","side":"BUY","quantity":50}
+```
+
+Same optional `owner` and `stp_policy` as SubmitLimit. Market orders use IOC
+semantics (sweep best prices, cancel remainder).
+
+### Cancel
+
+```json
+{"type":"Cancel","order_id":1}
+```
+
+## Trade output dialect
+
+Field order is fixed for byte diffs:
+
+```json
+{"id":1,"price":10100,"quantity":50,"aggressor_order_id":2,"passive_order_id":1,"aggressor_side":"BUY","timestamp":3}
+```
+
+| Field | Meaning |
+|-------|---------|
+| `id` | Monotonic trade id from 1 |
+| `price` | Resting (passive) order price |
+| `quantity` | Fill size |
+| `aggressor_order_id` | Incoming order id |
+| `passive_order_id` | Resting order id |
+| `aggressor_side` | `"BUY"` or `"SELL"` |
+| `timestamp` | Monotonic counter from 1; order creation consumes one tick, each trade consumes another |
+
+Order ids and timestamps share one monotonic counter sequence per replay: each
+submit allocates the next order id and the next timestamp; each trade allocates
+the next timestamp (and trade id separately from 1).
+
+## Cases
+
+| Case | What it exercises |
+|------|-------------------|
+| 01-simple-cross | Basic limit cross |
+| 02-no-cross | Spread, no trade |
+| 03-market-order-sweep | Market sweeps multiple levels |
+| 04-fok-no-match | FOK rejected, no liquidity |
+| 05-fok-partial-cross | FOK rejected, partial liquidity |
+| 06-ioc-partial-fill | IOC partial, remainder cancelled |
+| 07-multiple-same-price | FIFO at one price |
+| 08-cancel-resting | Cancel resting order |
+| 09-cancel-partially-filled | Cancel after partial fill |
+| 10-fok-full-fill | FOK full fill |
+| 11-owner-basic | Owner tags, STP off |
+| 12-stp-off | Same owner crosses |
+| 13-stp-cancel-newest | STP cancels incoming |
+| 14-stp-cancel-oldest | STP cancels resting |
+| 15-stp-decrement | STP decrements smaller (incoming) |
+| 16-stp-decrement-equal | STP equal qty, resting cancelled |
+| 17-min-price | i64 near `MIN` |
+| 18-max-price | i64 near `MAX` |
+
+## Run locally
+
+```bash
+# OCaml
+cd oracle-ocaml
+opam exec -- dune build
+opam exec -- dune exec bin/replay_bin.exe -- test/corpus/01-simple-cross/input.jsonl /tmp/ocaml.jsonl
+
+# Rust
+cargo build --release --features serde --bin corpus-replay
+./target/release/corpus-replay oracle-ocaml/test/corpus/01-simple-cross/input.jsonl /tmp/rust.jsonl
+
+diff test/corpus/01-simple-cross/output.jsonl /tmp/ocaml.jsonl
+diff test/corpus/01-simple-cross/output.jsonl /tmp/rust.jsonl
+```
+
+Full loop (from repo root):
+
+```bash
+set -euo pipefail
+for case in oracle-ocaml/test/corpus/*/; do
+  name=$(basename "$case")
+  opam exec -- dune exec --root oracle-ocaml bin/replay_bin.exe -- "$case/input.jsonl" "/tmp/ocaml-$name.jsonl"
+  ./target/release/corpus-replay "$case/input.jsonl" "/tmp/rust-$name.jsonl"
+  diff -u "$case/output.jsonl" "/tmp/ocaml-$name.jsonl"
+  diff -u "$case/output.jsonl" "/tmp/rust-$name.jsonl"
+  echo "ok $name"
+done
+```
+
+## Add case 19
+
+1. Create `oracle-ocaml/test/corpus/19-your-case/` with `input.jsonl`.
+2. Run either engine to produce a candidate `output.jsonl`.
+3. Run the other engine and `diff` until byte-identical.
+4. Add a row to the table above and commit all three files.

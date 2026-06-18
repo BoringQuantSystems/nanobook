@@ -40,6 +40,15 @@ logs?"
 └─────────────────────────────────────────────────┘
 ```
 
+### OCaml oracle (differential testing)
+
+`oracle-ocaml/` holds a minimal OCaml matching engine used only to cross-check the
+Rust implementation. The golden corpus under `oracle-ocaml/test/corpus/` replays
+JSONL events through both engines; CI (`.github/workflows/oracle.yml`) diffs
+trade output byte-for-byte. Local check: build `corpus-replay`
+(`cargo build --release --features serde --bin corpus-replay`), run the loop in
+`oracle-ocaml/test/corpus/README.md`, and fix any divergence before merging.
+
 ## What You Can Do
 
 - Turn a Python target-weight schedule into holdings, returns, equity curve,
