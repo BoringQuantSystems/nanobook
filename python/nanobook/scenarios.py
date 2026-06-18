@@ -208,14 +208,41 @@ def _pure_prob_above(xs: list[float], level: float) -> float:
     return sum(1 for x in xs if x > level) / len(xs)
 
 
-def _pure_normal(rng: random.Random, mu: float, sigma: float) -> float:
-    """Standard normal via Box-Muller for pure Python reproducibility."""
-    if sigma == 0:
+def _normal_box_muller(rng: random.Random, mu: float, sigma: float) -> float:
+    """Explicit Box-Muller normal draw (two ``random()`` calls per sample).
+
+    Fallback when you need predictable uniform consumption (no ``gauss`` spare
+    cache). Prefer :func:`_normal` for MC paths — it uses ``Random.gauss``.
+    """
+    if sigma == 0.0:
         return mu
     u1 = rng.random()
     u2 = rng.random()
     z = math.sqrt(-2.0 * math.log(max(u1, 1e-12))) * math.cos(2 * math.pi * u2)
     return mu + sigma * z
+
+
+def _normal(rng: random.Random | Any, mu: float, sigma: float) -> float:
+    """Draw one sample from ``N(mu, sigma)``.
+
+    * ``numpy.random.Generator`` (e.g. ``default_rng``): delegates to
+      ``rng.normal(mu, sigma)`` — same stream as the reference MC impl.
+    * ``random.Random``: uses ``rng.gauss(mu, sigma)`` (cached Box-Muller).
+
+    Reproducibility: same seed + same engine → bit-identical sequences.
+    With ``default_rng(seed)``, sequential :func:`_normal` calls match
+    ``rng.normal(mu, sigma)`` one draw at a time (verified in tests).
+    With ``random.Random(seed)``, sequences are stable across runs but use
+    MT19937, not PCG64 — integer seeds do **not** match numpy streams.
+
+    For explicit two-uniform Box-Muller without the gauss spare cache, use
+    :func:`_normal_box_muller`.
+    """
+    if sigma == 0.0:
+        return mu
+    if hasattr(rng, "normal") and not isinstance(rng, random.Random):
+        return float(rng.normal(mu, sigma))
+    return rng.gauss(mu, sigma)
 
 
 def compute_annualized_vol(returns: list[float] | Any, periods_per_year: int = 252) -> float:
@@ -250,7 +277,7 @@ def simple_gbm_terminal(
     sigma = annual_vol * math.sqrt(horizon)
     prices = []
     for _ in range(n_paths):
-        z = _pure_normal(rng, 0.0, 1.0)
+        z = _normal(rng, 0.0, 1.0)
         prices.append(current_price * math.exp(drift + sigma * z))
     return prices
 
@@ -267,11 +294,11 @@ def advanced_multi_driver_terminal(
     p = params
     prices = []
     for _ in range(n_paths):
-        gp = _pure_normal(rng, p.gp_growth_mean, p.gp_growth_sd)
-        marg = _pure_normal(rng, p.margin_boost_mean, p.margin_boost_sd)
-        mult = max(16.0, min(28.0, _pure_normal(rng, p.multiple_mean, p.multiple_sd)))
-        shock = _pure_normal(rng, p.macro_shock_mean, p.macro_shock_sd) - abs(
-            _pure_normal(rng, 0.0, p.bear_skew_factor)
+        gp = _normal(rng, p.gp_growth_mean, p.gp_growth_sd)
+        marg = _normal(rng, p.margin_boost_mean, p.margin_boost_sd)
+        mult = max(16.0, min(28.0, _normal(rng, p.multiple_mean, p.multiple_sd)))
+        shock = _normal(rng, p.macro_shock_mean, p.macro_shock_sd) - abs(
+            _normal(rng, 0.0, p.bear_skew_factor)
         )
         total_ret = (gp * 0.8) + (marg * 2.0) + ((mult / 20.0 - 1.0) * 0.6) + shock
         prices.append(current_price * math.exp(total_ret * horizon))
