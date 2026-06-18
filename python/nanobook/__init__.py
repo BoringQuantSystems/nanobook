@@ -117,4 +117,25 @@ def optimize_hrp(returns_matrix, symbols):
     return py_optimize_hrp(returns_matrix, symbols)
 
 
+# Pure-Python research helpers (minimal deps, optional numpy accel)
+try:
+    from .scenarios import (
+        MonteCarloResult,
+        monte_carlo_stock_valuation,
+        calibrate_from_fundamentals,
+        compute_annualized_vol,
+        terminal_prices_to_log_return_paths,
+        summarize_distribution,
+        ValuationParams,
+    )
+except Exception:  # pragma: no cover
+    MonteCarloResult = None  # type: ignore
+    monte_carlo_stock_valuation = None  # type: ignore
+    calibrate_from_fundamentals = None  # type: ignore
+    compute_annualized_vol = None  # type: ignore
+    terminal_prices_to_log_return_paths = None  # type: ignore
+    summarize_distribution = None  # type: ignore
+    ValuationParams = None  # type: ignore
+
+
 __all__ = [name for name in globals() if not name.startswith("_")]

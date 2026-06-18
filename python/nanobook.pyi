@@ -288,3 +288,67 @@ def optimize_risk_parity(returns_matrix: List[List[float]], symbols: List[str]) 
 def inverse_cvar_weights(returns_matrix: List[List[float]], symbols: List[str], alpha: float = 0.95) -> Dict[str, float]: ...
 def inverse_cdar_weights(returns_matrix: List[List[float]], symbols: List[str], alpha: float = 0.95) -> Dict[str, float]: ...
 def optimize_hrp(returns_matrix: List[List[float]], symbols: List[str]) -> Dict[str, float]: ...
+
+# Pure-Python scenarios (minimal deps)
+class MonteCarloResult:
+    ticker: str
+    method: str
+    horizon_years: float
+    current_price: float
+    terminal_prices: List[float]
+    summary: Dict[str, Any]
+    median_price: float
+    mean_price: float
+    implied_median_annual_return: float
+    p10_price: float
+    p90_price: float
+    def prob_above(self, level: float) -> float: ...
+    def quantile(self, q: float) -> float: ...
+    def as_log_returns(self) -> List[float]: ...
+    def to_price_paths(self, n_periods: int, *, seed: Optional[Union[int, Any]] = None, method: str = "linear") -> List[List[float]]: ...
+    def to_summary_dict(self) -> Dict[str, Any]: ...
+
+def monte_carlo_stock_valuation(
+    ticker: str,
+    current_price: float,
+    *,
+    version: str = "advanced",
+    n_paths: int = 5000,
+    horizon: float = 1.0,
+    seed: Optional[Union[int, Any]] = 42,
+    expected_annual_return: float = 0.18,
+    annual_vol: float = 0.38,
+    gp_growth_mean: float = 0.16,
+    gp_growth_sd: float = 0.06,
+    margin_boost_mean: float = 0.02,
+    margin_boost_sd: float = 0.03,
+    multiple_mean: float = 22.0,
+    multiple_sd: float = 3.5,
+    macro_shock_mean: float = -0.03,
+    macro_shock_sd: float = 0.11,
+    bear_skew_factor: float = 0.04,
+    hurdle_rate: float = 0.08,
+    bull_price: Optional[float] = None,
+    bear_price: Optional[float] = None,
+) -> MonteCarloResult: ...
+def calibrate_from_fundamentals(
+    ticker: str,
+    *,
+    current_price: float,
+    hist_vol: Optional[float] = None,
+    expected_annual_return: Optional[float] = None,
+    gp_growth: Optional[float] = None,
+    margin_expansion: Optional[float] = None,
+    fwd_multiple: Optional[float] = None,
+    macro_drag: Optional[float] = None,
+) -> Dict[str, float]: ...
+def compute_annualized_vol(returns: List[float], periods_per_year: int = 252) -> float: ...
+def terminal_prices_to_log_return_paths(
+    terminal_prices: List[float],
+    current_price: float,
+    n_periods: int,
+    *,
+    seed: Optional[Union[int, Any]] = None,
+    method: str = "linear",
+) -> List[List[float]]: ...
+def summarize_distribution(prices: List[float], current_price: float) -> Dict[str, float]: ...
