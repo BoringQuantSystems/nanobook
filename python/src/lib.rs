@@ -102,6 +102,26 @@ fn nanobook(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(indicators::py_bollinger, m)?)?;
     m.add_function(wrap_pyfunction!(indicators::py_atr, m)?)?;
     m.add_function(wrap_pyfunction!(indicators::py_wilder_atr, m)?)?;
+    m.add_function(wrap_pyfunction!(indicators::py_stoch, m)?)?;
+    m.add_function(wrap_pyfunction!(indicators::py_stochf, m)?)?;
+    m.add_function(wrap_pyfunction!(indicators::py_stochrsi, m)?)?;
+    m.add_function(wrap_pyfunction!(indicators::py_plus_di, m)?)?;
+    m.add_function(wrap_pyfunction!(indicators::py_minus_di, m)?)?;
+    m.add_function(wrap_pyfunction!(indicators::py_dx, m)?)?;
+    m.add_function(wrap_pyfunction!(indicators::py_adx, m)?)?;
+    m.add_function(wrap_pyfunction!(indicators::py_cci, m)?)?;
+    m.add_function(wrap_pyfunction!(indicators::py_willr, m)?)?;
+    m.add_function(wrap_pyfunction!(indicators::py_ultosc, m)?)?;
+    m.add_function(wrap_pyfunction!(indicators::py_mom, m)?)?;
+    m.add_function(wrap_pyfunction!(indicators::py_roc, m)?)?;
+    m.add_function(wrap_pyfunction!(indicators::py_rocp, m)?)?;
+    m.add_function(wrap_pyfunction!(indicators::py_rocr, m)?)?;
+    m.add_function(wrap_pyfunction!(indicators::py_obv, m)?)?;
+    m.add_function(wrap_pyfunction!(indicators::py_ad, m)?)?;
+    m.add_function(wrap_pyfunction!(indicators::py_adosc, m)?)?;
+    m.add_function(wrap_pyfunction!(indicators::py_natr, m)?)?;
+    m.add_function(wrap_pyfunction!(indicators::py_trange, m)?)?;
+    m.add_function(wrap_pyfunction!(indicators::py_list_supported_indicators, m)?)?;
 
     // v0.8 — Statistics (scipy replacements)
     m.add_function(wrap_pyfunction!(stats::py_spearman, m)?)?;

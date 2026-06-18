@@ -7,9 +7,14 @@ checked into the repository and read-only from the Rust test side.
 Regenerate only when reference library versions in
 tests/parity/requirements.txt are deliberately bumped.
 
+When adding indicator X:
+  1. Append an entry to tests/parity/indicator_registry.json
+  2. Run this generator
+  3. reference_parity.rs and test_ref_indicators.py auto-cover the entry
+
 Usage:
     uv pip install -r tests/parity/requirements.txt
-    uv run python tests/parity/generate_golden.py
+    uv run python tests/parity/generate_golden.py [--verbose]
 
 System prerequisites:
     macOS:  brew install ta-lib
@@ -18,10 +23,12 @@ System prerequisites:
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import quantstats as qs
@@ -32,8 +39,11 @@ SEED = 42
 N = 500
 RETURN_SCALE = 0.01
 
+PARITY_DIR = Path(__file__).parent
+REGISTRY_PATH = PARITY_DIR / "indicator_registry.json"
 
-def to_jsonable(value):
+
+def to_jsonable(value: Any) -> Any:
     """Convert numpy scalars / arrays to JSON-compatible primitives.
 
     NaN and +/-Inf become None (JSON null) so the Rust side can
@@ -52,7 +62,82 @@ def to_jsonable(value):
     return value
 
 
+def load_registry() -> list[dict[str, Any]]:
+    data = json.loads(REGISTRY_PATH.read_text())
+    return data["indicators"]
+
+
+def call_talib(
+    entry: dict[str, Any],
+    close: np.ndarray,
+    highs: np.ndarray,
+    lows: np.ndarray,
+    volume: np.ndarray,
+    verbose: bool,
+) -> dict[str, list[Any]]:
+    func_name = entry["talib_func"]
+    func = getattr(talib, func_name)
+    args = dict(entry.get("talib_args", {}))
+    input_type = entry["input_type"]
+
+    if input_type == "close":
+        result = func(close, **args)
+    elif input_type == "ohlc":
+        result = func(highs, lows, close, **args)
+    elif input_type == "close_volume":
+        result = func(close, volume, **args)
+    elif input_type == "ohlcv":
+        result = func(highs, lows, close, volume, **args)
+    else:
+        raise ValueError(f"unknown input_type {input_type!r} for {entry['name']}")
+
+    if "golden_keys" in entry:
+        keys = entry["golden_keys"]
+        if not isinstance(result, tuple):
+            raise TypeError(f"{func_name} expected tuple output, got {type(result)}")
+        if len(result) != len(keys):
+            raise ValueError(
+                f"{func_name}: {len(result)} outputs vs {len(keys)} golden_keys"
+            )
+        out = {key: to_jsonable(arr) for key, arr in zip(keys, result, strict=True)}
+    else:
+        key = entry["golden_key"]
+        out = {key: to_jsonable(result)}
+
+    if verbose:
+        for key, arr in out.items():
+            finite = sum(1 for v in arr if v is not None)
+            print(f"  generated talib/{key}: {finite}/{len(arr)} finite values")
+
+    return out
+
+
+def generate_talib_section(
+    close: np.ndarray,
+    highs: np.ndarray,
+    lows: np.ndarray,
+    volume: np.ndarray,
+    verbose: bool,
+) -> dict[str, list[Any]]:
+    registry = load_registry()
+    talib_out: dict[str, list[Any]] = {}
+    if verbose:
+        print(f"Generating {len(registry)} registry entries...")
+    for entry in registry:
+        label = entry.get("golden_key") or ",".join(entry["golden_keys"])
+        if verbose:
+            print(f"- {entry['name']} ({label})")
+        talib_out.update(call_talib(entry, close, highs, lows, volume, verbose))
+    return talib_out
+
+
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--verbose", "-v", action="store_true", help="Print per-key generation stats"
+    )
+    args = parser.parse_args()
+
     # Seeded inputs. NEVER change SEED or N without a deliberate
     # decision; every regenerated value depends on them.
     rng = np.random.default_rng(SEED)
@@ -64,21 +149,17 @@ def main() -> int:
     close = 100.0 * np.cumprod(1.0 + returns)
     highs = close * (1.0 + 0.002 * rng.random(N))
     lows = close * (1.0 - 0.002 * rng.random(N))
+    volume = rng.integers(1000, 10000, N).astype(float)
 
     # --- scipy.stats ---
     spearman_self = sps.spearmanr(returns, returns).statistic
     shuffled = np.roll(returns, 7)
     spearman_shuffled = sps.spearmanr(returns, shuffled).statistic
 
-    # --- TA-Lib ---
-    talib_rsi_14 = talib.RSI(close, timeperiod=14)
-    talib_atr_14 = talib.ATR(highs, lows, close, timeperiod=14)
+    # --- TA-Lib (registry-driven) ---
+    talib_section = generate_talib_section(close, highs, lows, volume, args.verbose)
 
     # --- quantstats ---
-    # quantstats.stats expects a pandas Series with a DatetimeIndex for
-    # drawdown computations (it subtracts time deltas from the index).
-    # Use a business-day index anchored at 2023-01-01 — the specific
-    # date is irrelevant to the numeric outputs.
     import pandas as pd
 
     idx = pd.date_range("2023-01-01", periods=N, freq="B")
@@ -86,24 +167,15 @@ def main() -> int:
     qs_sharpe = qs.stats.sharpe(returns_series, rf=0.0, periods=252, annualize=True)
     qs_sortino = qs.stats.sortino(returns_series, rf=0.0, periods=252, annualize=True)
     qs_max_dd = qs.stats.max_drawdown(returns_series)
-    # quantstats's expected_shortfall is a *hybrid*: parametric-normal
-    # VaR threshold, then empirical mean of returns below it. Nanobook
-    # exposes this under CVaRMethod::ParametricNormal (the v0.9.3
-    # default). From v0.10, the default is CVaRMethod::Historical —
-    # pure empirical, matches the standard academic convention.
     qs_cvar_95_parametric = qs.stats.expected_shortfall(
         returns_series, confidence=0.95
     )
 
-    # Pure empirical CVaR: sort, take the lowest ceil(n * alpha), mean.
-    # This is the new default (CVaRMethod::Historical) in v0.10.
     alpha = 0.05
     sorted_returns = np.sort(returns)
     tail_n = int(np.ceil(N * alpha))
     empirical_cvar_95 = float(sorted_returns[:tail_n].mean())
 
-    # Reference library versions — recorded so future regenerations
-    # can detect drift without re-running the script.
     import scipy
 
     versions = {
@@ -120,6 +192,7 @@ def main() -> int:
             "n": N,
             "return_scale": RETURN_SCALE,
             "versions": versions,
+            "registry": str(REGISTRY_PATH.name),
             "note": (
                 "Regenerate only when requirements.txt is deliberately "
                 "bumped. See tests/parity/README.md."
@@ -130,15 +203,13 @@ def main() -> int:
             "close": to_jsonable(close),
             "highs": to_jsonable(highs),
             "lows": to_jsonable(lows),
+            "volume": to_jsonable(volume),
         },
         "scipy": {
             "spearman_self_correlation": to_jsonable(spearman_self),
             "spearman_shuffled_correlation": to_jsonable(spearman_shuffled),
         },
-        "talib": {
-            "rsi_14": to_jsonable(talib_rsi_14),
-            "atr_14": to_jsonable(talib_atr_14),
-        },
+        "talib": talib_section,
         "quantstats": {
             "sharpe_annual_252": to_jsonable(qs_sharpe),
             "sortino_annual_252": to_jsonable(qs_sortino),
@@ -146,20 +217,18 @@ def main() -> int:
             "cvar_95_parametric": to_jsonable(qs_cvar_95_parametric),
         },
         "empirical": {
-            # Pure-empirical Historical CVaR at 95% confidence: mean of
-            # the lowest ceil(N * 0.05) returns. Matches nanobook's
-            # CVaRMethod::Historical (the v0.10 default).
             "cvar_95": empirical_cvar_95,
         },
     }
 
-    path = Path(__file__).parent / "golden.json"
+    path = PARITY_DIR / "golden.json"
     path.write_text(json.dumps(out, indent=2) + "\n")
 
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
     print(f"Wrote {path}")
     print(f"sha256: {digest}")
     print(f"Reference versions: {versions}")
+    print(f"TA-Lib keys: {sorted(talib_section.keys())}")
     return 0
 
 

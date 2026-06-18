@@ -1,0 +1,341 @@
+{
+  "version": 1,
+  "note": "Single source for golden generation and reference_parity.rs. When adding indicator X: append entry, run generate_golden.py, parity auto-covers.",
+  "indicators": [
+    {
+      "golden_key": "sma_10",
+      "name": "sma",
+      "category": "overlap",
+      "talib_func": "SMA",
+      "input_type": "close",
+      "talib_args": { "timeperiod": 10 },
+      "rust_fn": "sma",
+      "rust_args": [10],
+      "tol": 1e-6
+    },
+    {
+      "golden_key": "sma_20",
+      "name": "sma",
+      "category": "overlap",
+      "talib_func": "SMA",
+      "input_type": "close",
+      "talib_args": { "timeperiod": 20 },
+      "rust_fn": "sma",
+      "rust_args": [20],
+      "tol": 1e-6
+    },
+    {
+      "golden_key": "sma_50",
+      "name": "sma",
+      "category": "overlap",
+      "talib_func": "SMA",
+      "input_type": "close",
+      "talib_args": { "timeperiod": 50 },
+      "rust_fn": "sma",
+      "rust_args": [50],
+      "tol": 1e-6
+    },
+    {
+      "golden_key": "ema_12",
+      "name": "ema",
+      "category": "overlap",
+      "talib_func": "EMA",
+      "input_type": "close",
+      "talib_args": { "timeperiod": 12 },
+      "rust_fn": "ema",
+      "rust_args": [12],
+      "tol": 1e-6
+    },
+    {
+      "golden_key": "ema_26",
+      "name": "ema",
+      "category": "overlap",
+      "talib_func": "EMA",
+      "input_type": "close",
+      "talib_args": { "timeperiod": 26 },
+      "rust_fn": "ema",
+      "rust_args": [26],
+      "tol": 1e-6
+    },
+    {
+      "golden_key": "rsi_14",
+      "name": "rsi",
+      "category": "momentum",
+      "talib_func": "RSI",
+      "input_type": "close",
+      "talib_args": { "timeperiod": 14 },
+      "rust_fn": "rsi",
+      "rust_args": [14],
+      "tol": 1e-6
+    },
+    {
+      "golden_keys": ["macd_12_26_9", "macd_signal_12_26_9", "macd_hist_12_26_9"],
+      "name": "macd",
+      "category": "momentum",
+      "talib_func": "MACD",
+      "input_type": "close",
+      "talib_args": {
+        "fastperiod": 12,
+        "slowperiod": 26,
+        "signalperiod": 9
+      },
+      "rust_fn": "macd",
+      "rust_args": [12, 26, 9],
+      "tol": 1e-6
+    },
+    {
+      "golden_keys": ["bb_upper_20", "bb_middle_20", "bb_lower_20"],
+      "name": "bbands",
+      "category": "overlap",
+      "talib_func": "BBANDS",
+      "input_type": "close",
+      "talib_args": {
+        "timeperiod": 20,
+        "nbdevup": 2.0,
+        "nbdevdn": 2.0
+      },
+      "rust_fn": "bbands",
+      "rust_args": [20, 2.0, 2.0],
+      "tol": 1e-6
+    },
+    {
+      "golden_key": "atr_14",
+      "name": "atr",
+      "category": "volatility",
+      "talib_func": "ATR",
+      "input_type": "ohlc",
+      "talib_args": { "timeperiod": 14 },
+      "rust_fn": "atr",
+      "rust_args": [14],
+      "tol": 1e-6
+    },
+    {
+      "golden_keys": ["stoch_k_5_3_3", "stoch_d_5_3_3"],
+      "name": "stoch",
+      "category": "momentum",
+      "talib_func": "STOCH",
+      "input_type": "ohlc",
+      "talib_args": {
+        "fastk_period": 5,
+        "slowk_period": 3,
+        "slowk_matype": 0,
+        "slowd_period": 3,
+        "slowd_matype": 0
+      },
+      "rust_fn": "stoch",
+      "rust_args": [5, 3, 3],
+      "tol": 1e-6
+    },
+    {
+      "golden_keys": ["stochf_k_5_3", "stochf_d_5_3"],
+      "name": "stochf",
+      "category": "momentum",
+      "talib_func": "STOCHF",
+      "input_type": "ohlc",
+      "talib_args": {
+        "fastk_period": 5,
+        "fastd_period": 3,
+        "fastd_matype": 0
+      },
+      "rust_fn": "stochf",
+      "rust_args": [5, 3],
+      "tol": 1e-6
+    },
+    {
+      "golden_keys": ["stochrsi_k_14_5_3", "stochrsi_d_14_5_3"],
+      "name": "stochrsi",
+      "category": "momentum",
+      "talib_func": "STOCHRSI",
+      "input_type": "close",
+      "talib_args": {
+        "timeperiod": 14,
+        "fastk_period": 5,
+        "fastd_period": 3,
+        "fastd_matype": 0
+      },
+      "rust_fn": "stochrsi",
+      "rust_args": [14, 5, 3],
+      "tol": 1e-6
+    },
+    {
+      "golden_key": "adx_14",
+      "name": "adx",
+      "category": "momentum",
+      "talib_func": "ADX",
+      "input_type": "ohlc",
+      "talib_args": { "timeperiod": 14 },
+      "rust_fn": "adx",
+      "rust_args": [14],
+      "tol": 1e-6
+    },
+    {
+      "golden_key": "plus_di_14",
+      "name": "plus_di",
+      "category": "momentum",
+      "talib_func": "PLUS_DI",
+      "input_type": "ohlc",
+      "talib_args": { "timeperiod": 14 },
+      "rust_fn": "plus_di",
+      "rust_args": [14],
+      "tol": 1e-6
+    },
+    {
+      "golden_key": "minus_di_14",
+      "name": "minus_di",
+      "category": "momentum",
+      "talib_func": "MINUS_DI",
+      "input_type": "ohlc",
+      "talib_args": { "timeperiod": 14 },
+      "rust_fn": "minus_di",
+      "rust_args": [14],
+      "tol": 1e-6
+    },
+    {
+      "golden_key": "dx_14",
+      "name": "dx",
+      "category": "momentum",
+      "talib_func": "DX",
+      "input_type": "ohlc",
+      "talib_args": { "timeperiod": 14 },
+      "rust_fn": "dx",
+      "rust_args": [14],
+      "tol": 1e-6
+    },
+    {
+      "golden_key": "cci_14",
+      "name": "cci",
+      "category": "momentum",
+      "talib_func": "CCI",
+      "input_type": "ohlc",
+      "talib_args": { "timeperiod": 14 },
+      "rust_fn": "cci",
+      "rust_args": [14],
+      "tol": 1e-6
+    },
+    {
+      "golden_key": "willr_14",
+      "name": "willr",
+      "category": "momentum",
+      "talib_func": "WILLR",
+      "input_type": "ohlc",
+      "talib_args": { "timeperiod": 14 },
+      "rust_fn": "willr",
+      "rust_args": [14],
+      "tol": 1e-6
+    },
+    {
+      "golden_key": "ultosc_7_14_28",
+      "name": "ultosc",
+      "category": "momentum",
+      "talib_func": "ULTOSC",
+      "input_type": "ohlc",
+      "talib_args": {
+        "timeperiod1": 7,
+        "timeperiod2": 14,
+        "timeperiod3": 28
+      },
+      "rust_fn": "ultosc",
+      "rust_args": [7, 14, 28],
+      "tol": 1e-6
+    },
+    {
+      "golden_key": "mom_10",
+      "name": "mom",
+      "category": "momentum",
+      "talib_func": "MOM",
+      "input_type": "close",
+      "talib_args": { "timeperiod": 10 },
+      "rust_fn": "mom",
+      "rust_args": [10],
+      "tol": 1e-6
+    },
+    {
+      "golden_key": "roc_10",
+      "name": "roc",
+      "category": "momentum",
+      "talib_func": "ROC",
+      "input_type": "close",
+      "talib_args": { "timeperiod": 10 },
+      "rust_fn": "roc",
+      "rust_args": [10],
+      "tol": 1e-6
+    },
+    {
+      "golden_key": "rocp_10",
+      "name": "rocp",
+      "category": "momentum",
+      "talib_func": "ROCP",
+      "input_type": "close",
+      "talib_args": { "timeperiod": 10 },
+      "rust_fn": "rocp",
+      "rust_args": [10],
+      "tol": 1e-6
+    },
+    {
+      "golden_key": "rocr_10",
+      "name": "rocr",
+      "category": "momentum",
+      "talib_func": "ROCR",
+      "input_type": "close",
+      "talib_args": { "timeperiod": 10 },
+      "rust_fn": "rocr",
+      "rust_args": [10],
+      "tol": 1e-6
+    },
+    {
+      "golden_key": "obv",
+      "name": "obv",
+      "category": "volume",
+      "talib_func": "OBV",
+      "input_type": "close_volume",
+      "talib_args": {},
+      "rust_fn": "obv",
+      "rust_args": [],
+      "tol": 1e-6
+    },
+    {
+      "golden_key": "ad",
+      "name": "ad",
+      "category": "volume",
+      "talib_func": "AD",
+      "input_type": "ohlcv",
+      "talib_args": {},
+      "rust_fn": "ad",
+      "rust_args": [],
+      "tol": 1e-6
+    },
+    {
+      "golden_key": "adosc_3_10",
+      "name": "adosc",
+      "category": "volume",
+      "talib_func": "ADOSC",
+      "input_type": "ohlcv",
+      "talib_args": { "fastperiod": 3, "slowperiod": 10 },
+      "rust_fn": "adosc",
+      "rust_args": [3, 10],
+      "tol": 1e-6
+    },
+    {
+      "golden_key": "natr_14",
+      "name": "natr",
+      "category": "volatility",
+      "talib_func": "NATR",
+      "input_type": "ohlc",
+      "talib_args": { "timeperiod": 14 },
+      "rust_fn": "natr",
+      "rust_args": [14],
+      "tol": 1e-6
+    },
+    {
+      "golden_key": "trange",
+      "name": "trange",
+      "category": "volatility",
+      "talib_func": "TRANGE",
+      "input_type": "ohlc",
+      "talib_args": {},
+      "rust_fn": "trange",
+      "rust_args": [],
+      "tol": 1e-6
+    }
+  ]
+}

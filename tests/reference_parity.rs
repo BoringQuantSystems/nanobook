@@ -39,7 +39,190 @@
 
 use std::path::PathBuf;
 
+use serde::Deserialize;
 use serde_json::Value;
+
+// --- Registry (shared with generate_golden.py) --------------------------------
+
+#[derive(Debug, Deserialize)]
+struct RegistryFile {
+    indicators: Vec<RegistryEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RegistryEntry {
+    golden_key: Option<String>,
+    golden_keys: Option<Vec<String>>,
+    name: String,
+    #[allow(dead_code)]
+    talib_func: String,
+    #[allow(dead_code)]
+    input_type: String,
+    rust_fn: String,
+    rust_args: Vec<serde_json::Value>,
+    tol: f64,
+}
+
+fn registry() -> RegistryFile {
+    let path: PathBuf = [
+        env!("CARGO_MANIFEST_DIR"),
+        "tests",
+        "parity",
+        "indicator_registry.json",
+    ]
+    .iter()
+    .collect();
+    let raw = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+        panic!(
+            "failed to read {}: {e}\n\
+             Add entries to indicator_registry.json (see tests/parity/README.md)",
+            path.display()
+        )
+    });
+    serde_json::from_str(&raw).expect("indicator_registry.json is not valid JSON")
+}
+
+fn golden_keys(entry: &RegistryEntry) -> Vec<String> {
+    if let Some(keys) = &entry.golden_keys {
+        keys.clone()
+    } else {
+        vec![entry.golden_key.clone().expect("golden_key or golden_keys required")]
+    }
+}
+
+fn usize_arg(v: &serde_json::Value, label: &str) -> usize {
+    v.as_u64()
+        .or_else(|| v.as_f64().map(|f| f as u64))
+        .expect(label) as usize
+}
+
+fn f64_arg(v: &serde_json::Value, label: &str) -> f64 {
+    v.as_f64().expect(label)
+}
+
+fn run_indicator(
+    entry: &RegistryEntry,
+    close: &[f64],
+    highs: &[f64],
+    lows: &[f64],
+    volume: &[f64],
+) -> Vec<Vec<f64>> {
+    match entry.rust_fn.as_str() {
+        "sma" => {
+            let period = usize_arg(&entry.rust_args[0], "sma period");
+            vec![nanobook::indicators::sma(close, period)]
+        }
+        "ema" => {
+            let period = usize_arg(&entry.rust_args[0], "ema period");
+            vec![nanobook::indicators::ema(close, period)]
+        }
+        "rsi" => {
+            let period = usize_arg(&entry.rust_args[0], "rsi period");
+            vec![nanobook::indicators::rsi(close, period)]
+        }
+        "macd" => {
+            let fast = usize_arg(&entry.rust_args[0], "macd fast");
+            let slow = usize_arg(&entry.rust_args[1], "macd slow");
+            let signal = usize_arg(&entry.rust_args[2], "macd signal");
+            let (macd, sig, hist) =
+                nanobook::indicators::macd(close, fast, slow, signal);
+            vec![macd, sig, hist]
+        }
+        "bbands" => {
+            let period = usize_arg(&entry.rust_args[0], "bbands period");
+            let up = f64_arg(&entry.rust_args[1], "bbands nbdevup");
+            let dn = f64_arg(&entry.rust_args[2], "bbands nbdevdn");
+            let (upper, middle, lower) =
+                nanobook::indicators::bbands(close, period, up, dn);
+            vec![upper, middle, lower]
+        }
+        "atr" => {
+            let period = usize_arg(&entry.rust_args[0], "atr period");
+            vec![nanobook::indicators::atr(highs, lows, close, period)]
+        }
+        "stoch" => {
+            let fk = usize_arg(&entry.rust_args[0], "stoch fastk");
+            let sk = usize_arg(&entry.rust_args[1], "stoch slowk");
+            let sd = usize_arg(&entry.rust_args[2], "stoch slowd");
+            let (k, d) = nanobook::indicators::stoch(highs, lows, close, fk, sk, sd);
+            vec![k, d]
+        }
+        "stochf" => {
+            let fk = usize_arg(&entry.rust_args[0], "stochf fastk");
+            let fd = usize_arg(&entry.rust_args[1], "stochf fastd");
+            let (k, d) = nanobook::indicators::stochf(highs, lows, close, fk, fd);
+            vec![k, d]
+        }
+        "stochrsi" => {
+            let tp = usize_arg(&entry.rust_args[0], "stochrsi timeperiod");
+            let fk = usize_arg(&entry.rust_args[1], "stochrsi fastk");
+            let fd = usize_arg(&entry.rust_args[2], "stochrsi fastd");
+            let (k, d) = nanobook::indicators::stochrsi(close, tp, fk, fd);
+            vec![k, d]
+        }
+        "plus_di" => {
+            let period = usize_arg(&entry.rust_args[0], "plus_di period");
+            vec![nanobook::indicators::plus_di(highs, lows, close, period)]
+        }
+        "minus_di" => {
+            let period = usize_arg(&entry.rust_args[0], "minus_di period");
+            vec![nanobook::indicators::minus_di(highs, lows, close, period)]
+        }
+        "dx" => {
+            let period = usize_arg(&entry.rust_args[0], "dx period");
+            vec![nanobook::indicators::dx(highs, lows, close, period)]
+        }
+        "adx" => {
+            let period = usize_arg(&entry.rust_args[0], "adx period");
+            vec![nanobook::indicators::adx(highs, lows, close, period)]
+        }
+        "cci" => {
+            let period = usize_arg(&entry.rust_args[0], "cci period");
+            vec![nanobook::indicators::cci(highs, lows, close, period)]
+        }
+        "willr" => {
+            let period = usize_arg(&entry.rust_args[0], "willr period");
+            vec![nanobook::indicators::willr(highs, lows, close, period)]
+        }
+        "ultosc" => {
+            let p1 = usize_arg(&entry.rust_args[0], "ultosc period1");
+            let p2 = usize_arg(&entry.rust_args[1], "ultosc period2");
+            let p3 = usize_arg(&entry.rust_args[2], "ultosc period3");
+            vec![nanobook::indicators::ultosc(highs, lows, close, p1, p2, p3)]
+        }
+        "mom" => {
+            let period = usize_arg(&entry.rust_args[0], "mom period");
+            vec![nanobook::indicators::mom(close, period)]
+        }
+        "roc" => {
+            let period = usize_arg(&entry.rust_args[0], "roc period");
+            vec![nanobook::indicators::roc(close, period)]
+        }
+        "rocp" => {
+            let period = usize_arg(&entry.rust_args[0], "rocp period");
+            vec![nanobook::indicators::rocp(close, period)]
+        }
+        "rocr" => {
+            let period = usize_arg(&entry.rust_args[0], "rocr period");
+            vec![nanobook::indicators::rocr(close, period)]
+        }
+        "obv" => vec![nanobook::indicators::obv(close, volume)],
+        "ad" => vec![nanobook::indicators::ad(highs, lows, close, volume)],
+        "adosc" => {
+            let fast = usize_arg(&entry.rust_args[0], "adosc fast");
+            let slow = usize_arg(&entry.rust_args[1], "adosc slow");
+            vec![nanobook::indicators::adosc(
+                highs, lows, close, volume, fast, slow,
+            )]
+        }
+        "natr" => {
+            let period = usize_arg(&entry.rust_args[0], "natr period");
+            vec![nanobook::indicators::natr(highs, lows, close, period)]
+        }
+        "trange" => vec![nanobook::indicators::trange(highs, lows, close)],
+        other => panic!("unknown rust_fn in registry: {other}"),
+    }
+}
 
 // --- Fixture loader --------------------------------------------------------
 
@@ -164,42 +347,75 @@ fn golden_fixture_loads() {
 #[test]
 fn input_series_have_expected_length() {
     let g = golden();
-    for field in ["returns", "close", "highs", "lows"] {
+    for field in ["returns", "close", "highs", "lows", "volume"] {
         let v = f64_vec(&g, &["inputs", field]);
         assert_eq!(v.len(), 500, "inputs.{field} wrong length");
     }
 }
 
-// --- TA-Lib parity: indicators ---------------------------------------------
+// --- TA-Lib parity: indicators (registry-driven) ---------------------------
 
-/// RSI(14) on the synthetic close series must agree with TA-Lib.
-///
-/// Tolerance: 1e-6. Nanobook's RSI uses Wilder's smoothing, identical
-/// to TA-Lib's `RSI` function.
+/// Every registry entry must have a matching golden key and pass parity.
 #[test]
-fn rsi_matches_talib() {
+fn talib_registry_matches_golden() {
     let g = golden();
     let close = f64_vec(&g, &["inputs", "close"]);
-    let expected = f64_nullable(&g, &["talib", "rsi_14"]);
-
-    let ours = nanobook::indicators::rsi(&close, 14);
-    assert_indicator_parity(&ours, &expected, 1e-6, "rsi_14");
-}
-
-/// ATR(14) on the synthetic OHLC series must agree with TA-Lib.
-///
-/// Tolerance: 1e-6. Nanobook's ATR uses Wilder's smoothing and seeds
-/// from `tr[1..=period]`, matching TA-Lib's `ta_ATR.c`.
-#[test]
-fn atr_matches_talib() {
-    let g = golden();
     let highs = f64_vec(&g, &["inputs", "highs"]);
     let lows = f64_vec(&g, &["inputs", "lows"]);
-    let close = f64_vec(&g, &["inputs", "close"]);
-    let expected = f64_nullable(&g, &["talib", "atr_14"]);
+    let volume = f64_vec(&g, &["inputs", "volume"]);
+    let reg = registry();
 
-    let ours = nanobook::indicators::atr(&highs, &lows, &close, 14);
-    assert_indicator_parity(&ours, &expected, 1e-6, "atr_14");
+    assert!(
+        !reg.indicators.is_empty(),
+        "indicator_registry.json has no entries"
+    );
+
+    for entry in &reg.indicators {
+        let keys = golden_keys(entry);
+        let ours = run_indicator(entry, &close, &highs, &lows, &volume);
+        assert_eq!(
+            ours.len(),
+            keys.len(),
+            "{}: {} rust outputs vs {} golden keys",
+            entry.name,
+            ours.len(),
+            keys.len()
+        );
+
+        for (key, series) in keys.iter().zip(ours.iter()) {
+            let expected = f64_nullable(&g, &["talib", key]);
+            assert_indicator_parity(series, &expected, entry.tol, key);
+            let first_valid = expected.iter().position(|v| v.is_some()).unwrap_or(usize::MAX);
+            eprintln!(
+                "checking {key}: first_valid_index={first_valid}, tol={:.3e}",
+                entry.tol
+            );
+        }
+    }
+}
+
+/// Golden talib keys must all be accounted for in the registry.
+#[test]
+fn talib_golden_keys_known() {
+    let g = golden();
+    let reg = registry();
+    let known: std::collections::HashSet<String> = reg
+        .indicators
+        .iter()
+        .flat_map(golden_keys)
+        .collect();
+
+    let talib_obj = g
+        .get("talib")
+        .and_then(|v| v.as_object())
+        .expect("golden.json missing talib section");
+
+    for key in talib_obj.keys() {
+        assert!(
+            known.contains(key),
+            "golden talib key {key:?} has no registry entry"
+        );
+    }
 }
 
 // --- quantstats parity: portfolio metrics ----------------------------------

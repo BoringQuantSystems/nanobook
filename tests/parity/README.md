@@ -7,10 +7,20 @@ Sharpe, Sortino, CVaR, max drawdown, etc.) is pinned here.
 
 ## Files
 
+- `indicator_registry.json` — single source for TA-Lib golden keys, args,
+  and Rust dispatch (`generate_golden.py` + `reference_parity.rs` both read it).
 - `requirements.txt` — pinned Python reference-library versions.
-- `generate_golden.py` — seeded fixture generator. Run manually.
+- `generate_golden.py` — registry-driven seeded fixture generator. Run manually.
 - `golden.json` — generated output. **Check in.** Read-only from CI.
 - `README.md` — this file.
+
+## Adding an indicator
+
+1. Implement the Rust fn in `src/indicators.rs` (+ Python `py_*` binding).
+2. Append an entry to `indicator_registry.json`.
+3. Regenerate golden (procedure below) and commit `golden.json`.
+4. `reference_parity.rs` and `test_ref_indicators.py` pick up the entry automatically.
+5. Add the name to `indicators::list_supported()` for discoverability.
 
 ## Regeneration (manual only)
 

@@ -223,29 +223,34 @@ pub fn macd(
     let fast_ema = ema(&close[offset..], fast_period);
     let slow_ema = ema(close, slow_period);
 
-    // MACD line = fast EMA - slow EMA (valid from slow_period - 1)
-    let first_valid = slow_period - 1;
-    let mut macd_line = vec![f64::NAN; n];
-    for i in first_valid..n {
-        let fi = i - offset; // index into fast_ema
+    // MACD line = fast EMA - slow EMA (internally valid from slow_period - 1).
+    let slow_first = slow_period - 1;
+    let mut macd_internal = vec![f64::NAN; n];
+    for i in slow_first..n {
+        let fi = i - offset;
         if !fast_ema[fi].is_nan() && !slow_ema[i].is_nan() {
-            macd_line[i] = fast_ema[fi] - slow_ema[i];
+            macd_internal[i] = fast_ema[fi] - slow_ema[i];
         }
     }
 
-    // Signal line = EMA of valid MACD values (pass slice directly — no copy)
-    let signal_raw = ema(&macd_line[first_valid..], signal_period);
+    // Signal line = EMA of the MACD line (seeded from slow_first).
+    let signal_raw = ema(&macd_internal[slow_first..], signal_period);
 
+    // TA-Lib exposes macd/signal/histogram only once the signal EMA is
+    // warm: lookback = slow_period + signal_period - 2 (first index =
+    // slow_first + signal_period - 1).
+    let output_first = slow_first + signal_period - 1;
+
+    let mut macd_line = vec![f64::NAN; n];
     let mut signal_line = vec![f64::NAN; n];
-    for (j, &val) in signal_raw.iter().enumerate() {
-        signal_line[first_valid + j] = val;
-    }
-
-    // Histogram = MACD - Signal
     let mut histogram = vec![f64::NAN; n];
-    for i in 0..n {
-        if !macd_line[i].is_nan() && !signal_line[i].is_nan() {
-            histogram[i] = macd_line[i] - signal_line[i];
+
+    for (j, &sig) in signal_raw.iter().enumerate() {
+        let i = slow_first + j;
+        if i >= output_first && !macd_internal[i].is_nan() && !sig.is_nan() {
+            macd_line[i] = macd_internal[i];
+            signal_line[i] = sig;
+            histogram[i] = macd_internal[i] - sig;
         }
     }
 
@@ -360,6 +365,1127 @@ pub fn wilder_atr(high: &[f64], low: &[f64], close: &[f64], period: usize) -> Ve
 /// Backward-compatible alias for Wilder ATR.
 pub fn atr(high: &[f64], low: &[f64], close: &[f64], period: usize) -> Vec<f64> {
     wilder_atr(high, low, close, period)
+}
+
+/// Raw stochastic %K: `(close - LL) / (HH - LL) * 100` over `period`.
+fn stoch_raw_k(close: f64, high_window: &[f64], low_window: &[f64]) -> f64 {
+    let hh = high_window.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let ll = low_window.iter().copied().fold(f64::INFINITY, f64::min);
+    let denom = hh - ll;
+    if denom == 0.0 {
+        50.0
+    } else {
+        (close - ll) / denom * 100.0
+    }
+}
+
+/// Stochastic oscillator (slow %K and %D).
+///
+/// Matches TA-Lib `STOCH` with SMA smoothing (`matype=0`). Both outputs
+/// are exposed only once `%D` is warm: lookback =
+/// `(fastk + slowk + slowd) - 3` leading NaNs.
+pub fn stoch(
+    high: &[f64],
+    low: &[f64],
+    close: &[f64],
+    fastk_period: usize,
+    slowk_period: usize,
+    slowd_period: usize,
+) -> (Vec<f64>, Vec<f64>) {
+    let n = close.len();
+    let nan_pair = || (vec![f64::NAN; n], vec![f64::NAN; n]);
+    if n == 0
+        || fastk_period == 0
+        || slowk_period == 0
+        || slowd_period == 0
+        || n < fastk_period
+    {
+        return nan_pair();
+    }
+
+    let mut raw_k = vec![f64::NAN; n];
+    for i in (fastk_period - 1)..n {
+        let hw = &high[i + 1 - fastk_period..=i];
+        let lw = &low[i + 1 - fastk_period..=i];
+        raw_k[i] = stoch_raw_k(close[i], hw, lw);
+    }
+
+    let mut slow_k = vec![f64::NAN; n];
+    let k_smooth_start = fastk_period - 1 + slowk_period - 1;
+    for i in k_smooth_start..n {
+        let w = &raw_k[i + 1 - slowk_period..=i];
+        slow_k[i] = w.iter().sum::<f64>() / slowk_period as f64;
+    }
+
+    let mut slow_d = vec![f64::NAN; n];
+    let d_start = k_smooth_start + slowd_period - 1;
+    for i in d_start..n {
+        let w = &slow_k[i + 1 - slowd_period..=i];
+        slow_d[i] = w.iter().sum::<f64>() / slowd_period as f64;
+    }
+
+    let output_first = fastk_period - 1 + slowk_period - 1 + slowd_period - 1;
+    let mut out_k = vec![f64::NAN; n];
+    let mut out_d = vec![f64::NAN; n];
+    for i in output_first..n {
+        out_k[i] = slow_k[i];
+        out_d[i] = slow_d[i];
+    }
+    (out_k, out_d)
+}
+
+/// Fast stochastic oscillator (%K and %D).
+///
+/// Matches TA-Lib `STOCHF` with SMA `%D`. Outputs align once `%D` is warm.
+pub fn stochf(
+    high: &[f64],
+    low: &[f64],
+    close: &[f64],
+    fastk_period: usize,
+    fastd_period: usize,
+) -> (Vec<f64>, Vec<f64>) {
+    let n = close.len();
+    let nan_pair = || (vec![f64::NAN; n], vec![f64::NAN; n]);
+    if n == 0 || fastk_period == 0 || fastd_period == 0 || n < fastk_period {
+        return nan_pair();
+    }
+
+    let mut raw_k = vec![f64::NAN; n];
+    for i in (fastk_period - 1)..n {
+        let hw = &high[i + 1 - fastk_period..=i];
+        let lw = &low[i + 1 - fastk_period..=i];
+        raw_k[i] = stoch_raw_k(close[i], hw, lw);
+    }
+
+    let mut fast_d = vec![f64::NAN; n];
+    let d_start = fastk_period - 1 + fastd_period - 1;
+    for i in d_start..n {
+        let w = &raw_k[i + 1 - fastd_period..=i];
+        fast_d[i] = w.iter().sum::<f64>() / fastd_period as f64;
+    }
+
+    let output_first = d_start;
+    let mut out_k = vec![f64::NAN; n];
+    let mut out_d = vec![f64::NAN; n];
+    for i in output_first..n {
+        out_k[i] = raw_k[i];
+        out_d[i] = fast_d[i];
+    }
+    (out_k, out_d)
+}
+
+/// Stochastic RSI (%K and %D of RSI).
+///
+/// Matches TA-Lib `STOCHRSI` with SMA `%D`.
+pub fn stochrsi(
+    close: &[f64],
+    timeperiod: usize,
+    fastk_period: usize,
+    fastd_period: usize,
+) -> (Vec<f64>, Vec<f64>) {
+    let rsi_series = rsi(close, timeperiod);
+    // TA-Lib RSI(period) first finite value is at index `period`.
+    stoch_on_series(&rsi_series, timeperiod, fastk_period, fastd_period)
+}
+
+/// One-period directional movement (+DM1, -DM1) per TA-Lib rules.
+fn dm1(prev_high: f64, prev_low: f64, high: f64, low: f64) -> (f64, f64) {
+    let diff_p = high - prev_high;
+    let diff_m = prev_low - low;
+    let plus = if diff_p > 0.0 && diff_p > diff_m { diff_p } else { 0.0 };
+    let minus = if diff_m > 0.0 && diff_p < diff_m { diff_m } else { 0.0 };
+    (plus, minus)
+}
+
+/// True range for one bar (H-L, |H-C_prev|, |L-C_prev|).
+fn tr1(high: f64, low: f64, prev_close: f64) -> f64 {
+    let hl = high - low;
+    let hc = (high - prev_close).abs();
+    let lc = (low - prev_close).abs();
+    hl.max(hc).max(lc)
+}
+
+/// Directional index from smoothed +DI and -DI.
+fn dx_from_di(plus_di: f64, minus_di: f64) -> f64 {
+    let sum = plus_di + minus_di;
+    if sum == 0.0 {
+        0.0
+    } else {
+        100.0 * (plus_di - minus_di).abs() / sum
+    }
+}
+
+/// Plus Directional Indicator (Wilder DM + TR smoothing).
+///
+/// Matches TA-Lib `PLUS_DI`. First finite value at index `period`.
+pub fn plus_di(high: &[f64], low: &[f64], close: &[f64], period: usize) -> Vec<f64> {
+    let n = high.len();
+    let mut out = vec![f64::NAN; n];
+    if n == 0 || period == 0 || high.len() != low.len() || high.len() != close.len() || n <= period
+    {
+        return out;
+    }
+
+    let mut today = 0usize;
+    let mut prev_high = high[today];
+    let mut prev_low = low[today];
+    let mut prev_close = close[today];
+    let mut prev_plus_dm = 0.0_f64;
+    let mut prev_tr = 0.0_f64;
+
+    for _ in 0..(period - 1) {
+        today += 1;
+        let (plus_dm, _) = dm1(prev_high, prev_low, high[today], low[today]);
+        prev_high = high[today];
+        prev_low = low[today];
+        prev_plus_dm += plus_dm;
+        prev_tr += tr1(prev_high, prev_low, prev_close);
+        prev_close = close[today];
+    }
+
+    today += 1;
+    let (plus_dm, _) = dm1(prev_high, prev_low, high[today], low[today]);
+    prev_high = high[today];
+    prev_low = low[today];
+    prev_plus_dm -= prev_plus_dm / period as f64;
+    prev_plus_dm += plus_dm;
+    let tr = tr1(prev_high, prev_low, prev_close);
+    prev_tr = prev_tr - prev_tr / period as f64 + tr;
+    prev_close = close[today];
+    out[today] = if prev_tr == 0.0 {
+        0.0
+    } else {
+        100.0 * prev_plus_dm / prev_tr
+    };
+
+    while today + 1 < n {
+        today += 1;
+        let (plus_dm, _) = dm1(prev_high, prev_low, high[today], low[today]);
+        prev_high = high[today];
+        prev_low = low[today];
+        prev_plus_dm -= prev_plus_dm / period as f64;
+        prev_plus_dm += plus_dm;
+        let tr = tr1(prev_high, prev_low, prev_close);
+        prev_tr = prev_tr - prev_tr / period as f64 + tr;
+        prev_close = close[today];
+        out[today] = if prev_tr == 0.0 {
+            0.0
+        } else {
+            100.0 * prev_plus_dm / prev_tr
+        };
+    }
+
+    out
+}
+
+/// Minus Directional Indicator (Wilder DM + TR smoothing).
+///
+/// Matches TA-Lib `MINUS_DI`. First finite value at index `period`.
+pub fn minus_di(high: &[f64], low: &[f64], close: &[f64], period: usize) -> Vec<f64> {
+    let n = high.len();
+    let mut out = vec![f64::NAN; n];
+    if n == 0 || period == 0 || high.len() != low.len() || high.len() != close.len() || n <= period
+    {
+        return out;
+    }
+
+    let mut today = 0usize;
+    let mut prev_high = high[today];
+    let mut prev_low = low[today];
+    let mut prev_close = close[today];
+    let mut prev_minus_dm = 0.0_f64;
+    let mut prev_tr = 0.0_f64;
+
+    for _ in 0..(period - 1) {
+        today += 1;
+        let (_, minus_dm) = dm1(prev_high, prev_low, high[today], low[today]);
+        prev_high = high[today];
+        prev_low = low[today];
+        prev_minus_dm += minus_dm;
+        prev_tr += tr1(prev_high, prev_low, prev_close);
+        prev_close = close[today];
+    }
+
+    today += 1;
+    let (_, minus_dm) = dm1(prev_high, prev_low, high[today], low[today]);
+    prev_high = high[today];
+    prev_low = low[today];
+    prev_minus_dm -= prev_minus_dm / period as f64;
+    prev_minus_dm += minus_dm;
+    let tr = tr1(prev_high, prev_low, prev_close);
+    prev_tr = prev_tr - prev_tr / period as f64 + tr;
+    prev_close = close[today];
+    out[today] = if prev_tr == 0.0 {
+        0.0
+    } else {
+        100.0 * prev_minus_dm / prev_tr
+    };
+
+    while today + 1 < n {
+        today += 1;
+        let (_, minus_dm) = dm1(prev_high, prev_low, high[today], low[today]);
+        prev_high = high[today];
+        prev_low = low[today];
+        prev_minus_dm -= prev_minus_dm / period as f64;
+        prev_minus_dm += minus_dm;
+        let tr = tr1(prev_high, prev_low, prev_close);
+        prev_tr = prev_tr - prev_tr / period as f64 + tr;
+        prev_close = close[today];
+        out[today] = if prev_tr == 0.0 {
+            0.0
+        } else {
+            100.0 * prev_minus_dm / prev_tr
+        };
+    }
+
+    out
+}
+
+/// Directional Movement Index.
+///
+/// Matches TA-Lib `DX`. First finite value at index `period`.
+pub fn dx(high: &[f64], low: &[f64], close: &[f64], period: usize) -> Vec<f64> {
+    let n = high.len();
+    let mut out = vec![f64::NAN; n];
+    if n == 0 || period == 0 || high.len() != low.len() || high.len() != close.len() || n <= period
+    {
+        return out;
+    }
+
+    let mut today = 0usize;
+    let mut prev_high = high[today];
+    let mut prev_low = low[today];
+    let mut prev_close = close[today];
+    let mut prev_plus_dm = 0.0_f64;
+    let mut prev_minus_dm = 0.0_f64;
+    let mut prev_tr = 0.0_f64;
+
+    for _ in 0..(period - 1) {
+        today += 1;
+        let (plus_dm, minus_dm) = dm1(prev_high, prev_low, high[today], low[today]);
+        prev_high = high[today];
+        prev_low = low[today];
+        prev_plus_dm += plus_dm;
+        prev_minus_dm += minus_dm;
+        prev_tr += tr1(prev_high, prev_low, prev_close);
+        prev_close = close[today];
+    }
+
+    today += 1;
+    let (plus_dm, minus_dm) = dm1(prev_high, prev_low, high[today], low[today]);
+    prev_high = high[today];
+    prev_low = low[today];
+    prev_plus_dm -= prev_plus_dm / period as f64;
+    prev_plus_dm += plus_dm;
+    prev_minus_dm -= prev_minus_dm / period as f64;
+    prev_minus_dm += minus_dm;
+    let tr = tr1(prev_high, prev_low, prev_close);
+    prev_tr = prev_tr - prev_tr / period as f64 + tr;
+    prev_close = close[today];
+    if prev_tr != 0.0 {
+        let plus_di = 100.0 * prev_plus_dm / prev_tr;
+        let minus_di = 100.0 * prev_minus_dm / prev_tr;
+        out[today] = dx_from_di(plus_di, minus_di);
+    } else {
+        out[today] = 0.0;
+    }
+
+    while today + 1 < n {
+        today += 1;
+        let (plus_dm, minus_dm) = dm1(prev_high, prev_low, high[today], low[today]);
+        prev_high = high[today];
+        prev_low = low[today];
+        prev_plus_dm -= prev_plus_dm / period as f64;
+        prev_plus_dm += plus_dm;
+        prev_minus_dm -= prev_minus_dm / period as f64;
+        prev_minus_dm += minus_dm;
+        let tr = tr1(prev_high, prev_low, prev_close);
+        prev_tr = prev_tr - prev_tr / period as f64 + tr;
+        prev_close = close[today];
+        if prev_tr != 0.0 {
+            let plus_di = 100.0 * prev_plus_dm / prev_tr;
+            let minus_di = 100.0 * prev_minus_dm / prev_tr;
+            out[today] = dx_from_di(plus_di, minus_di);
+        } else {
+            out[today] = 0.0;
+        }
+    }
+
+    out
+}
+
+/// Average Directional Movement Index.
+///
+/// Matches TA-Lib `ADX`. First finite value at index `2 * period - 1`.
+pub fn adx(high: &[f64], low: &[f64], close: &[f64], period: usize) -> Vec<f64> {
+    let n = high.len();
+    let mut out = vec![f64::NAN; n];
+    if n == 0
+        || period < 2
+        || high.len() != low.len()
+        || high.len() != close.len()
+        || n <= 2 * period - 1
+    {
+        return out;
+    }
+
+    let lookback = 2 * period - 1;
+    let mut today = 0usize;
+    let mut prev_high = high[today];
+    let mut prev_low = low[today];
+    let mut prev_close = close[today];
+    let mut prev_plus_dm = 0.0_f64;
+    let mut prev_minus_dm = 0.0_f64;
+    let mut prev_tr = 0.0_f64;
+
+    for _ in 0..(period - 1) {
+        today += 1;
+        let (plus_dm, minus_dm) = dm1(prev_high, prev_low, high[today], low[today]);
+        prev_high = high[today];
+        prev_low = low[today];
+        prev_plus_dm += plus_dm;
+        prev_minus_dm += minus_dm;
+        prev_tr += tr1(prev_high, prev_low, prev_close);
+        prev_close = close[today];
+    }
+
+    let mut sum_dx = 0.0_f64;
+    for _ in 0..period {
+        today += 1;
+        let (plus_dm, minus_dm) = dm1(prev_high, prev_low, high[today], low[today]);
+        prev_high = high[today];
+        prev_low = low[today];
+        prev_minus_dm -= prev_minus_dm / period as f64;
+        prev_minus_dm += minus_dm;
+        prev_plus_dm -= prev_plus_dm / period as f64;
+        prev_plus_dm += plus_dm;
+        let tr = tr1(prev_high, prev_low, prev_close);
+        prev_tr = prev_tr - prev_tr / period as f64 + tr;
+        prev_close = close[today];
+        if prev_tr != 0.0 {
+            let plus_di = 100.0 * prev_plus_dm / prev_tr;
+            let minus_di = 100.0 * prev_minus_dm / prev_tr;
+            sum_dx += dx_from_di(plus_di, minus_di);
+        }
+    }
+
+    let mut prev_adx = sum_dx / period as f64;
+    out[today] = prev_adx;
+
+    while today + 1 < n {
+        today += 1;
+        let (plus_dm, minus_dm) = dm1(prev_high, prev_low, high[today], low[today]);
+        prev_high = high[today];
+        prev_low = low[today];
+        prev_minus_dm -= prev_minus_dm / period as f64;
+        prev_minus_dm += minus_dm;
+        prev_plus_dm -= prev_plus_dm / period as f64;
+        prev_plus_dm += plus_dm;
+        let tr = tr1(prev_high, prev_low, prev_close);
+        prev_tr = prev_tr - prev_tr / period as f64 + tr;
+        prev_close = close[today];
+        if prev_tr != 0.0 {
+            let plus_di = 100.0 * prev_plus_dm / prev_tr;
+            let minus_di = 100.0 * prev_minus_dm / prev_tr;
+            let dx = dx_from_di(plus_di, minus_di);
+            prev_adx = (prev_adx * (period as f64 - 1.0) + dx) / period as f64;
+        }
+        out[today] = prev_adx;
+    }
+
+    // TA-Lib lookback is 2*period-1; ensure leading NaNs through lookback-1.
+    for v in out.iter_mut().take(lookback) {
+        *v = f64::NAN;
+    }
+
+    out
+}
+
+/// Typical price for CCI / ULTOSC.
+fn typical_price(high: f64, low: f64, close: f64) -> f64 {
+    (high + low + close) / 3.0
+}
+
+/// Commodity Channel Index.
+///
+/// Matches TA-Lib `CCI`. First finite value at index `period - 1`.
+pub fn cci(high: &[f64], low: &[f64], close: &[f64], period: usize) -> Vec<f64> {
+    let n = close.len();
+    let mut out = vec![f64::NAN; n];
+    if n < period || period < 2 || high.len() != low.len() || high.len() != close.len() {
+        return out;
+    }
+
+    for i in (period - 1)..n {
+        let start = i + 1 - period;
+        let mut sum = 0.0_f64;
+        let mut tp_vals = Vec::with_capacity(period);
+        for j in start..=i {
+            let tp = typical_price(high[j], low[j], close[j]);
+            tp_vals.push(tp);
+            sum += tp;
+        }
+        let avg = sum / period as f64;
+        let last_tp = tp_vals[period - 1];
+        let mean_dev: f64 = tp_vals.iter().map(|v| (v - avg).abs()).sum();
+        let diff = last_tp - avg;
+        out[i] = if diff != 0.0 && mean_dev != 0.0 {
+            diff / (0.015 * (mean_dev / period as f64))
+        } else {
+            0.0
+        };
+    }
+
+    out
+}
+
+/// Williams' %R.
+///
+/// Matches TA-Lib `WILLR`. First finite value at index `period - 1`.
+pub fn willr(high: &[f64], low: &[f64], close: &[f64], period: usize) -> Vec<f64> {
+    let n = close.len();
+    let mut out = vec![f64::NAN; n];
+    if n < period || period < 2 || high.len() != low.len() || high.len() != close.len() {
+        return out;
+    }
+
+    for i in (period - 1)..n {
+        let start = i + 1 - period;
+        let highest = high[start..=i]
+            .iter()
+            .copied()
+            .fold(f64::NEG_INFINITY, f64::max);
+        let lowest = low[start..=i]
+            .iter()
+            .copied()
+            .fold(f64::INFINITY, f64::min);
+        let denom = highest - lowest;
+        out[i] = if denom == 0.0 {
+            0.0
+        } else {
+            -100.0 * (highest - close[i]) / denom
+        };
+    }
+
+    out
+}
+
+/// Ultimate Oscillator terms for one bar.
+fn ultosc_terms(high: f64, low: f64, close: f64, prev_close: f64) -> (f64, f64) {
+    let true_low = low.min(prev_close);
+    let close_minus_true_low = close - true_low;
+    let mut true_range = high - low;
+    let hc = (prev_close - high).abs();
+    if hc > true_range {
+        true_range = hc;
+    }
+    let lc = (prev_close - low).abs();
+    if lc > true_range {
+        true_range = lc;
+    }
+    (close_minus_true_low, true_range)
+}
+
+/// Ultimate Oscillator.
+///
+/// Matches TA-Lib `ULTOSC` with default periods 7/14/28. First finite
+/// value at index `max(period1, period2, period3)`.
+pub fn ultosc(
+    high: &[f64],
+    low: &[f64],
+    close: &[f64],
+    period1: usize,
+    period2: usize,
+    period3: usize,
+) -> Vec<f64> {
+    let n = close.len();
+    let mut out = vec![f64::NAN; n];
+    if n == 0 || period1 == 0 || period2 == 0 || period3 == 0 {
+        return out;
+    }
+    if high.len() != low.len() || high.len() != close.len() {
+        return out;
+    }
+
+    let mut periods = [period1, period2, period3];
+    periods.sort_unstable();
+    let p_short = periods[0];
+    let p_mid = periods[1];
+    let p_long = periods[2];
+    let lookback = p_long;
+    if n <= lookback {
+        return out;
+    }
+
+    let mut a1 = 0.0_f64;
+    let mut b1 = 0.0_f64;
+    let mut a2 = 0.0_f64;
+    let mut b2 = 0.0_f64;
+    let mut a3 = 0.0_f64;
+    let mut b3 = 0.0_f64;
+
+    let start = lookback;
+    for i in (start - p_long + 1)..start {
+        let (bp, tr) = ultosc_terms(high[i], low[i], close[i], close[i - 1]);
+        a3 += bp;
+        b3 += tr;
+        if i >= start - p_mid + 1 {
+            a2 += bp;
+            b2 += tr;
+        }
+        if i >= start - p_short + 1 {
+            a1 += bp;
+            b1 += tr;
+        }
+    }
+
+    let mut trailing1 = start - p_short + 1;
+    let mut trailing2 = start - p_mid + 1;
+    let mut trailing3 = start - p_long + 1;
+
+    for today in start..n {
+        let (bp, tr) = ultosc_terms(high[today], low[today], close[today], close[today - 1]);
+        a1 += bp;
+        a2 += bp;
+        a3 += bp;
+        b1 += tr;
+        b2 += tr;
+        b3 += tr;
+
+        let mut output = 0.0_f64;
+        if b1 != 0.0 {
+            output += 4.0 * (a1 / b1);
+        }
+        if b2 != 0.0 {
+            output += 2.0 * (a2 / b2);
+        }
+        if b3 != 0.0 {
+            output += a3 / b3;
+        }
+        out[today] = 100.0 * (output / 7.0);
+
+        let (bp1, tr1) =
+            ultosc_terms(high[trailing1], low[trailing1], close[trailing1], close[trailing1 - 1]);
+        a1 -= bp1;
+        b1 -= tr1;
+        let (bp2, tr2) =
+            ultosc_terms(high[trailing2], low[trailing2], close[trailing2], close[trailing2 - 1]);
+        a2 -= bp2;
+        b2 -= tr2;
+        let (bp3, tr3) =
+            ultosc_terms(high[trailing3], low[trailing3], close[trailing3], close[trailing3 - 1]);
+        a3 -= bp3;
+        b3 -= tr3;
+
+        trailing1 += 1;
+        trailing2 += 1;
+        trailing3 += 1;
+    }
+
+    out
+}
+
+/// Momentum: `close - close[period]`.
+///
+/// Matches TA-Lib `MOM`. First finite value at index `period`.
+pub fn mom(close: &[f64], period: usize) -> Vec<f64> {
+    let n = close.len();
+    let mut out = vec![f64::NAN; n];
+    if n <= period || period == 0 {
+        return out;
+    }
+    for i in period..n {
+        out[i] = close[i] - close[i - period];
+    }
+    out
+}
+
+/// Rate of change (percent): `100 * (close - close[period]) / close[period]`.
+///
+/// Matches TA-Lib `ROC`.
+pub fn roc(close: &[f64], period: usize) -> Vec<f64> {
+    let n = close.len();
+    let mut out = vec![f64::NAN; n];
+    if n <= period || period == 0 {
+        return out;
+    }
+    for i in period..n {
+        let prev = close[i - period];
+        out[i] = if prev == 0.0 {
+            0.0
+        } else {
+            100.0 * (close[i] - prev) / prev
+        };
+    }
+    out
+}
+
+/// Rate of change (ratio): `(close - close[period]) / close[period]`.
+///
+/// Matches TA-Lib `ROCP`.
+pub fn rocp(close: &[f64], period: usize) -> Vec<f64> {
+    let n = close.len();
+    let mut out = vec![f64::NAN; n];
+    if n <= period || period == 0 {
+        return out;
+    }
+    for i in period..n {
+        let prev = close[i - period];
+        out[i] = if prev == 0.0 {
+            0.0
+        } else {
+            (close[i] - prev) / prev
+        };
+    }
+    out
+}
+
+/// Rate of change ratio: `close / close[period]`.
+///
+/// Matches TA-Lib `ROCR`.
+pub fn rocr(close: &[f64], period: usize) -> Vec<f64> {
+    let n = close.len();
+    let mut out = vec![f64::NAN; n];
+    if n <= period || period == 0 {
+        return out;
+    }
+    for i in period..n {
+        let prev = close[i - period];
+        out[i] = if prev == 0.0 {
+            0.0
+        } else {
+            close[i] / prev
+        };
+    }
+    out
+}
+
+/// Chaikin money-flow contribution for one bar.
+fn ad_money_flow(high: f64, low: f64, close: f64, volume: f64) -> f64 {
+    let hl = high - low;
+    if hl > 0.0 {
+        (((close - low) - (high - close)) / hl) * volume
+    } else {
+        0.0
+    }
+}
+
+/// On Balance Volume.
+///
+/// Matches TA-Lib `OBV`: seeds with `volume[0]`, then adds/subtracts volume on
+/// close up/down moves.
+pub fn obv(close: &[f64], volume: &[f64]) -> Vec<f64> {
+    let n = close.len();
+    if n == 0 || volume.len() != n {
+        return Vec::new();
+    }
+
+    let mut out = vec![0.0; n];
+    let mut prev_obv = volume[0];
+    let mut prev_close = close[0];
+    out[0] = prev_obv;
+
+    for i in 1..n {
+        if close[i] > prev_close {
+            prev_obv += volume[i];
+        } else if close[i] < prev_close {
+            prev_obv -= volume[i];
+        }
+        out[i] = prev_obv;
+        prev_close = close[i];
+    }
+    out
+}
+
+/// Chaikin Accumulation/Distribution Line.
+///
+/// Matches TA-Lib `AD`.
+pub fn ad(high: &[f64], low: &[f64], close: &[f64], volume: &[f64]) -> Vec<f64> {
+    let n = close.len();
+    if n == 0 || high.len() != n || low.len() != n || volume.len() != n {
+        return Vec::new();
+    }
+
+    let mut out = vec![0.0; n];
+    let mut cum = 0.0;
+    for i in 0..n {
+        cum += ad_money_flow(high[i], low[i], close[i], volume[i]);
+        out[i] = cum;
+    }
+    out
+}
+
+/// Chaikin A/D Oscillator: `EMA(fast, AD) - EMA(slow, AD)`.
+///
+/// Matches TA-Lib `ADOSC` (EMA applied to the cumulative AD series).
+pub fn adosc(
+    high: &[f64],
+    low: &[f64],
+    close: &[f64],
+    volume: &[f64],
+    fast_period: usize,
+    slow_period: usize,
+) -> Vec<f64> {
+    let n = close.len();
+    let mut out = vec![f64::NAN; n];
+    if n == 0
+        || high.len() != n
+        || low.len() != n
+        || volume.len() != n
+        || fast_period < 2
+        || slow_period < 2
+    {
+        return out;
+    }
+
+    let slowest = fast_period.max(slow_period);
+    let lookback = slowest - 1;
+    if n <= lookback {
+        return out;
+    }
+
+    let fast_k = 2.0 / (fast_period as f64 + 1.0);
+    let one_minus_fast_k = 1.0 - fast_k;
+    let slow_k = 2.0 / (slow_period as f64 + 1.0);
+    let one_minus_slow_k = 1.0 - slow_k;
+
+    let start_idx = lookback;
+    let mut today = 0usize;
+    let mut ad_cum = 0.0_f64;
+
+    ad_cum += ad_money_flow(high[today], low[today], close[today], volume[today]);
+    today += 1;
+    let mut fast_ema = ad_cum;
+    let mut slow_ema = ad_cum;
+
+    while today < start_idx {
+        ad_cum += ad_money_flow(high[today], low[today], close[today], volume[today]);
+        today += 1;
+        fast_ema = fast_k * ad_cum + one_minus_fast_k * fast_ema;
+        slow_ema = slow_k * ad_cum + one_minus_slow_k * slow_ema;
+    }
+
+    let mut out_idx = start_idx;
+    while today < n {
+        ad_cum += ad_money_flow(high[today], low[today], close[today], volume[today]);
+        today += 1;
+        fast_ema = fast_k * ad_cum + one_minus_fast_k * fast_ema;
+        slow_ema = slow_k * ad_cum + one_minus_slow_k * slow_ema;
+        out[out_idx] = fast_ema - slow_ema;
+        out_idx += 1;
+    }
+
+    out
+}
+
+/// True Range (unsmoothed).
+///
+/// Matches TA-Lib `TRANGE`: index 0 is NaN; valid from index 1.
+pub fn trange(high: &[f64], low: &[f64], close: &[f64]) -> Vec<f64> {
+    let n = high.len();
+    let mut out = vec![f64::NAN; n];
+    if n == 0 || low.len() != n || close.len() != n {
+        return out;
+    }
+    if n < 2 {
+        return out;
+    }
+
+    for i in 1..n {
+        let hl = high[i] - low[i];
+        let hc = (high[i] - close[i - 1]).abs();
+        let lc = (low[i] - close[i - 1]).abs();
+        out[i] = hl.max(hc).max(lc);
+    }
+    out
+}
+
+/// Wilder-smoothed ATR from a precomputed TRANGE series.
+fn wilder_atr_from_trange(tr: &[f64], period: usize) -> Vec<f64> {
+    let n = tr.len();
+    let mut out = vec![f64::NAN; n];
+    if n <= period || period == 0 {
+        return out;
+    }
+
+    let seed: f64 = tr[1..=period].iter().sum::<f64>() / period as f64;
+    out[period] = seed;
+
+    for i in (period + 1)..n {
+        out[i] = (out[i - 1] * (period as f64 - 1.0) + tr[i]) / period as f64;
+    }
+    out
+}
+
+/// Normalized Average True Range: `ATR / close * 100`.
+///
+/// Matches TA-Lib `NATR`.
+pub fn natr(high: &[f64], low: &[f64], close: &[f64], period: usize) -> Vec<f64> {
+    let n = high.len();
+    let mut out = vec![f64::NAN; n];
+    if n == 0 || low.len() != n || close.len() != n || period == 0 {
+        return out;
+    }
+
+    let tr = trange(high, low, close);
+    let atr = wilder_atr_from_trange(&tr, period);
+
+    for i in 0..n {
+        if !atr[i].is_nan() {
+            out[i] = if close[i] == 0.0 {
+                0.0
+            } else {
+                atr[i] / close[i] * 100.0
+            };
+        }
+    }
+    out
+}
+
+/// Apply fast stochastic smoothing to an existing series (used by STOCHRSI).
+fn stoch_on_series(
+    series: &[f64],
+    series_first: usize,
+    fastk_period: usize,
+    fastd_period: usize,
+) -> (Vec<f64>, Vec<f64>) {
+    let n = series.len();
+    let nan_pair = || (vec![f64::NAN; n], vec![f64::NAN; n]);
+    if n == 0 || fastk_period == 0 || fastd_period == 0 {
+        return nan_pair();
+    }
+
+    let mut raw_k = vec![f64::NAN; n];
+    let raw_start = series_first + fastk_period - 1;
+    for i in raw_start..n {
+        let w = &series[i + 1 - fastk_period..=i];
+        if w.iter().any(|v| v.is_nan()) {
+            continue;
+        }
+        let hh = w.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        let ll = w.iter().copied().fold(f64::INFINITY, f64::min);
+        let denom = hh - ll;
+        raw_k[i] = if denom == 0.0 {
+            50.0
+        } else {
+            (series[i] - ll) / denom * 100.0
+        };
+    }
+
+    let mut fast_d = vec![f64::NAN; n];
+    let d_start = raw_start + fastd_period - 1;
+    for i in d_start..n {
+        let w = &raw_k[i + 1 - fastd_period..=i];
+        if w.iter().any(|v| v.is_nan()) {
+            continue;
+        }
+        fast_d[i] = w.iter().sum::<f64>() / fastd_period as f64;
+    }
+
+    let output_first = series_first + fastk_period - 1 + fastd_period - 1;
+    let mut out_k = vec![f64::NAN; n];
+    let mut out_d = vec![f64::NAN; n];
+    for i in output_first..n {
+        out_k[i] = raw_k[i];
+        out_d[i] = fast_d[i];
+    }
+    (out_k, out_d)
+}
+
+// ---------------------------------------------------------------------------
+// Discoverability (mirrors tests/parity/indicator_registry.json)
+// ---------------------------------------------------------------------------
+
+/// Metadata for a supported technical indicator.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IndicatorMeta {
+    pub name: &'static str,
+    pub category: &'static str,
+    pub input_type: &'static str,
+    pub rust_fn: &'static str,
+    pub has_parity: bool,
+}
+
+/// Return every indicator with golden parity coverage (Group A today).
+pub fn list_supported() -> &'static [IndicatorMeta] {
+    const SUPPORTED: &[IndicatorMeta] = &[
+        IndicatorMeta {
+            name: "sma",
+            category: "overlap",
+            input_type: "close",
+            rust_fn: "sma",
+            has_parity: true,
+        },
+        IndicatorMeta {
+            name: "ema",
+            category: "overlap",
+            input_type: "close",
+            rust_fn: "ema",
+            has_parity: true,
+        },
+        IndicatorMeta {
+            name: "rsi",
+            category: "momentum",
+            input_type: "close",
+            rust_fn: "rsi",
+            has_parity: true,
+        },
+        IndicatorMeta {
+            name: "macd",
+            category: "momentum",
+            input_type: "close",
+            rust_fn: "macd",
+            has_parity: true,
+        },
+        IndicatorMeta {
+            name: "bbands",
+            category: "overlap",
+            input_type: "close",
+            rust_fn: "bbands",
+            has_parity: true,
+        },
+        IndicatorMeta {
+            name: "atr",
+            category: "volatility",
+            input_type: "ohlc",
+            rust_fn: "atr",
+            has_parity: true,
+        },
+        IndicatorMeta {
+            name: "stoch",
+            category: "momentum",
+            input_type: "ohlc",
+            rust_fn: "stoch",
+            has_parity: true,
+        },
+        IndicatorMeta {
+            name: "stochf",
+            category: "momentum",
+            input_type: "ohlc",
+            rust_fn: "stochf",
+            has_parity: true,
+        },
+        IndicatorMeta {
+            name: "stochrsi",
+            category: "momentum",
+            input_type: "close",
+            rust_fn: "stochrsi",
+            has_parity: true,
+        },
+        IndicatorMeta {
+            name: "adx",
+            category: "momentum",
+            input_type: "ohlc",
+            rust_fn: "adx",
+            has_parity: true,
+        },
+        IndicatorMeta {
+            name: "plus_di",
+            category: "momentum",
+            input_type: "ohlc",
+            rust_fn: "plus_di",
+            has_parity: true,
+        },
+        IndicatorMeta {
+            name: "minus_di",
+            category: "momentum",
+            input_type: "ohlc",
+            rust_fn: "minus_di",
+            has_parity: true,
+        },
+        IndicatorMeta {
+            name: "dx",
+            category: "momentum",
+            input_type: "ohlc",
+            rust_fn: "dx",
+            has_parity: true,
+        },
+        IndicatorMeta {
+            name: "cci",
+            category: "momentum",
+            input_type: "ohlc",
+            rust_fn: "cci",
+            has_parity: true,
+        },
+        IndicatorMeta {
+            name: "willr",
+            category: "momentum",
+            input_type: "ohlc",
+            rust_fn: "willr",
+            has_parity: true,
+        },
+        IndicatorMeta {
+            name: "ultosc",
+            category: "momentum",
+            input_type: "ohlc",
+            rust_fn: "ultosc",
+            has_parity: true,
+        },
+        IndicatorMeta {
+            name: "mom",
+            category: "momentum",
+            input_type: "close",
+            rust_fn: "mom",
+            has_parity: true,
+        },
+        IndicatorMeta {
+            name: "roc",
+            category: "momentum",
+            input_type: "close",
+            rust_fn: "roc",
+            has_parity: true,
+        },
+        IndicatorMeta {
+            name: "rocp",
+            category: "momentum",
+            input_type: "close",
+            rust_fn: "rocp",
+            has_parity: true,
+        },
+        IndicatorMeta {
+            name: "rocr",
+            category: "momentum",
+            input_type: "close",
+            rust_fn: "rocr",
+            has_parity: true,
+        },
+        IndicatorMeta {
+            name: "obv",
+            category: "volume",
+            input_type: "close_volume",
+            rust_fn: "obv",
+            has_parity: true,
+        },
+        IndicatorMeta {
+            name: "ad",
+            category: "volume",
+            input_type: "ohlcv",
+            rust_fn: "ad",
+            has_parity: true,
+        },
+        IndicatorMeta {
+            name: "adosc",
+            category: "volume",
+            input_type: "ohlcv",
+            rust_fn: "adosc",
+            has_parity: true,
+        },
+        IndicatorMeta {
+            name: "natr",
+            category: "volatility",
+            input_type: "ohlc",
+            rust_fn: "natr",
+            has_parity: true,
+        },
+        IndicatorMeta {
+            name: "trange",
+            category: "volatility",
+            input_type: "ohlc",
+            rust_fn: "trange",
+            has_parity: true,
+        },
+    ];
+    SUPPORTED
 }
 
 // ---------------------------------------------------------------------------
@@ -551,5 +1677,61 @@ mod tests {
         let short = vec![1.0, 2.0, 3.0];
         let result = rsi(&short, 14);
         assert!(result.iter().all(|v| v.is_nan()));
+    }
+
+    #[test]
+    fn obv_flat_price_unchanged() {
+        let close = vec![10.0; 5];
+        let volume = vec![100.0, 200.0, 300.0, 400.0, 500.0];
+        let result = obv(&close, &volume);
+        assert_eq!(result[0], 100.0);
+        for i in 1..5 {
+            assert_eq!(result[i], result[i - 1]);
+        }
+    }
+
+    #[test]
+    fn ad_zero_range_bar_unchanged() {
+        let high = vec![10.0, 11.0];
+        let low = vec![10.0, 10.0];
+        let close = vec![10.0, 10.5];
+        let volume = vec![1000.0, 2000.0];
+        let result = ad(&high, &low, &close, &volume);
+        assert_eq!(result[0], 0.0);
+        assert_eq!(result[1], 0.0);
+    }
+
+    #[test]
+    fn adosc_lookback_nan() {
+        let high: Vec<f64> = (1..=20).map(|x| x as f64 + 1.0).collect();
+        let low: Vec<f64> = (1..=20).map(|x| x as f64 - 1.0).collect();
+        let close: Vec<f64> = (1..=20).map(|x| x as f64).collect();
+        let volume = vec![1000.0; 20];
+        let result = adosc(&high, &low, &close, &volume, 3, 10);
+        for v in result.iter().take(9) {
+            assert!(v.is_nan());
+        }
+        assert!(!result[9].is_nan());
+    }
+
+    #[test]
+    fn trange_first_bar_nan() {
+        let high = vec![11.0, 12.0, 13.0];
+        let low = vec![9.0, 10.0, 11.0];
+        let close = vec![10.0, 11.0, 12.0];
+        let result = trange(&high, &low, &close);
+        assert!(result[0].is_nan());
+        assert!(!result[1].is_nan());
+        assert!(result[1] > 0.0);
+    }
+
+    #[test]
+    fn natr_positive_on_synthetic() {
+        let high: Vec<f64> = (1..=30).map(|x| x as f64 + 0.5).collect();
+        let low: Vec<f64> = (1..=30).map(|x| x as f64 - 0.5).collect();
+        let close: Vec<f64> = (1..=30).map(|x| x as f64).collect();
+        let result = natr(&high, &low, &close, 14);
+        assert!(result.iter().take(14).all(|v| v.is_nan()));
+        assert!(result[14] > 0.0);
     }
 }

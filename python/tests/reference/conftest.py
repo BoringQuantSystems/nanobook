@@ -33,6 +33,12 @@ def random_ohlc(random_close):
 
 
 @pytest.fixture
+def random_volume(random_close):
+    """Simulated volume series aligned with random close prices."""
+    return np.random.default_rng(45).integers(1000, 10000, size=len(random_close)).astype(float)
+
+
+@pytest.fixture
 def random_returns(rng):
     """500 simulated daily returns for metric tests."""
     return rng.normal(0.0003, 0.012, size=500)
