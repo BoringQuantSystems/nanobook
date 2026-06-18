@@ -48,13 +48,20 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       
       - name: Build Rust project
-        run: cargo build --release --features event-log
+        run: cargo build --release --features serde --bin corpus-replay
       
       - name: Run differential tests
         run: |
-          # Run golden corpus tests comparing OCaml oracle output against Rust implementation
-          # Golden corpus location: oracle-ocaml/test/corpus/
-          echo "Golden corpus testing - to be implemented with corpus creation"
+          set -euo pipefail
+          for case in oracle-ocaml/test/corpus/*/; do
+            [ -f "$case/input.jsonl" ] || continue
+            name=$(basename "$case")
+            opam exec -- dune exec --root oracle-ocaml bin/replay_bin.exe -- "$case/input.jsonl" "/tmp/ocaml-$name.jsonl"
+            ./target/release/corpus-replay "$case/input.jsonl" "/tmp/rust-$name.jsonl"
+            diff -u "$case/output.jsonl" "/tmp/ocaml-$name.jsonl"
+            diff -u "$case/output.jsonl" "/tmp/rust-$name.jsonl"
+            echo "ok $name"
+          done
       
       - name: Test OCaml oracle library
         run: |
