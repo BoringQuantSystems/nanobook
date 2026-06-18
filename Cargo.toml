@@ -32,7 +32,7 @@ memmap2 = { version = "0.9", optional = true }
 [features]
 default = ["event-log"]
 event-log = []  # Enable event recording for replay (disable for max perf)
-serde = ["dep:serde"]
+serde = ["dep:serde", "dep:serde_json"]
 persistence = ["serde", "event-log", "dep:serde_json"]
 portfolio = []
 parallel = ["portfolio", "dep:rayon"]
@@ -46,6 +46,11 @@ serde_json = "1"  # reference-parity golden-fixture tests
 [[bin]]
 name = "lob"
 path = "src/bin/lob.rs"
+
+[[bin]]
+name = "corpus-replay"
+path = "src/bin/corpus-replay.rs"
+required-features = ["serde"]
 
 [[bench]]
 name = "throughput"

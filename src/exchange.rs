@@ -94,6 +94,12 @@ impl Exchange {
         self.stp_policy
     }
 
+    /// Update the self-trade prevention policy for subsequent submissions.
+    #[inline]
+    pub fn set_stp_policy(&mut self, policy: StpPolicy) {
+        self.stp_policy = policy;
+    }
+
     // === Order Submission ===
 
     /// Submit a limit order.
