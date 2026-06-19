@@ -626,6 +626,30 @@ mod tests {
     }
 
     #[test]
+    fn large_n_paths_stress_native() {
+        let p = ValuationParams::default();
+        let res = monte_carlo_stock_valuation(
+            "XYZ".to_string(),
+            74.0,
+            ModelVersion::Advanced,
+            100_000,
+            1.0,
+            42,
+            0.18,
+            0.38,
+            p,
+            0.08,
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(res.terminal_prices.len(), 100_000);
+        assert!(res.terminal_prices.iter().all(|p| p.is_finite() && *p > 0.0));
+        let med = res.median_price();
+        assert!(med >= 80.0 && med <= 95.0);
+    }
+
+    #[test]
     fn to_price_paths_linear_and_terminal_only() {
         let res = assemble_result(
             "P".to_string(),

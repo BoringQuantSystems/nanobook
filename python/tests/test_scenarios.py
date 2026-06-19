@@ -142,6 +142,23 @@ def test_pure_stdlib_path_without_numpy(monkeypatch):
     assert res.median_price > 0
 
 
+def test_large_n_paths_stress_advanced():
+    """Plan stress gate: 100k paths, finite terminals, stable median band."""
+    res = nanobook.monte_carlo_stock_valuation(
+        "XYZ",
+        74.0,
+        version="advanced",
+        n_paths=100_000,
+        seed=42,
+        gp_growth_mean=0.16,
+        multiple_mean=22.0,
+        macro_shock_mean=-0.03,
+    )
+    assert len(res.terminal_prices) == 100_000
+    assert all(math.isfinite(p) and p > 0 for p in res.terminal_prices)
+    assert 80.0 <= res.median_price <= 95.0
+
+
 def test_e2e_scenario_paths_into_backtest_weights():
     """End-to-end: MC terminals -> price schedule -> nanobook.backtest_weights."""
     res = nanobook.monte_carlo_stock_valuation(

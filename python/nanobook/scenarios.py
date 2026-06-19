@@ -362,9 +362,13 @@ def monte_carlo_stock_valuation(
     bull_price: float | None = None,
     bear_price: float | None = None,
 ) -> MonteCarloResult:
-    """Pure-Python version of the MC valuation.
+    """Run Monte Carlo terminal valuation (Rust when available, else pure-Python).
 
-    See the reference implementation and plan for full semantics.
+    Delegates to the Rust core via PyO3 when the extension is built with the
+    ``scenarios`` feature and ``seed`` is ``int`` or ``None``. Falls back to the
+    pure-Python path for ``random.Random`` seeds and no-extension builds.
+
+    See ``nanotrade/calc/scenarios.py`` and ADR-0006 for full semantics.
     """
     _validate_mc_inputs(current_price, n_paths, horizon, annual_vol)
 
