@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Rust Monte Carlo scenarios** — Core terminal valuation (simple GBM and advanced
+  multi-driver) lives in `src/scenarios.rs` behind the `scenarios` feature. The
+  Python extension draws with NumPy PCG64 and runs math/stats in Rust for frozen
+  parity (`rel_tol=1e-9`). A native ChaCha20 Rust API is available for Rust-only
+  callers. Pure-Python fallback remains for `random.Random` seeds and no-numpy
+  environments. See `docs/adr/0006-scenarios-rust-port-rng.md`.
+
 - **Pure-Python Monte Carlo scenarios** — `nanobook.scenarios` exposes
   `monte_carlo_stock_valuation`, `MonteCarloResult`, and helpers with stdlib-only
   runtime (optional numpy acceleration when installed). Includes frozen numpy parity

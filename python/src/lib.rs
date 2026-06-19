@@ -15,6 +15,8 @@ mod portfolio;
 mod position;
 mod results;
 mod risk;
+#[cfg(feature = "scenarios")]
+mod scenarios;
 mod stats;
 mod strategy;
 mod sweep;
@@ -34,6 +36,8 @@ fn capabilities() -> Vec<&'static str> {
         "inverse_cvar_weights",
         "inverse_cdar_weights",
         "backtest_holdings",
+        #[cfg(feature = "scenarios")]
+        "monte_carlo_stock_valuation",
     ]
 }
 
@@ -121,7 +125,10 @@ fn nanobook(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(indicators::py_adosc, m)?)?;
     m.add_function(wrap_pyfunction!(indicators::py_natr, m)?)?;
     m.add_function(wrap_pyfunction!(indicators::py_trange, m)?)?;
-    m.add_function(wrap_pyfunction!(indicators::py_list_supported_indicators, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        indicators::py_list_supported_indicators,
+        m
+    )?)?;
 
     // v0.8 — Statistics (scipy replacements)
     m.add_function(wrap_pyfunction!(stats::py_spearman, m)?)?;
@@ -154,6 +161,12 @@ fn nanobook(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(optimize::py_inverse_cdar_weights, m)?)?;
     m.add_function(wrap_pyfunction!(optimize::optimize_hrp, m)?)?;
     m.add_function(wrap_pyfunction!(optimize::py_optimize_hrp, m)?)?;
+
+    #[cfg(feature = "scenarios")]
+    {
+        m.add_class::<scenarios::PyMonteCarloResult>()?;
+        m.add_function(wrap_pyfunction!(scenarios::monte_carlo_stock_valuation, m)?)?;
+    }
 
     Ok(())
 }

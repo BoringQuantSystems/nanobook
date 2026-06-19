@@ -20,6 +20,16 @@ import pytest
 import nanobook
 
 
+def test_rust_scenarios_path_active_when_extension_built():
+    """Int/None seeds delegate to the Rust extension (numpy RNG bridge)."""
+    import nanobook.scenarios as sc
+
+    assert sc._HAS_RUST_SCENARIOS, "extension should be built with scenarios feature in dev/CI"
+    res = nanobook.monte_carlo_stock_valuation("T", 100.0, n_paths=10, seed=42, version="simple")
+    assert type(res).__name__ == "MonteCarloResult"
+    assert isinstance(res.terminal_prices, list)
+
+
 def test_monte_carlo_exposed_and_runs():
     assert hasattr(nanobook, "monte_carlo_stock_valuation")
     res = nanobook.monte_carlo_stock_valuation("T", 100.0, n_paths=100, seed=123, version="simple")
@@ -49,7 +59,7 @@ def test_simple_vs_advanced_differ():
 def test_parity_with_reference_impl():
     # Reference is the numpy version in nanotrade/calc (same monorepo)
     try:
-        sys.path.insert(0, str((__import__("pathlib").Path(__file__).resolve().parents[4] / "nanotrade")))
+        sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "nanotrade"))
         from calc import scenarios as ref_scenarios
     except Exception:
         pytest.skip("reference nanotrade/calc/scenarios not importable in this env")

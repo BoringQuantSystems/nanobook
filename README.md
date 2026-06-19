@@ -2,11 +2,13 @@
 
 Rust extension plus pure-Python research helpers. Build with `uv sync --group dev` from this directory.
 
-## Monte Carlo scenarios (stdlib-first)
+## Monte Carlo scenarios (Rust-backed, parity-safe)
 
 `nanobook.scenarios` provides terminal price distributions for stress testing and
-forecasting. No runtime dependency on numpy or pandas; numpy is used only when
-installed (same seeds match the `nanotrade/calc` reference).
+forecasting. When the extension is built with the `scenarios` feature (default in
+wheels), `int`/`None` seeds delegate to Rust: NumPy PCG64 draws feed Rust math so
+results match the `nanotrade/calc` reference at tight tolerance. A pure-Python
+fallback remains for `random.Random` seeds and environments without numpy.
 
 ```python
 import nanobook

@@ -37,7 +37,7 @@ dev = [
 ]
 
 [tool.maturin]
-features = ["pyo3/extension-module", "itch"]
+features = ["pyo3/extension-module", "itch", "scenarios"]
 python-source = "."
 module-name = "nanobook.nanobook"
 include = ["nanobook.pyi"]

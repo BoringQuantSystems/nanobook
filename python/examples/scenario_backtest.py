@@ -1,13 +1,16 @@
-"""Example: Use pure-Python MC scenarios to generate stress price paths
-and feed them into nanobook's deterministic backtester.
+"""Example: Monte Carlo scenarios → price paths → deterministic backtest.
 
-Run with: python -m nanobook.examples.scenario_backtest (or directly)
+Uses the Rust-backed scenarios engine when the extension is built with the
+``scenarios`` feature (default); falls back to pure-Python otherwise.
+
+Run with: python examples/scenario_backtest.py
 """
 
 import nanobook
+from nanobook.scenarios import _HAS_RUST_SCENARIOS
 
 def main():
-    # 1. Run scenario forecast (pure py, minimal deps)
+    # 1. Run scenario forecast (Rust when available, else pure-Python)
     res = nanobook.monte_carlo_stock_valuation(
         "XYZ",
         current_price=74.0,
@@ -40,7 +43,8 @@ def main():
         fill_policy=nanobook.FillPolicy.NextBarOpen,
     )
     print("nanobook backtest on scenario path final equity cents:", result["equity_curve"][-1])
-    print("Example complete. Pure-py scenarios + Rust execution.")
+    backend = "Rust scenarios" if _HAS_RUST_SCENARIOS else "pure-Python scenarios"
+    print(f"Example complete. {backend} + Rust backtest execution.")
 
 
 if __name__ == "__main__":

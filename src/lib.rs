@@ -170,6 +170,8 @@ pub mod persistence;
 pub mod portfolio;
 mod price_levels;
 mod result;
+#[cfg(feature = "scenarios")]
+pub mod scenarios;
 mod side;
 mod snapshot;
 pub mod stats;

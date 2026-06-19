@@ -1,15 +1,14 @@
-"""Pure-Python Monte Carlo terminal valuation for nanobook.
+"""Monte Carlo terminal valuation for nanobook.
 
-This module provides the scenario generation logic as a pure-Python
-research helper inside the nanobook package. It requires **no runtime
-external dependencies** beyond the Python standard library.
+Primary path: Rust core (`src/scenarios.rs`) via PyO3 when the extension is
+built with the `scenarios` feature and seed is `int` or `None`. NumPy draws
+normals; Rust applies closed-form terminal math (ADR-0006).
 
-Optional: if numpy is installed it will use it for faster computation
-while keeping identical semantics and results for the same seed.
+Fallback: pure-Python implementation (stdlib + optional NumPy) for
+`random.Random` seeds, no-extension builds, and stdlib-only environments.
 
-The code is a direct, carefully reproduced port of the working
-implementation (see nanotrade/calc/scenarios.py for the reference
-numpy/polars version used for parity testing).
+Reference oracle: nanotrade/calc/scenarios.py (parity fixtures in
+`tests/reference/scenarios_parity.json`).
 
 Key properties:
 - Explicit seed for full reproducibility.
@@ -33,6 +32,15 @@ try:
 except ImportError:
     np = None  # type: ignore
     _HAS_NUMPY = False
+
+# Rust-backed path (numpy RNG bridge inside extension; int/None seeds only)
+try:
+    from nanobook.nanobook import monte_carlo_stock_valuation as _rust_monte_carlo
+
+    _HAS_RUST_SCENARIOS = True
+except Exception:  # pragma: no cover
+    _rust_monte_carlo = None  # type: ignore
+    _HAS_RUST_SCENARIOS = False
 
 
 ModelVersion = Literal["simple", "advanced"]
@@ -359,6 +367,46 @@ def monte_carlo_stock_valuation(
     See the reference implementation and plan for full semantics.
     """
     _validate_mc_inputs(current_price, n_paths, horizon, annual_vol)
+
+    if (
+        _HAS_RUST_SCENARIOS
+        and _rust_monte_carlo is not None
+        and (seed is None or isinstance(seed, int))
+    ):
+        rust_res = _rust_monte_carlo(
+            ticker,
+            current_price,
+            version=version,
+            n_paths=n_paths,
+            horizon=horizon,
+            seed=seed,
+            expected_annual_return=expected_annual_return,
+            annual_vol=annual_vol,
+            gp_growth_mean=gp_growth_mean,
+            gp_growth_sd=gp_growth_sd,
+            margin_boost_mean=margin_boost_mean,
+            margin_boost_sd=margin_boost_sd,
+            multiple_mean=multiple_mean,
+            multiple_sd=multiple_sd,
+            macro_shock_mean=macro_shock_mean,
+            macro_shock_sd=macro_shock_sd,
+            bear_skew_factor=bear_skew_factor,
+            hurdle_rate=hurdle_rate,
+            bull_price=bull_price,
+            bear_price=bear_price,
+        )
+        summary = dict(rust_res.summary)
+        summary["ticker"] = rust_res.ticker
+        summary["method"] = rust_res.method
+        return MonteCarloResult(
+            ticker=rust_res.ticker,
+            method=rust_res.method,
+            horizon_years=rust_res.horizon_years,
+            current_price=rust_res.current_price,
+            terminal_prices=list(rust_res.terminal_prices),
+            summary=summary,
+        )
+
     rng = _get_rng(seed)
 
     use_np = _HAS_NUMPY and hasattr(rng, "normal")  # numpy Generator

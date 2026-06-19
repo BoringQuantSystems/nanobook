@@ -13,13 +13,13 @@ FillPolicy.NextBarTypical = FillPolicy.next_bar_typical()
 
 def capabilities():
     caps = list(py_capabilities())
-    caps.extend(
-        [
-            "monte_carlo_stock_valuation",
-            "scenario_terminal_paths",
-            "scenario_calibrate",
-        ]
-    )
+    for name in (
+        "monte_carlo_stock_valuation",
+        "scenario_terminal_paths",
+        "scenario_calibrate",
+    ):
+        if name not in caps:
+            caps.append(name)
     return caps
 
 

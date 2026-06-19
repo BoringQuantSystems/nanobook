@@ -9,11 +9,13 @@ name = "nanobook_python"
 crate-type = ["cdylib"]
 
 [features]
+default = ["scenarios"]
 itch = ["nanobook/itch"]
 binance = ["nanobook-broker/binance"]
+scenarios = ["nanobook/scenarios"]
 
 [dependencies]
-nanobook = { path = "..", features = ["event-log", "serde", "persistence", "portfolio", "parallel"] }
+nanobook = { path = "..", features = ["event-log", "serde", "persistence", "portfolio", "parallel", "scenarios"] }
 nanobook-broker = { path = "../broker", features = ["ibkr"] }
 nanobook-risk = { path = "../risk" }
 pyo3 = { version = "0.27", features = ["extension-module"] }

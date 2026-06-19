@@ -28,6 +28,9 @@ serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 rayon = { version = "1", optional = true }
 memmap2 = { version = "0.9", optional = true }
+rand = { version = "0.8", optional = true }
+rand_chacha = { version = "0.3", optional = true }
+rand_distr = { version = "0.4", optional = true }
 
 [features]
 default = ["event-log"]
@@ -37,6 +40,7 @@ persistence = ["serde", "event-log", "dep:serde_json"]
 portfolio = []
 parallel = ["portfolio", "dep:rayon"]
 itch = ["persistence", "dep:memmap2"]
+scenarios = ["dep:rand", "dep:rand_chacha", "dep:rand_distr"]
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
@@ -65,6 +69,11 @@ required-features = ["portfolio"]
 [[bench]]
 name = "stops"
 harness = false
+
+[[bench]]
+name = "scenarios"
+harness = false
+required-features = ["scenarios"]
 
 [[example]]
 name = "itch-replay"
