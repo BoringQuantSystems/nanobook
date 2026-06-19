@@ -7,9 +7,13 @@ Focus on:
 - Structure and feeding to nanobook backtester
 """
 
-import sys
+from __future__ import annotations
+
 import math
 import random
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -20,6 +24,7 @@ def test_monte_carlo_exposed_and_runs():
     assert hasattr(nanobook, "monte_carlo_stock_valuation")
     res = nanobook.monte_carlo_stock_valuation("T", 100.0, n_paths=100, seed=123, version="simple")
     assert res.ticker == "T"
+    assert "MonteCarloResult" in repr(res)
     assert len(res.terminal_prices) == 100
     assert res.median_price > 0
     assert 0 < res.implied_median_annual_return < 1
@@ -40,11 +45,12 @@ def test_simple_vs_advanced_differ():
     assert abs(r_s.median_price - r_a.median_price) > 1e-6 or r_s.method != r_a.method
 
 
-@pytest.mark.skipif(not nanobook.scenarios._HAS_NUMPY if hasattr(nanobook, "scenarios") else True, reason="numpy not available for parity")
+@pytest.mark.skipif(not getattr(nanobook, "scenarios", None) or not getattr(nanobook.scenarios, "_HAS_NUMPY", False), reason="numpy not available for parity")
 def test_parity_with_reference_impl():
     # Reference is the numpy version in nanotrade/calc (same monorepo)
     try:
-        from nanotrade.calc import scenarios as ref_scenarios
+        sys.path.insert(0, str((__import__("pathlib").Path(__file__).resolve().parents[4] / "nanotrade")))
+        from calc import scenarios as ref_scenarios
     except Exception:
         pytest.skip("reference nanotrade/calc/scenarios not importable in this env")
 
@@ -89,3 +95,99 @@ def test_calibrate_and_summary():
     d = res.to_summary_dict()
     assert "implied_median_annual_return" in d
     assert "p10" in d
+
+
+def test_edge_case_zero_paths_returns_empty_summary():
+    res = nanobook.monte_carlo_stock_valuation("E", 100.0, n_paths=0, seed=1)
+    assert res.terminal_prices == []
+    assert res.median_price == 0.0
+
+
+def test_edge_case_invalid_price_raises():
+    with pytest.raises(ValueError, match="current_price"):
+        nanobook.monte_carlo_stock_valuation("E", 0.0, n_paths=10, seed=1)
+
+
+def test_edge_case_negative_paths_raises():
+    with pytest.raises((ValueError, TypeError)):
+        nanobook.monte_carlo_stock_valuation("E", 100.0, n_paths=-1, seed=1)
+
+
+def test_pure_stdlib_path_without_numpy(monkeypatch):
+    """Scenarios must run when numpy is unavailable (stdlib-only path)."""
+    import nanobook.scenarios as sc
+
+    monkeypatch.setattr(sc, "_HAS_NUMPY", False)
+    monkeypatch.setattr(sc, "np", None)
+    rng = sc._make_pure_rng(42)
+    res = sc.monte_carlo_stock_valuation(
+        "PURE",
+        74.0,
+        version="advanced",
+        n_paths=30,
+        seed=rng,
+    )
+    assert len(res.terminal_prices) == 30
+    assert all(p > 0 for p in res.terminal_prices)
+    assert res.median_price > 0
+
+
+def test_e2e_scenario_paths_into_backtest_weights():
+    """End-to-end: MC terminals -> price schedule -> nanobook.backtest_weights."""
+    res = nanobook.monte_carlo_stock_valuation(
+        "XYZ",
+        74.0,
+        version="advanced",
+        n_paths=3,
+        seed=42,
+        gp_growth_mean=0.16,
+        multiple_mean=22.0,
+        macro_shock_mean=-0.03,
+    )
+    paths = res.to_price_paths(4, method="linear")
+    price_schedule = []
+    for path in paths[:1]:
+        for price in path:
+            cents = int(round(price * 100))
+            price_schedule.append(
+                [("XYZ", nanobook.BarPrices(cents, cents, cents, cents))]
+            )
+    weight_schedule = [[("XYZ", 1.0)]] * len(price_schedule)
+    result = nanobook.backtest_weights(
+        weight_schedule=weight_schedule,
+        price_schedule=price_schedule,
+        initial_cash=1_000_000_00,
+        cost_model=nanobook.CostModel.zero(),
+        fill_policy=nanobook.FillPolicy.NextBarOpen,
+    )
+    assert len(result["equity_curve"]) == len(price_schedule) + 1
+    assert result["equity_curve"][-1] > 0
+
+
+_NO_NUMPY_SNIPPET = """
+import importlib
+import sys
+sys.modules.pop("numpy", None)
+sc = importlib.import_module("nanobook.scenarios")
+sc._HAS_NUMPY = False
+sc.np = None
+res = sc.monte_carlo_stock_valuation("N", 50.0, n_paths=10, seed=sc._make_pure_rng(7), version="simple")
+assert len(res.terminal_prices) == 10
+assert all(p > 0 for p in res.terminal_prices)
+print("ok")
+"""
+
+
+def test_scenarios_importable_in_subprocess_without_numpy():
+    """Smoke: fresh interpreter with numpy blocked still runs pure scenarios."""
+    env = {**dict(**__import__("os").environ), "PYTHONPATH": str(Path(__file__).resolve().parents[1])}
+    proc = subprocess.run(
+        [sys.executable, "-c", _NO_NUMPY_SNIPPET],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr or proc.stdout
+    assert "ok" in proc.stdout

@@ -37,7 +37,13 @@ def test_capabilities_surface():
         "backtest_holdings",
     }
     assert expected.issubset(caps)
-    assert set(nanobook.capabilities()) == caps
+    scenario_caps = {
+        "monte_carlo_stock_valuation",
+        "scenario_terminal_paths",
+        "scenario_calibrate",
+    }
+    assert scenario_caps.issubset(set(nanobook.capabilities()))
+    assert set(nanobook.capabilities()) == caps | scenario_caps
 
 
 def test_garch_ewma_forecast_finite():

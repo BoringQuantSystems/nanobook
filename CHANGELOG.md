@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Pure-Python Monte Carlo scenarios** — `nanobook.scenarios` exposes
+  `monte_carlo_stock_valuation`, `MonteCarloResult`, and helpers with stdlib-only
+  runtime (optional numpy acceleration when installed). Includes frozen numpy parity
+  fixtures, hypothesis property tests, and an e2e path into `backtest_weights`.
+  See `python/examples/scenario_backtest.py`.
+
 - **IBKR resting STOP / STOP_LIMIT orders** — `IbkrBroker.submit_order` accepts a
   new optional `stop_price_cents` and routes `order_type="stop"` / `"stop_limit"`
   through ibapi's `stop` / `stop_limit` order builders (`aux_price` = stop trigger,

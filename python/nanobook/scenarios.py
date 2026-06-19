@@ -28,6 +28,7 @@ from typing import Literal, Any
 # Try optional numpy for acceleration (dev/test only for parity & speed)
 try:
     import numpy as np  # type: ignore
+
     _HAS_NUMPY = True
 except ImportError:
     np = None  # type: ignore
@@ -122,7 +123,7 @@ class MonteCarloResult:
         if n_periods < 1:
             raise ValueError("n_periods must be >= 1")
         paths: list[list[float]] = []
-        rng = _make_pure_rng(seed)
+        _ = _make_pure_rng(seed)  # accepted for future stochastic variants
         for term in self.terminal_prices:
             if method == "terminal_only":
                 p = [self.current_price] * (n_periods - 1) + [term]
@@ -142,6 +143,29 @@ class MonteCarloResult:
     def to_summary_dict(self) -> dict[str, Any]:
         return dict(self.summary)
 
+    def __repr__(self) -> str:
+        return (
+            f"MonteCarloResult(ticker={self.ticker!r}, method={self.method!r}, "
+            f"n_paths={len(self.terminal_prices)}, median_price={self.median_price})"
+        )
+
+
+def _validate_mc_inputs(
+    current_price: float, n_paths: int, horizon: float, annual_vol: float
+) -> None:
+    if current_price <= 0 or not math.isfinite(current_price):
+        raise ValueError(
+            f"current_price must be positive and finite, got {current_price}"
+        )
+    if n_paths < 0:
+        raise ValueError(f"n_paths must be >= 0, got {n_paths}")
+    if horizon <= 0 or not math.isfinite(horizon):
+        raise ValueError(f"horizon must be positive and finite, got {horizon}")
+    if annual_vol < 0 or not math.isfinite(annual_vol):
+        raise ValueError(
+            f"annual_vol must be non-negative and finite, got {annual_vol}"
+        )
+
 
 def _make_pure_rng(seed: int | random.Random | None) -> random.Random:
     """Return a random.Random instance. Pure stdlib."""
@@ -154,7 +178,7 @@ def _make_pure_rng(seed: int | random.Random | None) -> random.Random:
 
 
 def _get_rng(seed: int | random.Random | None) -> Any:
-    """Return best RNG: numpy Generator if available and seed allows, else pure Random."""
+    """Best RNG (np.Generator if avail+seed int, else random.Random)."""  # noqa: E501
     if _HAS_NUMPY and np is not None:
         if isinstance(seed, (int, type(None))):
             return np.random.default_rng(seed)
@@ -183,7 +207,7 @@ def _pure_median(xs: list[float]) -> float:
 
 
 def _pure_percentile(xs: list[float], q: float) -> float:
-    """Simple percentile using nearest rank (matches common numpy 'lower' style for tests)."""
+    """Percentile (nearest-rank + linear interp to match np for parity)."""  # noqa: E501
     if not xs:
         return 0.0
     s = sorted(xs)
@@ -245,7 +269,9 @@ def _normal(rng: random.Random | Any, mu: float, sigma: float) -> float:
     return rng.gauss(mu, sigma)
 
 
-def compute_annualized_vol(returns: list[float] | Any, periods_per_year: int = 252) -> float:
+def compute_annualized_vol(
+    returns: list[float] | Any, periods_per_year: int = 252
+) -> float:
     """Pure stdlib annualized vol. Accepts list or (if numpy) array-like."""
     if _HAS_NUMPY and hasattr(returns, "drop_nulls"):
         # compatibility with pl.Series from reference
@@ -260,7 +286,7 @@ def compute_annualized_vol(returns: list[float] | Any, periods_per_year: int = 2
     mean = sum(arr) / n
     var = sum((x - mean) ** 2 for x in arr) / (n - 1)
     vol = math.sqrt(var)
-    return vol * (periods_per_year ** 0.5)
+    return vol * (periods_per_year**0.5)
 
 
 def simple_gbm_terminal(
@@ -273,7 +299,7 @@ def simple_gbm_terminal(
 ) -> list[float]:
     if current_price <= 0 or n_paths <= 0 or horizon <= 0 or annual_vol < 0:
         raise ValueError("Invalid GBM parameters")
-    drift = (expected_annual_return - 0.5 * annual_vol ** 2) * horizon
+    drift = (expected_annual_return - 0.5 * annual_vol**2) * horizon
     sigma = annual_vol * math.sqrt(horizon)
     prices = []
     for _ in range(n_paths):
@@ -332,6 +358,7 @@ def monte_carlo_stock_valuation(
 
     See the reference implementation and plan for full semantics.
     """
+    _validate_mc_inputs(current_price, n_paths, horizon, annual_vol)
     rng = _get_rng(seed)
 
     use_np = _HAS_NUMPY and hasattr(rng, "normal")  # numpy Generator
@@ -342,7 +369,9 @@ def monte_carlo_stock_valuation(
             diffusion = annual_vol * np.sqrt(horizon) * rng.standard_normal(n_paths)
             prices = (current_price * np.exp(drift + diffusion)).tolist()
         else:
-            prices = simple_gbm_terminal(current_price, n_paths, horizon, expected_annual_return, annual_vol, rng)
+            prices = simple_gbm_terminal(
+                current_price, n_paths, horizon, expected_annual_return, annual_vol, rng
+            )
         method = "Simple GBM"
     else:
         params = ValuationParams(
@@ -360,14 +389,18 @@ def monte_carlo_stock_valuation(
             p = params
             gp = rng.normal(p.gp_growth_mean, p.gp_growth_sd, n_paths)
             marg = rng.normal(p.margin_boost_mean, p.margin_boost_sd, n_paths)
-            mult = np.clip(rng.normal(p.multiple_mean, p.multiple_sd, n_paths), 16.0, 28.0)
+            mult = np.clip(
+                rng.normal(p.multiple_mean, p.multiple_sd, n_paths), 16.0, 28.0
+            )
             shock = rng.normal(p.macro_shock_mean, p.macro_shock_sd, n_paths) - np.abs(
                 rng.normal(0.0, p.bear_skew_factor, n_paths)
             )
             total_ret = (gp * 0.8) + (marg * 2.0) + ((mult / 20.0 - 1.0) * 0.6) + shock
             prices = (current_price * np.exp(total_ret * horizon)).tolist()
         else:
-            prices = advanced_multi_driver_terminal(current_price, n_paths, horizon, params, rng)
+            prices = advanced_multi_driver_terminal(
+                current_price, n_paths, horizon, params, rng
+            )
         method = "Advanced Multi-Driver"
 
     bull = bull_price if bull_price is not None else current_price * 1.10
@@ -385,12 +418,16 @@ def monte_carlo_stock_valuation(
         "median_price": round(med, 2),
         "mean_price": round(mn, 2),
         "mean_minus_median": round(mn - med, 2),
-        "pct_above_hurdle": round(_pure_prob_above(prices, current_price * hurdle_mult) * 100, 1),
+        "pct_above_hurdle": round(
+            _pure_prob_above(prices, current_price * hurdle_mult) * 100, 1
+        ),
         "pct_above_bull": round(_pure_prob_above(prices, bull) * 100, 1),
         "pct_below_bear": round(1 - _pure_prob_above(prices, bear) * 100, 1),
         "p10": round(_pure_percentile(prices, 0.10), 2),
         "p90": round(_pure_percentile(prices, 0.90), 2),
-        "implied_median_annual_return": round((med / current_price) ** (1.0 / horizon) - 1.0, 4),
+        "implied_median_annual_return": round(
+            (med / current_price) ** (1.0 / horizon) - 1.0, 4
+        ),
         "current_price": current_price,
         "hurdle_rate": hurdle_rate,
     }
@@ -460,9 +497,17 @@ def terminal_prices_to_log_return_paths(
     return out
 
 
-def summarize_distribution(prices: list[float], current_price: float) -> dict[str, float]:
+def summarize_distribution(
+    prices: list[float], current_price: float
+) -> dict[str, float]:
     if not prices:
-        return {"median": 0.0, "mean": 0.0, "p05": 0.0, "p95": 0.0, "prob_above_current": 0.0}
+        return {
+            "median": 0.0,
+            "mean": 0.0,
+            "p05": 0.0,
+            "p95": 0.0,
+            "prob_above_current": 0.0,
+        }
     return {
         "median": _pure_median(prices),
         "mean": _pure_mean(prices),

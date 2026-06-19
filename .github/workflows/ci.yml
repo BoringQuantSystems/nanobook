@@ -104,6 +104,62 @@ jobs:
         working-directory: python
         run: uv run --python ${{ matrix.python }} --group dev python -m pytest tests/ -v --ignore=tests/reference
 
+  python-scenarios:
+    name: Python scenarios (${{ matrix.label }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: with-numpy
+          - label: no-numpy
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.14"
+
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable @ 2026-05-21
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          key: python-scenarios-${{ matrix.label }}
+
+      - name: Build and install Python extension
+        working-directory: python
+        run: uv sync --python 3.14 --group dev
+
+      - name: Drop numpy for stdlib-only matrix leg
+        if: matrix.label == 'no-numpy'
+        working-directory: python
+        run: uv pip uninstall numpy
+
+      - name: Run scenario tests (with numpy + parity)
+        if: matrix.label == 'with-numpy'
+        working-directory: python
+        run: |
+          uv run --python 3.14 --group dev python -m pytest \
+            tests/test_scenarios.py \
+            tests/test_scenarios_helpers.py \
+            tests/test_scenarios_stats.py \
+            tests/test_scenarios_normal.py \
+            tests/property/test_prop_scenarios.py \
+            tests/reference/test_ref_scenarios.py \
+            -v
+
+      - name: Run scenario tests (stdlib-only, no numpy)
+        if: matrix.label == 'no-numpy'
+        working-directory: python
+        run: |
+          uv run --python 3.14 --group dev python -m pytest \
+            tests/test_scenarios.py \
+            tests/test_scenarios_helpers.py \
+            tests/property/test_prop_scenarios.py \
+            -v
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
