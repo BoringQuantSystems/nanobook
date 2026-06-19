@@ -1,28 +1,27 @@
 """Monte Carlo terminal valuation for nanobook.
 
-Primary path: Rust core (`src/scenarios.rs`) via PyO3 when the extension is
-built with the `scenarios` feature and seed is `int` or `None`. NumPy draws
-normals; Rust applies closed-form terminal math (ADR-0006).
+Hot path (ADR-0007): native Rust ChaCha20 via ``monte_carlo_stock_valuation_native``
+when the extension is built and ``seed`` is ``int`` or ``None``.
 
-Fallback: pure-Python implementation (stdlib + optional NumPy) for
-`random.Random` seeds, no-extension builds, and stdlib-only environments.
+Audit path (ADR-0006): NumPy RNG bridge via ``monte_carlo_stock_valuation_parity``.
+Set ``MC_AUDIT_MODE=1`` to force the audit function on the public entry point.
 
-Reference oracle: nanotrade/calc/scenarios.py (parity fixtures in
-`tests/reference/scenarios_parity.json`).
+Fallback: pure-Python (stdlib + optional NumPy) for ``random.Random`` /
+``np.random.Generator`` seeds and no-extension builds.
 
-Key properties:
-- Explicit seed for full reproducibility.
-- Two models: "simple" (classic GBM) and "advanced" (multi-driver).
-- Returns a rich MonteCarloResult with terminal prices (list) and summary.
-- Can generate price paths for use with nanobook's deterministic backtester.
+Frozen parity fixtures: ``tests/reference/scenarios_parity.json``.
 """
 
 from __future__ import annotations
 
 import math
+import os
 import random
 from dataclasses import dataclass
-from typing import Literal, Any
+from typing import Any, Literal
+
+_MC_AUDIT_MODE = os.environ.get("MC_AUDIT_MODE", "") == "1"
+_MC_NUMPY_BRIDGE = os.environ.get("MC_NUMPY_BRIDGE", "") == "1"
 
 # Try optional numpy for acceleration (dev/test only for parity & speed)
 try:
@@ -33,13 +32,17 @@ except ImportError:
     np = None  # type: ignore
     _HAS_NUMPY = False
 
-# Rust-backed path (numpy RNG bridge inside extension; int/None seeds only)
+# Rust-backed paths (ADR-0007 native + ADR-0006 parity); int/None seeds only
 try:
-    from nanobook.nanobook import monte_carlo_stock_valuation as _rust_monte_carlo
+    from nanobook.nanobook import (
+        monte_carlo_stock_valuation_native as _rust_monte_carlo_native,
+        monte_carlo_stock_valuation_parity as _rust_monte_carlo_parity,
+    )
 
     _HAS_RUST_SCENARIOS = True
 except Exception:  # pragma: no cover
-    _rust_monte_carlo = None  # type: ignore
+    _rust_monte_carlo_native = None  # type: ignore
+    _rust_monte_carlo_parity = None  # type: ignore
     _HAS_RUST_SCENARIOS = False
 
 
@@ -75,7 +78,7 @@ class MonteCarloResult:
     method: str
     horizon_years: float
     current_price: float
-    terminal_prices: list[float]
+    terminal_prices: list[float] | Any
     summary: dict[str, Any]
 
     @property
@@ -185,13 +188,14 @@ def _make_pure_rng(seed: int | random.Random | None) -> random.Random:
     return rng
 
 
-def _get_rng(seed: int | random.Random | None) -> Any:
+def _get_rng(seed: int | random.Random | np.random.Generator | None) -> Any:
     """Best RNG (np.Generator if avail+seed int, else random.Random)."""  # noqa: E501
     if _HAS_NUMPY and np is not None:
+        if isinstance(seed, np.random.Generator):
+            return seed
         if isinstance(seed, (int, type(None))):
             return np.random.default_rng(seed)
         if isinstance(seed, random.Random):
-            # fall back to pure for explicit Random instance
             return seed
         return np.random.default_rng(seed)
     return _make_pure_rng(seed)
@@ -316,6 +320,36 @@ def simple_gbm_terminal(
     return prices
 
 
+def _advanced_numpy_batch_loop(
+    current_price: float,
+    n_paths: int,
+    horizon: float,
+    params: ValuationParams,
+    rng: Any,
+) -> list[float]:
+    """NumPy batch draws + per-path terminal math (audit oracle; matches frozen parity)."""
+    if np is None:
+        raise RuntimeError("numpy required for parity audit path")
+    p = params
+    gp = rng.normal(p.gp_growth_mean, p.gp_growth_sd, n_paths)
+    marg = rng.normal(p.margin_boost_mean, p.margin_boost_sd, n_paths)
+    mult_raw = rng.normal(p.multiple_mean, p.multiple_sd, n_paths)
+    macro_draw = rng.normal(p.macro_shock_mean, p.macro_shock_sd, n_paths)
+    bear_skew = rng.normal(0.0, p.bear_skew_factor, n_paths)
+    prices: list[float] = []
+    for i in range(n_paths):
+        mult = float(np.clip(mult_raw[i], 16.0, 28.0))
+        shock = float(macro_draw[i] - abs(bear_skew[i]))
+        total_ret = (
+            (float(gp[i]) * 0.8)
+            + (float(marg[i]) * 2.0)
+            + ((mult / 20.0 - 1.0) * 0.6)
+            + shock
+        )
+        prices.append(current_price * math.exp(total_ret * horizon))
+    return prices
+
+
 def advanced_multi_driver_terminal(
     current_price: float,
     n_paths: int,
@@ -339,78 +373,90 @@ def advanced_multi_driver_terminal(
     return prices
 
 
-def monte_carlo_stock_valuation(
+def _mc_kwargs(
+    *,
+    version: ModelVersion,
+    n_paths: int,
+    horizon: float,
+    seed: int | random.Random | Any | None,
+    expected_annual_return: float,
+    annual_vol: float,
+    gp_growth_mean: float,
+    gp_growth_sd: float,
+    margin_boost_mean: float,
+    margin_boost_sd: float,
+    multiple_mean: float,
+    multiple_sd: float,
+    macro_shock_mean: float,
+    macro_shock_sd: float,
+    bear_skew_factor: float,
+    hurdle_rate: float,
+    bull_price: float | None,
+    bear_price: float | None,
+) -> dict[str, Any]:
+    return dict(
+        version=version,
+        n_paths=n_paths,
+        horizon=horizon,
+        seed=seed,
+        expected_annual_return=expected_annual_return,
+        annual_vol=annual_vol,
+        gp_growth_mean=gp_growth_mean,
+        gp_growth_sd=gp_growth_sd,
+        margin_boost_mean=margin_boost_mean,
+        margin_boost_sd=margin_boost_sd,
+        multiple_mean=multiple_mean,
+        multiple_sd=multiple_sd,
+        macro_shock_mean=macro_shock_mean,
+        macro_shock_sd=macro_shock_sd,
+        bear_skew_factor=bear_skew_factor,
+        hurdle_rate=hurdle_rate,
+        bull_price=bull_price,
+        bear_price=bear_price,
+    )
+
+
+def _wrap_rust_mc(rust_res: Any) -> MonteCarloResult:
+    summary = dict(rust_res.summary)
+    summary["ticker"] = rust_res.ticker
+    summary["method"] = rust_res.method
+    return MonteCarloResult(
+        ticker=rust_res.ticker,
+        method=rust_res.method,
+        horizon_years=rust_res.horizon_years,
+        current_price=rust_res.current_price,
+        terminal_prices=(
+            np.asarray(rust_res.terminal_prices, dtype=np.float64)
+            if _HAS_NUMPY and np is not None and not isinstance(rust_res.terminal_prices, list)
+            else list(rust_res.terminal_prices)
+        ),
+        summary=summary,
+    )
+
+
+def _pure_python_mc(
     ticker: str,
     current_price: float,
     *,
-    version: ModelVersion = "advanced",
-    n_paths: int = 5000,
-    horizon: float = 1.0,
-    seed: int | random.Random | None = 42,
-    expected_annual_return: float = 0.18,
-    annual_vol: float = 0.38,
-    gp_growth_mean: float = 0.16,
-    gp_growth_sd: float = 0.06,
-    margin_boost_mean: float = 0.02,
-    margin_boost_sd: float = 0.03,
-    multiple_mean: float = 22.0,
-    multiple_sd: float = 3.5,
-    macro_shock_mean: float = -0.03,
-    macro_shock_sd: float = 0.11,
-    bear_skew_factor: float = 0.04,
-    hurdle_rate: float = 0.08,
-    bull_price: float | None = None,
-    bear_price: float | None = None,
+    version: ModelVersion,
+    n_paths: int,
+    horizon: float,
+    seed: int | random.Random | Any | None,
+    expected_annual_return: float,
+    annual_vol: float,
+    gp_growth_mean: float,
+    gp_growth_sd: float,
+    margin_boost_mean: float,
+    margin_boost_sd: float,
+    multiple_mean: float,
+    multiple_sd: float,
+    macro_shock_mean: float,
+    macro_shock_sd: float,
+    bear_skew_factor: float,
+    hurdle_rate: float,
+    bull_price: float | None,
+    bear_price: float | None,
 ) -> MonteCarloResult:
-    """Run Monte Carlo terminal valuation (Rust when available, else pure-Python).
-
-    Delegates to the Rust core via PyO3 when the extension is built with the
-    ``scenarios`` feature and ``seed`` is ``int`` or ``None``. Falls back to the
-    pure-Python path for ``random.Random`` seeds and no-extension builds.
-
-    See ``nanotrade/calc/scenarios.py`` and ADR-0006 for full semantics.
-    """
-    _validate_mc_inputs(current_price, n_paths, horizon, annual_vol)
-
-    if (
-        _HAS_RUST_SCENARIOS
-        and _rust_monte_carlo is not None
-        and (seed is None or isinstance(seed, int))
-    ):
-        rust_res = _rust_monte_carlo(
-            ticker,
-            current_price,
-            version=version,
-            n_paths=n_paths,
-            horizon=horizon,
-            seed=seed,
-            expected_annual_return=expected_annual_return,
-            annual_vol=annual_vol,
-            gp_growth_mean=gp_growth_mean,
-            gp_growth_sd=gp_growth_sd,
-            margin_boost_mean=margin_boost_mean,
-            margin_boost_sd=margin_boost_sd,
-            multiple_mean=multiple_mean,
-            multiple_sd=multiple_sd,
-            macro_shock_mean=macro_shock_mean,
-            macro_shock_sd=macro_shock_sd,
-            bear_skew_factor=bear_skew_factor,
-            hurdle_rate=hurdle_rate,
-            bull_price=bull_price,
-            bear_price=bear_price,
-        )
-        summary = dict(rust_res.summary)
-        summary["ticker"] = rust_res.ticker
-        summary["method"] = rust_res.method
-        return MonteCarloResult(
-            ticker=rust_res.ticker,
-            method=rust_res.method,
-            horizon_years=rust_res.horizon_years,
-            current_price=rust_res.current_price,
-            terminal_prices=list(rust_res.terminal_prices),
-            summary=summary,
-        )
-
     rng = _get_rng(seed)
 
     use_np = _HAS_NUMPY and hasattr(rng, "normal")  # numpy Generator
@@ -438,17 +484,9 @@ def monte_carlo_stock_valuation(
             bear_skew_factor=bear_skew_factor,
         )
         if use_np:
-            p = params
-            gp = rng.normal(p.gp_growth_mean, p.gp_growth_sd, n_paths)
-            marg = rng.normal(p.margin_boost_mean, p.margin_boost_sd, n_paths)
-            mult = np.clip(
-                rng.normal(p.multiple_mean, p.multiple_sd, n_paths), 16.0, 28.0
+            prices = _advanced_numpy_batch_loop(
+                current_price, n_paths, horizon, params, rng
             )
-            shock = rng.normal(p.macro_shock_mean, p.macro_shock_sd, n_paths) - np.abs(
-                rng.normal(0.0, p.bear_skew_factor, n_paths)
-            )
-            total_ret = (gp * 0.8) + (marg * 2.0) + ((mult / 20.0 - 1.0) * 0.6) + shock
-            prices = (current_price * np.exp(total_ret * horizon)).tolist()
         else:
             prices = advanced_multi_driver_terminal(
                 current_price, n_paths, horizon, params, rng
@@ -492,6 +530,144 @@ def monte_carlo_stock_valuation(
         terminal_prices=prices,
         summary=row,
     )
+
+
+def monte_carlo_stock_valuation_parity(
+    ticker: str,
+    current_price: float,
+    *,
+    version: ModelVersion = "advanced",
+    n_paths: int = 5000,
+    horizon: float = 1.0,
+    seed: int | random.Random | Any | None = 42,
+    expected_annual_return: float = 0.18,
+    annual_vol: float = 0.38,
+    gp_growth_mean: float = 0.16,
+    gp_growth_sd: float = 0.06,
+    margin_boost_mean: float = 0.02,
+    margin_boost_sd: float = 0.03,
+    multiple_mean: float = 22.0,
+    multiple_sd: float = 3.5,
+    macro_shock_mean: float = -0.03,
+    macro_shock_sd: float = 0.11,
+    bear_skew_factor: float = 0.04,
+    hurdle_rate: float = 0.08,
+    bull_price: float | None = None,
+    bear_price: float | None = None,
+) -> MonteCarloResult:
+    """NumPy-bridge audit path (ADR-0006); frozen ``scenarios_parity.json`` oracle."""
+    _validate_mc_inputs(current_price, n_paths, horizon, annual_vol)
+    kw = _mc_kwargs(
+        version=version,
+        n_paths=n_paths,
+        horizon=horizon,
+        seed=seed,
+        expected_annual_return=expected_annual_return,
+        annual_vol=annual_vol,
+        gp_growth_mean=gp_growth_mean,
+        gp_growth_sd=gp_growth_sd,
+        margin_boost_mean=margin_boost_mean,
+        margin_boost_sd=margin_boost_sd,
+        multiple_mean=multiple_mean,
+        multiple_sd=multiple_sd,
+        macro_shock_mean=macro_shock_mean,
+        macro_shock_sd=macro_shock_sd,
+        bear_skew_factor=bear_skew_factor,
+        hurdle_rate=hurdle_rate,
+        bull_price=bull_price,
+        bear_price=bear_price,
+    )
+    # Default: pure-Python numpy audit oracle (matches scenarios_parity.json generator).
+    # Set MC_NUMPY_BRIDGE=1 for the ADR-0006 NumPy-draw → Rust-math bridge (faster CI).
+    if (
+        _MC_NUMPY_BRIDGE
+        and _HAS_RUST_SCENARIOS
+        and _rust_monte_carlo_parity is not None
+        and (seed is None or isinstance(seed, int))
+    ):
+        return _wrap_rust_mc(
+            _rust_monte_carlo_parity(ticker, current_price, **kw)
+        )
+    return _pure_python_mc(ticker, current_price, **kw)
+
+
+def monte_carlo_stock_valuation(
+    ticker: str,
+    current_price: float,
+    *,
+    version: ModelVersion = "advanced",
+    n_paths: int = 5000,
+    horizon: float = 1.0,
+    seed: int | random.Random | Any | None = 42,
+    expected_annual_return: float = 0.18,
+    annual_vol: float = 0.38,
+    gp_growth_mean: float = 0.16,
+    gp_growth_sd: float = 0.06,
+    margin_boost_mean: float = 0.02,
+    margin_boost_sd: float = 0.03,
+    multiple_mean: float = 22.0,
+    multiple_sd: float = 3.5,
+    macro_shock_mean: float = -0.03,
+    macro_shock_sd: float = 0.11,
+    bear_skew_factor: float = 0.04,
+    hurdle_rate: float = 0.08,
+    bull_price: float | None = None,
+    bear_price: float | None = None,
+) -> MonteCarloResult:
+    """ChaCha20 hot path (ADR-0007); ``MC_AUDIT_MODE=1`` forces parity."""
+    if _MC_AUDIT_MODE:
+        return monte_carlo_stock_valuation_parity(
+            ticker,
+            current_price,
+            version=version,
+            n_paths=n_paths,
+            horizon=horizon,
+            seed=seed,
+            expected_annual_return=expected_annual_return,
+            annual_vol=annual_vol,
+            gp_growth_mean=gp_growth_mean,
+            gp_growth_sd=gp_growth_sd,
+            margin_boost_mean=margin_boost_mean,
+            margin_boost_sd=margin_boost_sd,
+            multiple_mean=multiple_mean,
+            multiple_sd=multiple_sd,
+            macro_shock_mean=macro_shock_mean,
+            macro_shock_sd=macro_shock_sd,
+            bear_skew_factor=bear_skew_factor,
+            hurdle_rate=hurdle_rate,
+            bull_price=bull_price,
+            bear_price=bear_price,
+        )
+    _validate_mc_inputs(current_price, n_paths, horizon, annual_vol)
+    kw = _mc_kwargs(
+        version=version,
+        n_paths=n_paths,
+        horizon=horizon,
+        seed=seed,
+        expected_annual_return=expected_annual_return,
+        annual_vol=annual_vol,
+        gp_growth_mean=gp_growth_mean,
+        gp_growth_sd=gp_growth_sd,
+        margin_boost_mean=margin_boost_mean,
+        margin_boost_sd=margin_boost_sd,
+        multiple_mean=multiple_mean,
+        multiple_sd=multiple_sd,
+        macro_shock_mean=macro_shock_mean,
+        macro_shock_sd=macro_shock_sd,
+        bear_skew_factor=bear_skew_factor,
+        hurdle_rate=hurdle_rate,
+        bull_price=bull_price,
+        bear_price=bear_price,
+    )
+    if (
+        _HAS_RUST_SCENARIOS
+        and _rust_monte_carlo_native is not None
+        and (seed is None or isinstance(seed, int))
+    ):
+        return _wrap_rust_mc(
+            _rust_monte_carlo_native(ticker, current_price, **kw)
+        )
+    return _pure_python_mc(ticker, current_price, **kw)
 
 
 def calibrate_from_fundamentals(

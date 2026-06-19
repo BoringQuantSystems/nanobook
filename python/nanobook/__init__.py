@@ -130,6 +130,7 @@ try:
     from .scenarios import (
         MonteCarloResult,
         monte_carlo_stock_valuation,
+        monte_carlo_stock_valuation_parity,
         calibrate_from_fundamentals,
         compute_annualized_vol,
         terminal_prices_to_log_return_paths,
@@ -139,6 +140,7 @@ try:
 except Exception:  # pragma: no cover
     MonteCarloResult = None  # type: ignore
     monte_carlo_stock_valuation = None  # type: ignore
+    monte_carlo_stock_valuation_parity = None  # type: ignore
     calibrate_from_fundamentals = None  # type: ignore
     compute_annualized_vol = None  # type: ignore
     terminal_prices_to_log_return_paths = None  # type: ignore

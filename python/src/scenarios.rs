@@ -1,16 +1,14 @@
 //! PyO3 bindings for Monte Carlo scenario generation.
 //!
-//! Architecture (ADR-0006): NumPy `default_rng(seed)` draws all normals; Rust applies
-//! the closed-form terminal math and assembles `MonteCarloResult`. This preserves
-//! bit-exact parity with frozen `scenarios_parity.json` fixtures.
-//!
-//! Entry point: `monte_carlo_stock_valuation` — called from `nanobook.scenarios`
-//! when `_HAS_RUST_SCENARIOS` and seed is `int` or `None`.
+//! Architecture (ADR-0007): Python hot path calls native ChaCha20 (`monte_carlo_stock_valuation_native`).
+//! Audit / frozen parity uses NumPy `default_rng` draws (`monte_carlo_stock_valuation_parity`, ADR-0006).
 
 use nanobook::scenarios::{
     ModelVersion, MonteCarloResult, ValuationParams, advanced_from_driver_batches, assemble_result,
-    simple_gbm_from_z, validate_mc_inputs,
+    monte_carlo_stock_valuation as native_mc, nondeterministic_mc_seed, simple_gbm_from_z,
+    validate_mc_inputs,
 };
+use numpy::PyArray1;
 use pyo3::buffer::PyBuffer;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -66,8 +64,8 @@ impl PyMonteCarloResult {
     }
 
     #[getter]
-    fn terminal_prices(&self) -> Vec<f64> {
-        self.inner.terminal_prices.clone()
+    fn terminal_prices<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
+        PyArray1::from_vec(py, self.inner.terminal_prices.clone())
     }
 
     #[getter]
@@ -158,7 +156,7 @@ impl PyMonteCarloResult {
     bear_price = None,
 ))]
 #[allow(clippy::too_many_arguments)]
-pub fn monte_carlo_stock_valuation(
+pub fn monte_carlo_stock_valuation_parity(
     py: Python<'_>,
     ticker: String,
     current_price: f64,
@@ -259,5 +257,83 @@ pub fn monte_carlo_stock_valuation(
         bear_price,
     );
 
+    Ok(PyMonteCarloResult { inner })
+}
+
+#[pyfunction]
+#[pyo3(signature = (
+    ticker,
+    current_price,
+    *,
+    version = "advanced",
+    n_paths = 5000,
+    horizon = 1.0,
+    seed = 42,
+    expected_annual_return = 0.18,
+    annual_vol = 0.38,
+    gp_growth_mean = 0.16,
+    gp_growth_sd = 0.06,
+    margin_boost_mean = 0.02,
+    margin_boost_sd = 0.03,
+    multiple_mean = 22.0,
+    multiple_sd = 3.5,
+    macro_shock_mean = -0.03,
+    macro_shock_sd = 0.11,
+    bear_skew_factor = 0.04,
+    hurdle_rate = 0.08,
+    bull_price = None,
+    bear_price = None,
+))]
+#[allow(clippy::too_many_arguments)]
+pub fn monte_carlo_stock_valuation_native(
+    ticker: String,
+    current_price: f64,
+    version: &str,
+    n_paths: i64,
+    horizon: f64,
+    seed: Option<i64>,
+    expected_annual_return: f64,
+    annual_vol: f64,
+    gp_growth_mean: f64,
+    gp_growth_sd: f64,
+    margin_boost_mean: f64,
+    margin_boost_sd: f64,
+    multiple_mean: f64,
+    multiple_sd: f64,
+    macro_shock_mean: f64,
+    macro_shock_sd: f64,
+    bear_skew_factor: f64,
+    hurdle_rate: f64,
+    bull_price: Option<f64>,
+    bear_price: Option<f64>,
+) -> PyResult<PyMonteCarloResult> {
+    let model = ModelVersion::parse(version);
+    let seed_u64 = seed.map(|s| s as u64).unwrap_or_else(nondeterministic_mc_seed);
+    let params = ValuationParams {
+        gp_growth_mean,
+        gp_growth_sd,
+        margin_boost_mean,
+        margin_boost_sd,
+        multiple_mean,
+        multiple_sd,
+        macro_shock_mean,
+        macro_shock_sd,
+        bear_skew_factor,
+    };
+    let inner = native_mc(
+        ticker,
+        current_price,
+        model,
+        n_paths,
+        horizon,
+        seed_u64,
+        expected_annual_return,
+        annual_vol,
+        params,
+        hurdle_rate,
+        bull_price,
+        bear_price,
+    )
+    .map_err(|e| PyValueError::new_err(e.to_string()))?;
     Ok(PyMonteCarloResult { inner })
 }

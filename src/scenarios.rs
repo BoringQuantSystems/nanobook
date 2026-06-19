@@ -9,6 +9,7 @@
 //!   the closed-form terminal math (`simple_gbm_from_z`, `advanced_from_driver_batches`).
 //! - **Native Rust** (`monte_carlo_stock_valuation` below): ChaCha20 + `rand_distr::Normal` for callers
 //!   that do not need NumPy bit-exact parity.
+//! - **Parallel terminal math** activates when `n_paths >= PARALLEL_MC_MIN_PATHS` (50_000).
 //!
 //! With the `parallel` feature, terminal-price math runs on rayon after draws complete so RNG order
 //! stays identical to the sequential path.
@@ -18,6 +19,9 @@ use std::collections::HashMap;
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use rand_distr::{Distribution, Normal};
+
+/// Minimum path count before rayon parallelizes terminal-price math only.
+pub const PARALLEL_MC_MIN_PATHS: i64 = 50_000;
 
 #[derive(Debug, Clone, Copy)]
 pub struct ValuationParams {
@@ -85,6 +89,10 @@ impl std::fmt::Display for ScenarioError {
 
 impl std::error::Error for ScenarioError {}
 
+/// Validate Monte Carlo inputs before drawing paths or building summaries.
+///
+/// Rejects non-finite prices, negative path counts, non-positive horizons, and
+/// negative volatility — matching the Python reference error messages.
 pub fn validate_mc_inputs(
     current_price: f64,
     n_paths: i64,
@@ -114,6 +122,7 @@ pub fn validate_mc_inputs(
     Ok(())
 }
 
+/// Arithmetic mean; returns `0.0` for an empty slice.
 pub fn pure_mean(xs: &[f64]) -> f64 {
     if xs.is_empty() {
         return 0.0;
@@ -121,12 +130,15 @@ pub fn pure_mean(xs: &[f64]) -> f64 {
     xs.iter().sum::<f64>() / xs.len() as f64
 }
 
-pub fn pure_median(xs: &[f64]) -> f64 {
-    if xs.is_empty() {
+fn sort_f64(xs: &mut [f64]) {
+    xs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+}
+
+/// Median of a pre-sorted slice (caller must sort first).
+fn median_sorted(s: &[f64]) -> f64 {
+    if s.is_empty() {
         return 0.0;
     }
-    let mut s = xs.to_vec();
-    s.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let n = s.len();
     let mid = n / 2;
     if n % 2 == 1 {
@@ -136,13 +148,11 @@ pub fn pure_median(xs: &[f64]) -> f64 {
     }
 }
 
-/// Linear-interpolation percentile (matches NumPy `percentile(..., method="linear")`).
-pub fn pure_percentile(xs: &[f64], q: f64) -> f64 {
-    if xs.is_empty() {
+/// Linear-interpolation percentile on a pre-sorted slice (matches NumPy `method="linear"`).
+fn percentile_sorted(s: &[f64], q: f64) -> f64 {
+    if s.is_empty() {
         return 0.0;
     }
-    let mut s = xs.to_vec();
-    s.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let n = s.len();
     if q <= 0.0 {
         return s[0];
@@ -159,6 +169,27 @@ pub fn pure_percentile(xs: &[f64], q: f64) -> f64 {
     s[i] + (s[i + 1] - s[i]) * frac
 }
 
+/// Median via one sort + middle index (even-length: average of two middles).
+pub fn pure_median(xs: &[f64]) -> f64 {
+    if xs.is_empty() {
+        return 0.0;
+    }
+    let mut s = xs.to_vec();
+    sort_f64(&mut s);
+    median_sorted(&s)
+}
+
+/// Linear-interpolation percentile on `q ∈ [0, 1]` (NumPy `method="linear"`).
+pub fn pure_percentile(xs: &[f64], q: f64) -> f64 {
+    if xs.is_empty() {
+        return 0.0;
+    }
+    let mut s = xs.to_vec();
+    sort_f64(&mut s);
+    percentile_sorted(&s, q)
+}
+
+/// Fraction of samples strictly above `level`; `0.0` when `xs` is empty.
 pub fn pure_prob_above(xs: &[f64], level: f64) -> f64 {
     if xs.is_empty() {
         return 0.0;
@@ -167,12 +198,13 @@ pub fn pure_prob_above(xs: &[f64], level: f64) -> f64 {
     count as f64 / xs.len() as f64
 }
 
+/// Nearest-rank quantile (floor index on sorted data); used by `MonteCarloResult::quantile`.
 pub fn quantile_nearest_rank(xs: &[f64], q: f64) -> f64 {
     if xs.is_empty() {
         return 0.0;
     }
     let mut s = xs.to_vec();
-    s.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    sort_f64(&mut s);
     let idx = (q * (s.len() as f64 - 1.0))
         .floor()
         .clamp(0.0, (s.len() - 1) as f64) as usize;
@@ -199,17 +231,17 @@ pub fn simple_gbm_from_z(
 fn gbm_prices_from_z(current_price: f64, z: &[f64], drift: f64, sigma: f64) -> Vec<f64> {
     #[cfg(feature = "parallel")]
     {
-        use rayon::prelude::*;
-        z.par_iter()
-            .map(|&zi| current_price * (drift + sigma * zi).exp())
-            .collect()
+        if z.len() >= PARALLEL_MC_MIN_PATHS as usize {
+            use rayon::prelude::*;
+            return z
+                .par_iter()
+                .map(|&zi| current_price * (drift + sigma * zi).exp())
+                .collect();
+        }
     }
-    #[cfg(not(feature = "parallel"))]
-    {
-        z.iter()
-            .map(|&zi| current_price * (drift + sigma * zi).exp())
-            .collect()
-    }
+    z.iter()
+        .map(|&zi| current_price * (drift + sigma * zi).exp())
+        .collect()
 }
 
 /// Terminal prices from pre-drawn driver batches (parity path shares NumPy draws).
@@ -270,15 +302,18 @@ fn advanced_terminal_from_slices(
 
     #[cfg(feature = "parallel")]
     {
-        use rayon::prelude::*;
-        (0..n).into_par_iter().map(price_at).collect()
+        if n >= PARALLEL_MC_MIN_PATHS as usize {
+            use rayon::prelude::*;
+            return (0..n).into_par_iter().map(price_at).collect();
+        }
     }
-    #[cfg(not(feature = "parallel"))]
-    {
-        (0..n).map(price_at).collect()
-    }
+    (0..n).map(price_at).collect()
 }
 
+/// Build the summary dict consumed by Python (`median_price`, `p10`, `p90`, hurdle/bull/bear %).
+///
+/// Sorts `prices` once for median and both percentiles. Rounding matches the Python reference
+/// (`round1` / `round2` / `round4` on selected fields).
 #[allow(clippy::too_many_arguments)]
 pub fn build_summary(
     ticker: &str,
@@ -291,9 +326,15 @@ pub fn build_summary(
     bull: f64,
     bear: f64,
 ) -> HashMap<String, f64> {
-    let med = pure_median(prices);
     let mn = pure_mean(prices);
     let hurdle_level = current_price * (1.0 + hurdle_rate);
+
+    // One unstable sort for median + p10 + p90 (was three independent sorts).
+    let mut sorted = prices.to_vec();
+    sorted.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let med = median_sorted(&sorted);
+    let p10 = percentile_sorted(&sorted, 0.10);
+    let p90 = percentile_sorted(&sorted, 0.90);
 
     let _ = ticker;
     let _ = method;
@@ -316,8 +357,8 @@ pub fn build_summary(
         "pct_below_bear".to_string(),
         round1((1.0 - pure_prob_above(prices, bear)) * 100.0),
     );
-    row.insert("p10".to_string(), round2(pure_percentile(prices, 0.10)));
-    row.insert("p90".to_string(), round2(pure_percentile(prices, 0.90)));
+    row.insert("p10".to_string(), round2(p10));
+    row.insert("p90".to_string(), round2(p90));
     row.insert(
         "implied_median_annual_return".to_string(),
         round4((med / current_price).powf(1.0 / horizon) - 1.0),
@@ -339,6 +380,7 @@ fn round4(x: f64) -> f64 {
     (x * 10_000.0).round() / 10_000.0
 }
 
+/// Wrap terminal prices and summary into a `MonteCarloResult` with default bull/bear levels.
 #[allow(clippy::too_many_arguments)]
 pub fn assemble_result(
     ticker: String,
@@ -434,6 +476,7 @@ impl MonteCarloResult {
     }
 }
 
+/// How to expand a terminal price into a multi-period schedule for backtests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PricePathMethod {
     Linear,
@@ -472,17 +515,76 @@ fn cha_cha_rng(seed: u64) -> ChaCha20Rng {
     ChaCha20Rng::seed_from_u64(seed)
 }
 
+/// Nondeterministic seed for native MC when Python passes ``seed=None``.
+pub fn nondeterministic_mc_seed() -> u64 {
+    use rand::RngCore;
+    rand::thread_rng().next_u64()
+}
+
+#[allow(dead_code)] // parity PyO3 / batch paths keep separate driver vecs
 fn draw_standard_normals(rng: &mut ChaCha20Rng, n: usize) -> Vec<f64> {
     let normal = Normal::new(0.0, 1.0).expect("standard normal");
     (0..n).map(|_| normal.sample(rng)).collect()
 }
 
+#[allow(dead_code)]
 fn draw_normals(rng: &mut ChaCha20Rng, mean: f64, sd: f64, n: usize) -> Vec<f64> {
     if n == 0 {
         return Vec::new();
     }
     let normal = Normal::new(mean, sd).expect("normal params");
     (0..n).map(|_| normal.sample(rng)).collect()
+}
+
+/// Fused ChaCha20 draw + terminal math (native hot path only; no intermediate driver vecs).
+fn simple_gbm_native(
+    current_price: f64,
+    n: usize,
+    horizon: f64,
+    expected_annual_return: f64,
+    annual_vol: f64,
+    rng: &mut ChaCha20Rng,
+) -> Vec<f64> {
+    if n == 0 {
+        return Vec::new();
+    }
+    let drift = (expected_annual_return - 0.5 * annual_vol * annual_vol) * horizon;
+    let sigma = annual_vol * horizon.sqrt();
+    let normal = Normal::new(0.0, 1.0).expect("standard normal");
+    let mut prices = Vec::with_capacity(n);
+    for _ in 0..n {
+        let z = normal.sample(rng);
+        prices.push(current_price * (drift + sigma * z).exp());
+    }
+    prices
+}
+
+/// Fused ChaCha20 draw + advanced terminal math (native hot path only).
+fn advanced_native_fused(
+    current_price: f64,
+    horizon: f64,
+    n: usize,
+    params: ValuationParams,
+    rng: &mut ChaCha20Rng,
+) -> Vec<f64> {
+    if n == 0 {
+        return Vec::new();
+    }
+    let gp_n = Normal::new(params.gp_growth_mean, params.gp_growth_sd).expect("gp normal");
+    let marg_n = Normal::new(params.margin_boost_mean, params.margin_boost_sd).expect("marg normal");
+    let mult_n = Normal::new(params.multiple_mean, params.multiple_sd).expect("mult normal");
+    let macro_n = Normal::new(params.macro_shock_mean, params.macro_shock_sd).expect("macro normal");
+    let bear_n = Normal::new(0.0, params.bear_skew_factor).expect("bear normal");
+    let mut prices = Vec::with_capacity(n);
+    for _ in 0..n {
+        let gp = gp_n.sample(rng);
+        let marg = marg_n.sample(rng);
+        let mult = clip_multiple(mult_n.sample(rng));
+        let shock = macro_n.sample(rng) - bear_n.sample(rng).abs();
+        let total_ret = (gp * 0.8) + (marg * 2.0) + ((mult / 20.0 - 1.0) * 0.6) + shock;
+        prices.push(current_price * (total_ret * horizon).exp());
+    }
+    prices
 }
 
 /// Native Rust Monte Carlo entry point (ChaCha20 + `rand_distr::Normal`).
@@ -511,35 +613,22 @@ pub fn monte_carlo_stock_valuation(
         Vec::new()
     } else if version == ModelVersion::Simple {
         let mut rng = cha_cha_rng(seed);
-        let z = draw_standard_normals(&mut rng, n_paths as usize);
-        simple_gbm_from_z(
+        simple_gbm_native(
             current_price,
-            &z,
+            n_paths as usize,
             horizon,
             expected_annual_return,
             annual_vol,
+            &mut rng,
         )
     } else {
         let mut rng = cha_cha_rng(seed);
-        let n = n_paths as usize;
-        let gp = draw_normals(&mut rng, params.gp_growth_mean, params.gp_growth_sd, n);
-        let marg = draw_normals(
-            &mut rng,
-            params.margin_boost_mean,
-            params.margin_boost_sd,
-            n,
-        );
-        let mult_raw = draw_normals(&mut rng, params.multiple_mean, params.multiple_sd, n);
-        let macro_draw = draw_normals(&mut rng, params.macro_shock_mean, params.macro_shock_sd, n);
-        let bear_skew = draw_normals(&mut rng, 0.0, params.bear_skew_factor, n);
-        advanced_from_driver_batches(
+        advanced_native_fused(
             current_price,
             horizon,
-            &gp,
-            &marg,
-            &mult_raw,
-            &macro_draw,
-            &bear_skew,
+            n_paths as usize,
+            params,
+            &mut rng,
         )
     };
 
@@ -625,6 +714,31 @@ mod tests {
         assert_eq!(a.median_price(), b.median_price());
     }
 
+    /// With `parallel` enabled, rayon preserves index order in `collect()`; terminal
+    /// math on independent paths must remain bitwise reproducible across runs.
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn parallel_terminal_math_bitwise_reproducible() {
+        let z: Vec<f64> = (0..2_000).map(|i| ((i as f64) * 0.013).sin()).collect();
+        let gbm_a = simple_gbm_from_z(74.0, &z, 1.0, 0.18, 0.38);
+        let gbm_b = simple_gbm_from_z(74.0, &z, 1.0, 0.18, 0.38);
+        assert_eq!(gbm_a, gbm_b);
+
+        let n = 2_000;
+        let gp = vec![0.16; n];
+        let marg = vec![0.02; n];
+        let mult_raw = vec![22.0; n];
+        let macro_draw = vec![-0.03; n];
+        let bear_skew = vec![0.04; n];
+        let adv_a = advanced_from_driver_batches(
+            74.0, 1.0, &gp, &marg, &mult_raw, &macro_draw, &bear_skew,
+        );
+        let adv_b = advanced_from_driver_batches(
+            74.0, 1.0, &gp, &marg, &mult_raw, &macro_draw, &bear_skew,
+        );
+        assert_eq!(adv_a, adv_b);
+    }
+
     #[test]
     fn large_n_paths_stress_native() {
         let p = ValuationParams::default();
@@ -646,7 +760,7 @@ mod tests {
         assert_eq!(res.terminal_prices.len(), 100_000);
         assert!(res.terminal_prices.iter().all(|p| p.is_finite() && *p > 0.0));
         let med = res.median_price();
-        assert!(med >= 80.0 && med <= 95.0);
+        assert!((80.0..=95.0).contains(&med));
     }
 
     #[test]

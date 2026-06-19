@@ -15,19 +15,26 @@ import subprocess
 import sys
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 import nanobook
 
 
+def _terminal_prices_equal(a, b) -> bool:
+    aa = np.asarray(a)
+    bb = np.asarray(b)
+    return aa.shape == bb.shape and np.array_equal(aa, bb)
+
+
 def test_rust_scenarios_path_active_when_extension_built():
-    """Int/None seeds delegate to the Rust extension (numpy RNG bridge)."""
+    """Int/None seeds delegate to the Rust extension (ChaCha20 native hot path)."""
     import nanobook.scenarios as sc
 
     assert sc._HAS_RUST_SCENARIOS, "extension should be built with scenarios feature in dev/CI"
     res = nanobook.monte_carlo_stock_valuation("T", 100.0, n_paths=10, seed=42, version="simple")
     assert type(res).__name__ == "MonteCarloResult"
-    assert isinstance(res.terminal_prices, list)
+    assert isinstance(res.terminal_prices, (list, np.ndarray))
 
 
 def test_monte_carlo_exposed_and_runs():
@@ -44,7 +51,7 @@ def test_monte_carlo_exposed_and_runs():
 def test_reproducibility_same_seed():
     r1 = nanobook.monte_carlo_stock_valuation("A", 50.0, n_paths=200, seed=42, version="advanced")
     r2 = nanobook.monte_carlo_stock_valuation("A", 50.0, n_paths=200, seed=42, version="advanced")
-    assert r1.terminal_prices == r2.terminal_prices
+    assert _terminal_prices_equal(r1.terminal_prices, r2.terminal_prices)
     assert r1.median_price == r2.median_price
 
 
@@ -109,7 +116,7 @@ def test_calibrate_and_summary():
 
 def test_edge_case_zero_paths_returns_empty_summary():
     res = nanobook.monte_carlo_stock_valuation("E", 100.0, n_paths=0, seed=1)
-    assert res.terminal_prices == []
+    assert len(res.terminal_prices) == 0
     assert res.median_price == 0.0
 
 

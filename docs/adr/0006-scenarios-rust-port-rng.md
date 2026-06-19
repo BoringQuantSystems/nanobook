@@ -1,6 +1,6 @@
 # ADR 0006: Rust Monte Carlo scenarios — RNG bridge strategy
 
-**Status:** Accepted  
+**Status:** Accepted (hot-path RNG superseded by ADR-0007; parity bridge still active)  
 **Date:** 2026-06-19
 
 ## Context

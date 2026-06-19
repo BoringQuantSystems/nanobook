@@ -24,3 +24,9 @@ nanobook uses Architectural Decision Records to document non-obvious technical c
 4. Commit messages reference ADRs by number: `refs ADR-0003`.
 
 The simulator-correctness audit (`nanotrade/docs/audit/2026-05-19-nanobook-fill-model.md`) serves as the founding Evidence artifact for this ADR series.
+
+## Log
+
+| ADR | Date | Title |
+|-----|------|-------|
+| 0007 | 2026-06-19 | ChaCha20 native hot path for Monte Carlo scenarios |

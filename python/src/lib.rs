@@ -37,7 +37,9 @@ fn capabilities() -> Vec<&'static str> {
         "inverse_cdar_weights",
         "backtest_holdings",
         #[cfg(feature = "scenarios")]
-        "monte_carlo_stock_valuation",
+        "monte_carlo_stock_valuation_native",
+        #[cfg(feature = "scenarios")]
+        "monte_carlo_stock_valuation_parity",
     ]
 }
 
@@ -165,7 +167,14 @@ fn nanobook(m: &Bound<'_, PyModule>) -> PyResult<()> {
     #[cfg(feature = "scenarios")]
     {
         m.add_class::<scenarios::PyMonteCarloResult>()?;
-        m.add_function(wrap_pyfunction!(scenarios::monte_carlo_stock_valuation, m)?)?;
+        m.add_function(wrap_pyfunction!(
+            scenarios::monte_carlo_stock_valuation_native,
+            m
+        )?)?;
+        m.add_function(wrap_pyfunction!(
+            scenarios::monte_carlo_stock_valuation_parity,
+            m
+        )?)?;
     }
 
     Ok(())
