@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Technical-analysis indicators (TA-Lib parity)** — 25 curated indicators implemented in
+  pure Rust with golden parity against pinned TA-Lib outputs: trend and momentum (`rsi`,
+  `macd`, `stoch`, `stochf`, `stochrsi`, `willr`, `cci`, `roc`, `rocp`, `rocr`, `mom`,
+  `ultosc`), the directional family (`adx`, `dx`, `plus_di`, `minus_di`), volatility (`atr`,
+  `natr`, `trange`, `bbands`), and volume (`obv`, `ad`, `adosc`). Wilder smoothing for the
+  RSI/ATR/ADX family and population standard deviation for Bollinger bands. A JSON indicator
+  registry drives golden generation alongside the Rust and Python parity tests, and
+  `list_supported()` exposes the contract (`has_parity` marks golden-backed entries). No
+  runtime dependency on the TA-Lib C library; the remaining functions are classified and
+  explicitly deferred in `docs/ta-lib-full-coverage-matrix.md`. See
+  `docs/adr/0005-ta-indicators-scope.md`.
+
+- **Native ChaCha20 Monte Carlo hot path** — the default Python `monte_carlo_stock_valuation`
+  now draws with native Rust ChaCha20 and no NumPy RNG round-trip; the NumPy-bridge path is
+  retained as `monte_carlo_stock_valuation_parity` for frozen audit and CI. Terminal prices
+  return zero-copy as a NumPy array, and runs of 50k paths or more parallelise. See
+  `docs/adr/0007-scenarios-chacha20-hot-path.md`.
+
 - **Rust Monte Carlo scenarios** — Core terminal valuation (simple GBM and advanced
   multi-driver) lives in `src/scenarios.rs` behind the `scenarios` feature. The
   Python extension draws with NumPy PCG64 and runs math/stats in Rust for frozen
