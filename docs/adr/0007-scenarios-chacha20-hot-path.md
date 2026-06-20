@@ -35,6 +35,7 @@ oracle unchanged.
 - `nanotrade/calc/scenarios.py` shim picks up speed with no code changes.
 - Wheels still require NumPy for the parity PyO3 path (audit / CI).
 - Statistical tests required alongside frozen parity for hot-path regression safety.
+- **Lazy summary deferred:** `.summary` stays eager; Phase 3.2 skipped to avoid extra getter API surface. Zero-copy `terminal_prices` (PyArray1) satisfies the trim phase.
 
 ## Evidence
 
