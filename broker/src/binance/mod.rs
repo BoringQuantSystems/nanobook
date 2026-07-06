@@ -767,6 +767,16 @@ impl Broker for BinanceBroker {
                 let price_str = format!("{:.2}", p.0 as f64 / 100.0);
                 ("LIMIT", Some(price_str), Some("GTC"))
             }
+            BrokerOrderType::Stop(_) => {
+                return Err(BrokerError::Order(
+                    "Stop orders not yet supported for Binance".into(),
+                ));
+            }
+            BrokerOrderType::StopLimit { .. } => {
+                return Err(BrokerError::Order(
+                    "Stop-limit orders not yet supported for Binance".into(),
+                ));
+            }
         };
 
         let qty_str = format!("{}", order.quantity);
