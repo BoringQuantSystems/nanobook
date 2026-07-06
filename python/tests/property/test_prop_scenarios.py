@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 
+import numpy as np
 import pytest
 
 try:
@@ -66,7 +67,7 @@ def test_same_seed_same_output(seed):
     )
     r1 = nanobook.monte_carlo_stock_valuation(**kwargs)
     r2 = nanobook.monte_carlo_stock_valuation(**kwargs)
-    assert r1.terminal_prices == r2.terminal_prices
+    assert np.array_equal(np.asarray(r1.terminal_prices), np.asarray(r2.terminal_prices))
     assert r1.summary == r2.summary
 
 

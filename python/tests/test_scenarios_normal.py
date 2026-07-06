@@ -12,6 +12,7 @@ from nanobook.scenarios import (
     _normal,
     _normal_box_muller,
     monte_carlo_stock_valuation,
+    monte_carlo_stock_valuation_parity,
 )
 
 # MC advanced model: five normals per path (path-major order on pure path).
@@ -100,7 +101,7 @@ def test_monte_carlo_pure_path_reproducible():
     )
     r1 = monte_carlo_stock_valuation(**base, seed=_make_pure_rng(42))
     r2 = monte_carlo_stock_valuation(**base, seed=_make_pure_rng(42))
-    assert r1.terminal_prices == r2.terminal_prices
+    assert np.array_equal(np.asarray(r1.terminal_prices), np.asarray(r2.terminal_prices))
     assert r1.summary == r2.summary
 
 
@@ -114,11 +115,11 @@ def test_monte_carlo_numpy_path_reproducible():
     )
     r1 = monte_carlo_stock_valuation(**kwargs)
     r2 = monte_carlo_stock_valuation(**kwargs)
-    assert r1.terminal_prices == r2.terminal_prices
+    assert np.array_equal(np.asarray(r1.terminal_prices), np.asarray(r2.terminal_prices))
 
 
 def test_monte_carlo_numpy_matches_default_rng_reference():
-    """Numpy MC fast path matches hand-rolled default_rng simple GBM."""
+    """NumPy-bridge parity path matches hand-rolled default_rng simple GBM (ADR-0006)."""
     seed = 42
     n_paths = 10
     current_price = 100.0
@@ -126,7 +127,7 @@ def test_monte_carlo_numpy_matches_default_rng_reference():
     expected_annual_return = 0.18
     annual_vol = 0.38
 
-    res = monte_carlo_stock_valuation(
+    res = monte_carlo_stock_valuation_parity(
         "REF",
         current_price,
         version="simple",
@@ -141,4 +142,4 @@ def test_monte_carlo_numpy_matches_default_rng_reference():
     drift = (expected_annual_return - 0.5 * annual_vol**2) * horizon
     diffusion = annual_vol * np.sqrt(horizon) * rng.standard_normal(n_paths)
     expected = (current_price * np.exp(drift + diffusion)).tolist()
-    assert res.terminal_prices == expected
+    assert np.array_equal(np.asarray(res.terminal_prices), np.asarray(expected))
