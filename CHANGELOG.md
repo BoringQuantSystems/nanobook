@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-07-24 - TA-Lib indicators + Monte Carlo scenarios
+
 ### Added
 
 - **Technical-analysis indicators (TA-Lib parity)** — 25 curated indicators implemented in
@@ -46,6 +48,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `limit_price` = limit for stop-limit). Previously only market/limit were encodable.
   Additive and backward-compatible: existing market/limit calls are unchanged and the
   new parameter is last and optional. Enables broker-resting protective stops.
+
+### Security
+
+- **Dependency advisories cleared** — upgraded `pyo3` and `numpy` 0.27 → 0.29
+  (RUSTSEC-2026-0176, out-of-bounds read in `PyList`/`PyTuple` `nth`/`nth_back`;
+  RUSTSEC-2026-0177, missing `Sync` bound on `PyCFunction::new_closure`); bumped
+  `quinn-proto` to 0.11.16 (RUSTSEC-2026-0185, remote memory exhaustion) and
+  `crossbeam-epoch` to 0.9.20 (RUSTSEC-2026-0204, invalid pointer dereference).
+  The pyo3 bump adds explicit `from_py_object` opt-in to the `Clone`-deriving
+  `#[pyclass]` types; behaviour is unchanged.
+
+### Fixed
+
+- **CI toolchain and lints** — pinned `dtolnay/rust-toolchain` to the known-good
+  stable SHA, applied `cargo fmt --all`, and resolved `clippy -D warnings`
+  (manual memcpy, range/counter loops) in the indicators module. Bumped the
+  pinned GitHub Actions (setup-python, upload-artifact, setup-uv, codecov).
 
 ## [0.16.2] - 2026-06-11 - MSRV fix + repository metadata
 
@@ -1024,7 +1043,8 @@ Initial release of nanobook - a deterministic limit order book and matching engi
 - Fixed-point price representation (avoids floating-point errors)
 - Deterministic via monotonic timestamps (not system clock)
 
-[Unreleased]: https://github.com/BoringQuantSystems/nanobook/compare/v0.16.2...HEAD
+[Unreleased]: https://github.com/BoringQuantSystems/nanobook/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/BoringQuantSystems/nanobook/compare/v0.16.2...v0.17.0
 [0.16.2]: https://github.com/BoringQuantSystems/nanobook/compare/v0.16.1...v0.16.2
 [0.16.1]: https://github.com/BoringQuantSystems/nanobook/compare/v0.16.0...v0.16.1
 [0.16.0]: https://github.com/BoringQuantSystems/nanobook/compare/v0.15.2...v0.16.0
