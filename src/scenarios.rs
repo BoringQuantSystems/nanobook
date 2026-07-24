@@ -571,9 +571,11 @@ fn advanced_native_fused(
         return Vec::new();
     }
     let gp_n = Normal::new(params.gp_growth_mean, params.gp_growth_sd).expect("gp normal");
-    let marg_n = Normal::new(params.margin_boost_mean, params.margin_boost_sd).expect("marg normal");
+    let marg_n =
+        Normal::new(params.margin_boost_mean, params.margin_boost_sd).expect("marg normal");
     let mult_n = Normal::new(params.multiple_mean, params.multiple_sd).expect("mult normal");
-    let macro_n = Normal::new(params.macro_shock_mean, params.macro_shock_sd).expect("macro normal");
+    let macro_n =
+        Normal::new(params.macro_shock_mean, params.macro_shock_sd).expect("macro normal");
     let bear_n = Normal::new(0.0, params.bear_skew_factor).expect("bear normal");
     let mut prices = Vec::with_capacity(n);
     for _ in 0..n {
@@ -623,13 +625,7 @@ pub fn monte_carlo_stock_valuation(
         )
     } else {
         let mut rng = cha_cha_rng(seed);
-        advanced_native_fused(
-            current_price,
-            horizon,
-            n_paths as usize,
-            params,
-            &mut rng,
-        )
+        advanced_native_fused(current_price, horizon, n_paths as usize, params, &mut rng)
     };
 
     let method = if version == ModelVersion::Simple {
@@ -730,12 +726,10 @@ mod tests {
         let mult_raw = vec![22.0; n];
         let macro_draw = vec![-0.03; n];
         let bear_skew = vec![0.04; n];
-        let adv_a = advanced_from_driver_batches(
-            74.0, 1.0, &gp, &marg, &mult_raw, &macro_draw, &bear_skew,
-        );
-        let adv_b = advanced_from_driver_batches(
-            74.0, 1.0, &gp, &marg, &mult_raw, &macro_draw, &bear_skew,
-        );
+        let adv_a =
+            advanced_from_driver_batches(74.0, 1.0, &gp, &marg, &mult_raw, &macro_draw, &bear_skew);
+        let adv_b =
+            advanced_from_driver_batches(74.0, 1.0, &gp, &marg, &mult_raw, &macro_draw, &bear_skew);
         assert_eq!(adv_a, adv_b);
     }
 
@@ -758,7 +752,11 @@ mod tests {
         )
         .unwrap();
         assert_eq!(res.terminal_prices.len(), 100_000);
-        assert!(res.terminal_prices.iter().all(|p| p.is_finite() && *p > 0.0));
+        assert!(
+            res.terminal_prices
+                .iter()
+                .all(|p| p.is_finite() && *p > 0.0)
+        );
         let med = res.median_price();
         assert!((80.0..=95.0).contains(&med));
     }

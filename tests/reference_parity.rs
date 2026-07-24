@@ -86,7 +86,12 @@ fn golden_keys(entry: &RegistryEntry) -> Vec<String> {
     if let Some(keys) = &entry.golden_keys {
         keys.clone()
     } else {
-        vec![entry.golden_key.clone().expect("golden_key or golden_keys required")]
+        vec![
+            entry
+                .golden_key
+                .clone()
+                .expect("golden_key or golden_keys required"),
+        ]
     }
 }
 
@@ -124,16 +129,14 @@ fn run_indicator(
             let fast = usize_arg(&entry.rust_args[0], "macd fast");
             let slow = usize_arg(&entry.rust_args[1], "macd slow");
             let signal = usize_arg(&entry.rust_args[2], "macd signal");
-            let (macd, sig, hist) =
-                nanobook::indicators::macd(close, fast, slow, signal);
+            let (macd, sig, hist) = nanobook::indicators::macd(close, fast, slow, signal);
             vec![macd, sig, hist]
         }
         "bbands" => {
             let period = usize_arg(&entry.rust_args[0], "bbands period");
             let up = f64_arg(&entry.rust_args[1], "bbands nbdevup");
             let dn = f64_arg(&entry.rust_args[2], "bbands nbdevdn");
-            let (upper, middle, lower) =
-                nanobook::indicators::bbands(close, period, up, dn);
+            let (upper, middle, lower) = nanobook::indicators::bbands(close, period, up, dn);
             vec![upper, middle, lower]
         }
         "atr" => {
@@ -385,7 +388,10 @@ fn talib_registry_matches_golden() {
         for (key, series) in keys.iter().zip(ours.iter()) {
             let expected = f64_nullable(&g, &["talib", key]);
             assert_indicator_parity(series, &expected, entry.tol, key);
-            let first_valid = expected.iter().position(|v| v.is_some()).unwrap_or(usize::MAX);
+            let first_valid = expected
+                .iter()
+                .position(|v| v.is_some())
+                .unwrap_or(usize::MAX);
             eprintln!(
                 "checking {key}: first_valid_index={first_valid}, tol={:.3e}",
                 entry.tol
@@ -399,11 +405,8 @@ fn talib_registry_matches_golden() {
 fn talib_golden_keys_known() {
     let g = golden();
     let reg = registry();
-    let known: std::collections::HashSet<String> = reg
-        .indicators
-        .iter()
-        .flat_map(golden_keys)
-        .collect();
+    let known: std::collections::HashSet<String> =
+        reg.indicators.iter().flat_map(golden_keys).collect();
 
     let talib_obj = g
         .get("talib")

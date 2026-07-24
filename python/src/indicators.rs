@@ -145,7 +145,14 @@ pub fn py_stoch(
     slowk_period: usize,
     slowd_period: usize,
 ) -> (Vec<f64>, Vec<f64>) {
-    indicators::stoch(&high, &low, &close, fastk_period, slowk_period, slowd_period)
+    indicators::stoch(
+        &high,
+        &low,
+        &close,
+        fastk_period,
+        slowk_period,
+        slowd_period,
+    )
 }
 
 /// Fast stochastic oscillator.
@@ -164,24 +171,14 @@ pub fn py_stochf(
 /// Plus Directional Indicator.
 #[pyfunction]
 #[pyo3(signature = (high, low, close, period=14))]
-pub fn py_plus_di(
-    high: Vec<f64>,
-    low: Vec<f64>,
-    close: Vec<f64>,
-    period: usize,
-) -> Vec<f64> {
+pub fn py_plus_di(high: Vec<f64>, low: Vec<f64>, close: Vec<f64>, period: usize) -> Vec<f64> {
     indicators::plus_di(&high, &low, &close, period)
 }
 
 /// Minus Directional Indicator.
 #[pyfunction]
 #[pyo3(signature = (high, low, close, period=14))]
-pub fn py_minus_di(
-    high: Vec<f64>,
-    low: Vec<f64>,
-    close: Vec<f64>,
-    period: usize,
-) -> Vec<f64> {
+pub fn py_minus_di(high: Vec<f64>, low: Vec<f64>, close: Vec<f64>, period: usize) -> Vec<f64> {
     indicators::minus_di(&high, &low, &close, period)
 }
 
@@ -263,12 +260,7 @@ pub fn py_obv(close: Vec<f64>, volume: Vec<f64>) -> Vec<f64> {
 
 /// Chaikin Accumulation/Distribution Line.
 #[pyfunction]
-pub fn py_ad(
-    high: Vec<f64>,
-    low: Vec<f64>,
-    close: Vec<f64>,
-    volume: Vec<f64>,
-) -> Vec<f64> {
+pub fn py_ad(high: Vec<f64>, low: Vec<f64>, close: Vec<f64>, volume: Vec<f64>) -> Vec<f64> {
     indicators::ad(&high, &low, &close, &volume)
 }
 

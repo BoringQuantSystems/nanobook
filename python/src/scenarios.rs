@@ -308,7 +308,9 @@ pub fn monte_carlo_stock_valuation_native(
     bear_price: Option<f64>,
 ) -> PyResult<PyMonteCarloResult> {
     let model = ModelVersion::parse(version);
-    let seed_u64 = seed.map(|s| s as u64).unwrap_or_else(nondeterministic_mc_seed);
+    let seed_u64 = seed
+        .map(|s| s as u64)
+        .unwrap_or_else(nondeterministic_mc_seed);
     let params = ValuationParams {
         gp_growth_mean,
         gp_growth_sd,

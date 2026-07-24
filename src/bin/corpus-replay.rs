@@ -5,9 +5,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 use std::process::exit;
 
-use nanobook::{
-    Exchange, OrderId, OrderOwner, Price, Side, StpPolicy, TimeInForce, Trade,
-};
+use nanobook::{Exchange, OrderId, OrderOwner, Price, Side, StpPolicy, TimeInForce, Trade};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum CorpusEvent {
@@ -125,9 +123,7 @@ fn json_owner_field(obj: &serde_json::Value) -> Option<Option<u32>> {
 fn json_stp_field(obj: &serde_json::Value) -> Option<StpPolicy> {
     match obj.get("stp_policy") {
         None => Some(StpPolicy::Off),
-        Some(v) => v
-            .as_str()
-            .and_then(stp_policy_from_corpus_str),
+        Some(v) => v.as_str().and_then(stp_policy_from_corpus_str),
     }
 }
 
@@ -324,8 +320,10 @@ mod tests {
 
     #[test]
     fn replays_case_01_to_expected_trade_jsonl() {
-        let trades = replay_file(Path::new("oracle-ocaml/test/corpus/01-simple-cross/input.jsonl"))
-            .expect("case 01 replays");
+        let trades = replay_file(Path::new(
+            "oracle-ocaml/test/corpus/01-simple-cross/input.jsonl",
+        ))
+        .expect("case 01 replays");
 
         assert_eq!(
             trades,

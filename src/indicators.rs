@@ -369,7 +369,10 @@ pub fn atr(high: &[f64], low: &[f64], close: &[f64], period: usize) -> Vec<f64> 
 
 /// Raw stochastic %K: `(close - LL) / (HH - LL) * 100` over `period`.
 fn stoch_raw_k(close: f64, high_window: &[f64], low_window: &[f64]) -> f64 {
-    let hh = high_window.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let hh = high_window
+        .iter()
+        .copied()
+        .fold(f64::NEG_INFINITY, f64::max);
     let ll = low_window.iter().copied().fold(f64::INFINITY, f64::min);
     let denom = hh - ll;
     if denom == 0.0 {
@@ -394,12 +397,7 @@ pub fn stoch(
 ) -> (Vec<f64>, Vec<f64>) {
     let n = close.len();
     let nan_pair = || (vec![f64::NAN; n], vec![f64::NAN; n]);
-    if n == 0
-        || fastk_period == 0
-        || slowk_period == 0
-        || slowd_period == 0
-        || n < fastk_period
-    {
+    if n == 0 || fastk_period == 0 || slowk_period == 0 || slowd_period == 0 || n < fastk_period {
         return nan_pair();
     }
 
@@ -492,8 +490,16 @@ pub fn stochrsi(
 fn dm1(prev_high: f64, prev_low: f64, high: f64, low: f64) -> (f64, f64) {
     let diff_p = high - prev_high;
     let diff_m = prev_low - low;
-    let plus = if diff_p > 0.0 && diff_p > diff_m { diff_p } else { 0.0 };
-    let minus = if diff_m > 0.0 && diff_p < diff_m { diff_m } else { 0.0 };
+    let plus = if diff_p > 0.0 && diff_p > diff_m {
+        diff_p
+    } else {
+        0.0
+    };
+    let minus = if diff_m > 0.0 && diff_p < diff_m {
+        diff_m
+    } else {
+        0.0
+    };
     (plus, minus)
 }
 
@@ -855,10 +861,7 @@ pub fn willr(high: &[f64], low: &[f64], close: &[f64], period: usize) -> Vec<f64
             .iter()
             .copied()
             .fold(f64::NEG_INFINITY, f64::max);
-        let lowest = low[start..=i]
-            .iter()
-            .copied()
-            .fold(f64::INFINITY, f64::min);
+        let lowest = low[start..=i].iter().copied().fold(f64::INFINITY, f64::min);
         let denom = highest - lowest;
         out[i] = if denom == 0.0 {
             0.0
@@ -964,16 +967,28 @@ pub fn ultosc(
         }
         out[today] = 100.0 * (output / 7.0);
 
-        let (bp1, tr1) =
-            ultosc_terms(high[trailing1], low[trailing1], close[trailing1], close[trailing1 - 1]);
+        let (bp1, tr1) = ultosc_terms(
+            high[trailing1],
+            low[trailing1],
+            close[trailing1],
+            close[trailing1 - 1],
+        );
         a1 -= bp1;
         b1 -= tr1;
-        let (bp2, tr2) =
-            ultosc_terms(high[trailing2], low[trailing2], close[trailing2], close[trailing2 - 1]);
+        let (bp2, tr2) = ultosc_terms(
+            high[trailing2],
+            low[trailing2],
+            close[trailing2],
+            close[trailing2 - 1],
+        );
         a2 -= bp2;
         b2 -= tr2;
-        let (bp3, tr3) =
-            ultosc_terms(high[trailing3], low[trailing3], close[trailing3], close[trailing3 - 1]);
+        let (bp3, tr3) = ultosc_terms(
+            high[trailing3],
+            low[trailing3],
+            close[trailing3],
+            close[trailing3 - 1],
+        );
         a3 -= bp3;
         b3 -= tr3;
 
@@ -1051,11 +1066,7 @@ pub fn rocr(close: &[f64], period: usize) -> Vec<f64> {
     }
     for i in period..n {
         let prev = close[i - period];
-        out[i] = if prev == 0.0 {
-            0.0
-        } else {
-            close[i] / prev
-        };
+        out[i] = if prev == 0.0 { 0.0 } else { close[i] / prev };
     }
     out
 }
