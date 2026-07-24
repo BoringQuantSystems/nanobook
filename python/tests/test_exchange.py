@@ -4,7 +4,12 @@ import nanobook
 
 
 def test_version():
-    assert nanobook.__version__ == "0.9.1"
+    # Pin the binding's __version__ to the installed distribution metadata
+    # rather than a literal, so a release bump cannot leave the two out of
+    # step (they were 8 minor versions apart before this was tied together).
+    from importlib.metadata import version
+
+    assert nanobook.__version__ == version("nanobook")
 
 
 def test_exchange_repr():

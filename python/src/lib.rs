@@ -52,7 +52,10 @@ fn py_capabilities() -> Vec<&'static str> {
 /// and matching engine for testing trading algorithms.
 #[pymodule]
 fn nanobook(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add("__version__", "0.9.1")?;
+    // Taken from the crate manifest so it cannot drift from the shipped
+    // wheel; `python/Cargo.toml` is kept in step with `python/pyproject.toml`,
+    // which is what maturin stamps onto the distribution.
+    m.add("__version__", env!("CARGO_PKG_VERSION"))?;
 
     // Broker types
     m.add_class::<broker::PyIbkrBroker>()?;

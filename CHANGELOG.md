@@ -61,6 +61,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Python `__version__` drift** — the binding hardcoded `0.9.1` while the wheel
+  shipped as `0.16.2`. It is now taken from the crate manifest via
+  `env!("CARGO_PKG_VERSION")`, and `test_version` asserts it against the
+  installed distribution metadata so the two cannot diverge again.
 - **CI toolchain and lints** — pinned `dtolnay/rust-toolchain` to the known-good
   stable SHA, applied `cargo fmt --all`, and resolved `clippy -D warnings`
   (manual memcpy, range/counter loops) in the indicators module. Bumped the
