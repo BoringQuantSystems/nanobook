@@ -425,10 +425,8 @@ pub fn stoch(
     let output_first = fastk_period - 1 + slowk_period - 1 + slowd_period - 1;
     let mut out_k = vec![f64::NAN; n];
     let mut out_d = vec![f64::NAN; n];
-    for i in output_first..n {
-        out_k[i] = slow_k[i];
-        out_d[i] = slow_d[i];
-    }
+    out_k[output_first..n].copy_from_slice(&slow_k[output_first..n]);
+    out_d[output_first..n].copy_from_slice(&slow_d[output_first..n]);
     (out_k, out_d)
 }
 
@@ -465,10 +463,8 @@ pub fn stochf(
     let output_first = d_start;
     let mut out_k = vec![f64::NAN; n];
     let mut out_d = vec![f64::NAN; n];
-    for i in output_first..n {
-        out_k[i] = raw_k[i];
-        out_d[i] = fast_d[i];
-    }
+    out_k[output_first..n].copy_from_slice(&raw_k[output_first..n]);
+    out_d[output_first..n].copy_from_slice(&fast_d[output_first..n]);
     (out_k, out_d)
 }
 
@@ -730,7 +726,7 @@ pub fn adx(high: &[f64], low: &[f64], close: &[f64], period: usize) -> Vec<f64> 
         || period < 2
         || high.len() != low.len()
         || high.len() != close.len()
-        || n <= 2 * period - 1
+        || n < 2 * period
     {
         return out;
     }
@@ -822,7 +818,7 @@ pub fn cci(high: &[f64], low: &[f64], close: &[f64], period: usize) -> Vec<f64> 
         return out;
     }
 
-    for i in (period - 1)..n {
+    for (i, out_i) in out.iter_mut().enumerate().skip(period - 1) {
         let start = i + 1 - period;
         let mut sum = 0.0_f64;
         let mut tp_vals = Vec::with_capacity(period);
@@ -835,7 +831,7 @@ pub fn cci(high: &[f64], low: &[f64], close: &[f64], period: usize) -> Vec<f64> 
         let last_tp = tp_vals[period - 1];
         let mean_dev: f64 = tp_vals.iter().map(|v| (v - avg).abs()).sum();
         let diff = last_tp - avg;
-        out[i] = if diff != 0.0 && mean_dev != 0.0 {
+        *out_i = if diff != 0.0 && mean_dev != 0.0 {
             diff / (0.015 * (mean_dev / period as f64))
         } else {
             0.0
@@ -932,21 +928,20 @@ pub fn ultosc(
         let (bp, tr) = ultosc_terms(high[i], low[i], close[i], close[i - 1]);
         a3 += bp;
         b3 += tr;
-        if i >= start - p_mid + 1 {
+        if i > start - p_mid {
             a2 += bp;
             b2 += tr;
         }
-        if i >= start - p_short + 1 {
+        if i > start - p_short {
             a1 += bp;
             b1 += tr;
         }
     }
 
-    let mut trailing1 = start - p_short + 1;
-    let mut trailing2 = start - p_mid + 1;
-    let mut trailing3 = start - p_long + 1;
-
     for today in start..n {
+        let trailing1 = today + 1 - p_short;
+        let trailing2 = today + 1 - p_mid;
+        let trailing3 = today + 1 - p_long;
         let (bp, tr) = ultosc_terms(high[today], low[today], close[today], close[today - 1]);
         a1 += bp;
         a2 += bp;
@@ -991,10 +986,6 @@ pub fn ultosc(
         );
         a3 -= bp3;
         b3 -= tr3;
-
-        trailing1 += 1;
-        trailing2 += 1;
-        trailing3 += 1;
     }
 
     out
@@ -1296,10 +1287,8 @@ fn stoch_on_series(
     let output_first = series_first + fastk_period - 1 + fastd_period - 1;
     let mut out_k = vec![f64::NAN; n];
     let mut out_d = vec![f64::NAN; n];
-    for i in output_first..n {
-        out_k[i] = raw_k[i];
-        out_d[i] = fast_d[i];
-    }
+    out_k[output_first..n].copy_from_slice(&raw_k[output_first..n]);
+    out_d[output_first..n].copy_from_slice(&fast_d[output_first..n]);
     (out_k, out_d)
 }
 
