@@ -57,7 +57,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `quinn-proto` to 0.11.16 (RUSTSEC-2026-0185, remote memory exhaustion) and
   `crossbeam-epoch` to 0.9.20 (RUSTSEC-2026-0204, invalid pointer dereference).
   The pyo3 bump adds explicit `from_py_object` opt-in to the `Clone`-deriving
-  `#[pyclass]` types; behaviour is unchanged.
+  `#[pyclass]` types; behaviour is unchanged. Also cleared the two remaining
+  unsoundness advisories by bumping `anyhow` to 1.0.104 (RUSTSEC-2026-0190,
+  `Error::downcast_mut`) and `memmap2` to 0.9.11 (RUSTSEC-2026-0186, unchecked
+  pointer offset). `cargo audit` and `cargo deny check` are both clean.
 
 ### Fixed
 
