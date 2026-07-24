@@ -1,7 +1,7 @@
 use nanobook::portfolio::Position;
 use pyo3::prelude::*;
 
-#[pyclass(name = "Position")]
+#[pyclass(name = "Position", from_py_object)]
 #[derive(Clone)]
 pub struct PyPosition {
     pub inner: Position,

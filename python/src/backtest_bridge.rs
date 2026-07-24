@@ -26,7 +26,7 @@ fn parse_symbol_schedule<T: Copy>(
         .collect()
 }
 
-#[pyclass(name = "BarPrices")]
+#[pyclass(name = "BarPrices", from_py_object)]
 #[derive(Clone)]
 pub struct PyBarPrices {
     pub inner: BarPrices,
@@ -75,7 +75,7 @@ impl PyBarPrices {
     }
 }
 
-#[pyclass(name = "FillPolicy")]
+#[pyclass(name = "FillPolicy", from_py_object)]
 #[derive(Clone)]
 pub struct PyFillPolicy {
     pub inner: FillPolicy,

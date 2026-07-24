@@ -2,7 +2,7 @@ use crate::types::side_str;
 use nanobook::Order;
 use pyo3::prelude::*;
 
-#[pyclass(name = "Order")]
+#[pyclass(name = "Order", from_py_object)]
 #[derive(Clone)]
 pub struct PyOrder {
     pub inner: Order,

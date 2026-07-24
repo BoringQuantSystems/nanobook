@@ -6,7 +6,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 
 /// Performance metrics for a return series.
-#[pyclass(name = "Metrics")]
+#[pyclass(name = "Metrics", from_py_object)]
 #[derive(Clone)]
 pub struct PyMetrics {
     #[pyo3(get)]

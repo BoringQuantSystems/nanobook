@@ -4,7 +4,7 @@ use crate::types::{price_to_float, side_str};
 use pyo3::prelude::*;
 
 /// Result of a backtest run.
-#[pyclass(name = "BacktestResult")]
+#[pyclass(name = "BacktestResult", from_py_object)]
 #[derive(Clone)]
 pub struct PyBacktestResult {
     #[pyo3(get)]
@@ -34,7 +34,7 @@ impl From<nanobook::portfolio::BacktestResult> for PyBacktestResult {
 }
 
 /// Result of submitting an order.
-#[pyclass(name = "SubmitResult")]
+#[pyclass(name = "SubmitResult", from_py_object)]
 #[derive(Clone)]
 pub struct PySubmitResult {
     #[pyo3(get)]
@@ -84,7 +84,7 @@ impl From<nanobook::SubmitResult> for PySubmitResult {
 }
 
 /// Result of cancelling an order.
-#[pyclass(name = "CancelResult")]
+#[pyclass(name = "CancelResult", from_py_object)]
 #[derive(Clone)]
 pub struct PyCancelResult {
     #[pyo3(get)]
@@ -123,7 +123,7 @@ impl From<nanobook::CancelResult> for PyCancelResult {
 }
 
 /// Result of modifying an order.
-#[pyclass(name = "ModifyResult")]
+#[pyclass(name = "ModifyResult", from_py_object)]
 #[derive(Clone)]
 pub struct PyModifyResult {
     #[pyo3(get)]
@@ -177,7 +177,7 @@ impl From<nanobook::ModifyResult> for PyModifyResult {
 }
 
 /// Result of submitting a stop order.
-#[pyclass(name = "StopSubmitResult")]
+#[pyclass(name = "StopSubmitResult", from_py_object)]
 #[derive(Clone)]
 pub struct PyStopSubmitResult {
     #[pyo3(get)]
@@ -206,7 +206,7 @@ impl From<nanobook::StopSubmitResult> for PyStopSubmitResult {
 }
 
 /// A trade that occurred in the exchange.
-#[pyclass(name = "Trade")]
+#[pyclass(name = "Trade", from_py_object)]
 #[derive(Clone)]
 pub struct PyTrade {
     #[pyo3(get)]
@@ -259,7 +259,7 @@ impl From<nanobook::Trade> for PyTrade {
 }
 
 /// A price level in the order book snapshot.
-#[pyclass(name = "LevelSnapshot")]
+#[pyclass(name = "LevelSnapshot", from_py_object)]
 #[derive(Clone)]
 pub struct PyLevelSnapshot {
     #[pyo3(get)]

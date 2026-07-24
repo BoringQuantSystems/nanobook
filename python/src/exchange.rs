@@ -326,7 +326,7 @@ impl PyExchange {
 }
 
 /// Book depth snapshot.
-#[pyclass(name = "BookSnapshot")]
+#[pyclass(name = "BookSnapshot", from_py_object)]
 #[derive(Clone)]
 pub struct PyBookSnapshot {
     inner: nanobook::BookSnapshot,

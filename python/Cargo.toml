@@ -18,9 +18,9 @@ scenarios = ["nanobook/scenarios"]
 nanobook = { path = "..", features = ["event-log", "serde", "persistence", "portfolio", "parallel", "scenarios"] }
 nanobook-broker = { path = "../broker", features = ["ibkr"] }
 nanobook-risk = { path = "../risk" }
-pyo3 = { version = "0.27", features = ["extension-module"] }
-numpy = "0.27"
+pyo3 = { version = "0.29", features = ["extension-module"] }
+numpy = "0.29"
 serde_json = "1"
 
 [build-dependencies]
-pyo3-build-config = "0.27"
+pyo3-build-config = "0.29"

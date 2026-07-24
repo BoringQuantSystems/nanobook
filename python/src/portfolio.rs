@@ -19,7 +19,7 @@ use crate::types::parse_symbol;
 ///     model = CostModel(commission_bps=10.0, slippage_bps=5.0, min_commission=100)
 ///     zero = CostModel.zero()
 ///
-#[pyclass(name = "CostModel")]
+#[pyclass(name = "CostModel", from_py_object)]
 #[derive(Clone)]
 pub struct PyCostModel {
     pub inner: CostModel,
@@ -71,7 +71,7 @@ impl PyCostModel {
 ///     portfolio = Portfolio(1_000_000_00, CostModel.zero())
 ///     portfolio.rebalance_simple([("AAPL", 0.6)], [("AAPL", 15000)])
 ///
-#[pyclass(name = "Portfolio")]
+#[pyclass(name = "Portfolio", from_py_object)]
 #[derive(Clone)]
 pub struct PyPortfolio {
     pub inner: Portfolio,

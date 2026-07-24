@@ -2,7 +2,7 @@ use nanobook::Event;
 use pyo3::IntoPyObjectExt;
 use pyo3::prelude::*;
 
-#[pyclass(name = "Event")]
+#[pyclass(name = "Event", from_py_object)]
 #[derive(Clone)]
 pub struct PyEvent {
     pub inner: Event,
