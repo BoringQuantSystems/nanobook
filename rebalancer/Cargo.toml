@@ -33,7 +33,7 @@ tracing-appender = "0.2"
 tracing-log = "0.2"
 rustc-hash = "2.1"
 anyhow = "1.0"
-dialoguer = "0.11"
+dialoguer = "0.12"
 nix = { version = "0.29", features = ["signal"] }
 signal-hook = "0.3"
 fs2 = "0.4"
