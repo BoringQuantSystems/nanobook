@@ -3,8 +3,9 @@
 
 //! Stop order benchmarks: triggers, cascades, and trailing updates.
 
-use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use nanobook::{Exchange, Price, Side, TimeInForce, TrailMethod};
+use std::hint::black_box;
 
 fn bench_stop_trigger(c: &mut Criterion) {
     let mut group = c.benchmark_group("stop_trigger");

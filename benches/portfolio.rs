@@ -3,9 +3,10 @@
 
 //! Portfolio benchmarks: backtest, sweep, and metrics computation.
 
-use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use nanobook::portfolio::{CostModel, EqualWeight, compute_metrics, run_backtest};
 use nanobook::{Price, Symbol};
+use std::hint::black_box;
 
 fn sym(s: &str) -> Symbol {
     Symbol::new(s)

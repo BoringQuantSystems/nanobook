@@ -24,7 +24,7 @@ strict-market-reject = ["ibkr"]
 [dependencies]
 nanobook = { version = "0.17", path = "..", features = ["serde"] }
 thiserror = "2.0"
-sha2 = "0.10"
+sha2 = "0.11"
 
 # IBKR dependencies (optional)
 ibapi = { version = "2.7", default-features = false, features = ["sync"], optional = true }
@@ -35,7 +35,7 @@ log = { version = "0.4", optional = true }
 # here. Pinning a TLS backend here would conflict with the
 # crate-level selector and drag vendored OpenSSL into every build.
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json"], optional = true }
-hmac = { version = "0.12", optional = true }
+hmac = { version = "0.13", optional = true }
 hex = { version = "0.4", optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }

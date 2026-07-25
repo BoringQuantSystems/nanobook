@@ -9,8 +9,9 @@
 //! - Market order execution
 //! - Book queries (BBO, depth)
 
-use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use nanobook::{Exchange, OrderId, Price, Side, TimeInForce};
+use std::hint::black_box;
 
 /// Build an exchange with N price levels on each side.
 fn build_book(levels: usize, orders_per_level: usize) -> Exchange {

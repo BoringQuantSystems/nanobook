@@ -1,6 +1,8 @@
 //! HMAC-SHA256 signature generation for Binance API requests.
 
-use hmac::{Hmac, Mac};
+// `new_from_slice` lives on `KeyInit` as of hmac 0.13 (the digest 0.11
+// generation); it used to be reachable through `Mac` alone.
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
 
 use crate::error::BrokerError;

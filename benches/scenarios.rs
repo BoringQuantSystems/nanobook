@@ -1,7 +1,8 @@
 //! Monte Carlo scenario generation throughput (native ChaCha20 path).
 
-use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use nanobook::scenarios::{ModelVersion, ValuationParams, monte_carlo_stock_valuation};
+use std::hint::black_box;
 
 fn bench_mc(c: &mut Criterion) {
     let params = ValuationParams::default();
