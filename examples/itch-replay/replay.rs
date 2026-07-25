@@ -602,7 +602,7 @@ impl Replay {
     }
 
     fn check_monotonic(&mut self, stock: &str, timestamp: u64) -> io::Result<()> {
-        // Nested rather than a let-chain: let-chains need Rust 1.88, MSRV is 1.85.
+        // Nested rather than a let-chain: let-chains need Rust 1.88, MSRV is 1.86.
         if let Some(previous) = self
             .last_timestamp_by_symbol
             .insert(stock.to_string(), timestamp)

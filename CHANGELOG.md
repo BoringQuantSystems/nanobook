@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **MSRV raised from 1.85 to 1.86.** `criterion` 0.8 requires rustc 1.86, and
+  holding the benchmark harness three majors back to preserve 1.85 was the worse
+  trade. The library itself uses no 1.86-only features, so this is a floor
+  change rather than a code change; let-chains still need 1.88 and remain
+  written out longhand.
+- **Dependencies brought current** — GitHub Actions: `checkout` 7.0.1,
+  `setup-python` 7.0.0, `setup-uv` 9.0.0, `action-gh-release` 3.0.2,
+  `gh-action-pypi-publish` 1.14.1. Cargo: `serde` 1.0.229, `criterion` 0.8,
+  `toml` 1.1, `dialoguer` 0.12, `sha2` 0.11 with `hmac` 0.13 (the digest 0.11
+  generation — `new_from_slice` moved from `Mac` to `KeyInit`). Binance request
+  signing is unchanged; the known-signature vector still matches.
+
 ## [0.17.0] - 2026-07-25 - TA-Lib indicators + Monte Carlo scenarios
 
 ### Added

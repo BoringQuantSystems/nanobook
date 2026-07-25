@@ -2,7 +2,7 @@
 name = "nanobook-risk"
 version = "0.6.2"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.86"
 description = "Pre-trade risk checks for nanobook orders and target-weight rebalances"
 license = "MIT"
 repository = "https://github.com/BoringQuantSystems/nanobook"

@@ -651,7 +651,7 @@ fn effective_stop_level(
         candidates.push((level, "trailing"));
     }
 
-    // Nested rather than a let-chain: let-chains need Rust 1.88, MSRV is 1.85.
+    // Nested rather than a let-chain: let-chains need Rust 1.88, MSRV is 1.86.
     if let Some(mult) = cfg.atr_multiple {
         if let Some(atr) = tracker.atr(cfg.atr_period) {
             let level = if tracker.side > 0 {
