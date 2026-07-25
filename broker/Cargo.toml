@@ -24,7 +24,7 @@ strict-market-reject = ["ibkr"]
 [dependencies]
 nanobook = { version = "0.17", path = "..", features = ["serde"] }
 thiserror = "2.0"
-sha2 = "0.10"
+sha2 = "0.11"
 
 # IBKR dependencies (optional)
 ibapi = { version = "2.7", default-features = false, features = ["sync"], optional = true }
