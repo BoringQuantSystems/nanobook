@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.17.0] - 2026-07-24 - TA-Lib indicators + Monte Carlo scenarios
+## [0.17.0] - 2026-07-25 - TA-Lib indicators + Monte Carlo scenarios
 
 ### Added
 

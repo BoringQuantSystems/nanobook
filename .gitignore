@@ -37,6 +37,7 @@ bug-hunt-findings.md
 BUG_HUNT_FINDINGS.md
 plan.md
 PLAN.md
+plan-*.md
 
 # Private/internal documentation kept off the public branch
 docs/from-*/
