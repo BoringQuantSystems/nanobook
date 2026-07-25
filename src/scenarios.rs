@@ -517,8 +517,9 @@ fn cha_cha_rng(seed: u64) -> ChaCha20Rng {
 
 /// Nondeterministic seed for native MC when Python passes ``seed=None``.
 pub fn nondeterministic_mc_seed() -> u64 {
-    use rand::RngCore;
-    rand::thread_rng().next_u64()
+    // rand 0.10 renamed `RngCore` to `Rng` and `thread_rng()` to `rng()`;
+    // `random` does the same job here without naming either.
+    rand::random::<u64>()
 }
 
 #[allow(dead_code)] // parity PyO3 / batch paths keep separate driver vecs
