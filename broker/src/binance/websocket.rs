@@ -136,7 +136,10 @@ impl BinanceWebSocket {
             "params": ["!userData"],
             "id": 1,
         });
-        client.send(Message::Text(subscription.to_string())).await?;
+        // tokio-tungstenite 0.30 carries text as `Utf8Bytes`, not `String`.
+        client
+            .send(Message::Text(subscription.to_string().into()))
+            .await?;
 
         if let Some(message) = client.next().await {
             if let Some(event) = Self::parse_frame(message?)? {
@@ -170,7 +173,7 @@ impl BinanceWebSocket {
             .as_mut()
             .ok_or("Binance WebSocket is not connected")?;
 
-        client.send(Message::Ping(vec![])).await?;
+        client.send(Message::Ping(Vec::new().into())).await?;
         self.update_heartbeat();
         Ok(())
     }
@@ -261,8 +264,10 @@ impl BinanceWebSocket {
         match message {
             Message::Text(text) => Self::parse_text_message(&text).map(Some),
             Message::Binary(bytes) => {
-                let text = String::from_utf8(bytes)?;
-                Self::parse_text_message(&text).map(Some)
+                // `bytes` is a `Bytes` as of tokio-tungstenite 0.30; borrow it
+                // rather than copying into an owned String on every frame.
+                let text = std::str::from_utf8(&bytes)?;
+                Self::parse_text_message(text).map(Some)
             }
             Message::Ping(_) | Message::Pong(_) => Ok(None),
             Message::Close(_) => Ok(None),

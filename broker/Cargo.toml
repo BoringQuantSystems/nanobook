@@ -17,7 +17,10 @@ documentation = "https://docs.rs/nanobook-broker"
 default = ["rustls"]
 ibkr = ["dep:ibapi", "dep:log"]
 binance = ["dep:reqwest", "dep:hmac", "dep:hex", "dep:serde", "dep:serde_json", "dep:log", "dep:zeroize", "dep:chrono", "dep:uuid", "dep:tokio", "dep:tokio-tungstenite", "dep:futures-util"]
-rustls = ["reqwest?/rustls-tls"]
+# reqwest 0.13 renamed `rustls-tls` to `rustls`, which now pulls in the
+# aws-lc-rs provider and rustls-platform-verifier (OS trust store) rather
+# than bundling webpki-roots.
+rustls = ["reqwest?/rustls"]
 native-tls = ["reqwest?/native-tls"]
 strict-market-reject = ["ibkr"]
 
@@ -34,7 +37,7 @@ log = { version = "0.4", optional = true }
 # `rustls` (default) / `native-tls` feature flags, NOT via features
 # here. Pinning a TLS backend here would conflict with the
 # crate-level selector and drag vendored OpenSSL into every build.
-reqwest = { version = "0.12", default-features = false, features = ["blocking", "json"], optional = true }
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "json"], optional = true }
 hmac = { version = "0.13", optional = true }
 hex = { version = "0.4", optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
@@ -43,13 +46,13 @@ zeroize = { version = "1.8", features = ["zeroize_derive"], optional = true }
 chrono = { version = "0.4", features = ["serde"], optional = true }
 uuid = { version = "1.11", features = ["v4"], optional = true }
 tokio = { version = "1.0", features = ["full"], optional = true }
-tokio-tungstenite = { version = "0.21", optional = true }
+tokio-tungstenite = { version = "0.30", optional = true }
 futures-util = { version = "0.3", optional = true }
 
 [dev-dependencies]
 tempfile = "3"
 tokio = { version = "1.0", features = ["full"] }
-tokio-tungstenite = "0.21"
+tokio-tungstenite = "0.30"
 futures-util = "0.3"
 serde_json = "1"
 
