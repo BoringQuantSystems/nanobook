@@ -129,6 +129,13 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable @ 2026-05-21
 
+      # crates.io uploads are permanent — a version can never be
+      # reused. Nothing else in this workflow runs the suite, so
+      # without this step the tag alone is enough to publish, on the
+      # strength of whatever CI happened to run earlier.
+      - name: Test before publish
+        run: cargo test --workspace --all-features
+
       # Version-gated publish (I1). Replaces `|| true`, which used
       # to mask real publish failures (network, auth, malformed
       # manifest) alongside the intended "already uploaded" case.

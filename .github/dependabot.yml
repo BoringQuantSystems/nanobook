@@ -4,3 +4,13 @@ updates:
     directory: /
     schedule:
       interval: weekly
+
+  # Cargo dependencies. Without this, advisory-affected crates only
+  # surface when `cargo audit` happens to run in CI, so they collect
+  # silently and all land at once on a release day. The PR limit keeps
+  # routine version churn from drowning the security-relevant bumps.
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

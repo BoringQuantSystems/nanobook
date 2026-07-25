@@ -2,7 +2,10 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # `dev` is included so integration work is checked at the commit
+    # that introduces a problem rather than at the dev -> main merge,
+    # where unrelated failures pile up and have to be peeled apart.
+    branches: [main, dev]
   pull_request:
     branches: [main]
 
