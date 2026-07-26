@@ -15,8 +15,28 @@ This release carries the same contents as 0.17.1 plus the fix, and is the
 version to use. Crate versions: `nanobook` 0.17.2, `nanobook-broker` 0.8.1,
 `nanobook-risk` 0.6.4, `nanobook-rebalancer` 0.8.4.
 
+### Changed
+
+- **MSRV raised from 1.86 to 1.88** across all four crates. The 1.86 claim was
+  already false for `nanobook-broker`, `nanobook-risk` and
+  `nanobook-rebalancer`: the 0.17.1 dependency sweep pulled `time` to 0.3.54
+  (via `ibapi` and `tracing-appender`), which requires 1.88. Declaring 1.88
+  everywhere keeps one number across the workspace. Cargo's resolver is
+  MSRV-aware, so a consumer on an older toolchain resolves to an earlier
+  version rather than failing to build.
+- Nested `if let` blocks in `level`, `price_levels`, `stop`, `exchange`,
+  `backtest_bridge` and two examples are now let-chains, which 1.88 permits.
+  Machine-applied and semantically identical; the suite is unchanged at 1134
+  passing.
+
 ### Fixed
 
+- **`nanobook-rebalancer` did not compile on Windows.** The `#[cfg(windows)]`
+  arm of the kill switch opened with `use windows::Win32::System::Console::…`
+  for symbols it never referenced, and the `windows` crate was never declared
+  as a dependency. The import is removed; the arm already returned "Kill
+  switch not fully supported on Windows yet" unconditionally, so behaviour is
+  unchanged. Every published version of this crate has been broken on Windows.
 - **`test_reconciliation_blocks_submission` no longer calls the live Binance
   API.** It opened a real connection as setup, so it failed with
   `451 Unavailable For Legal Reasons` on runners in regions Binance

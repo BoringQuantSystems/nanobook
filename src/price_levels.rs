@@ -137,13 +137,13 @@ impl PriceLevels {
     /// Returns `true` if the order was found and removed.
     /// Removes the level entirely if it becomes empty.
     pub fn remove_order(&mut self, price: Price, order_id: OrderId, quantity: Quantity) -> bool {
-        if let Some(level) = self.levels.get_mut(&price) {
-            if level.remove(order_id, quantity) {
-                if level.is_empty() {
-                    self.remove_level(price);
-                }
-                return true;
+        if let Some(level) = self.levels.get_mut(&price)
+            && level.remove(order_id, quantity)
+        {
+            if level.is_empty() {
+                self.remove_level(price);
             }
+            return true;
         }
         false
     }

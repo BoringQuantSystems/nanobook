@@ -364,12 +364,12 @@ impl Exchange {
     /// Internal: cancel without recording event.
     pub(crate) fn cancel_internal(&mut self, order_id: OrderId) -> CancelResult {
         // Check stop book first
-        if self.stop_book.contains_pending(order_id) {
-            if let Some(stop) = self.stop_book.get(order_id) {
-                let qty = stop.quantity;
-                self.stop_book.cancel(order_id);
-                return CancelResult::success(qty);
-            }
+        if self.stop_book.contains_pending(order_id)
+            && let Some(stop) = self.stop_book.get(order_id)
+        {
+            let qty = stop.quantity;
+            self.stop_book.cancel(order_id);
+            return CancelResult::success(qty);
         }
 
         // Check if order exists in regular book
@@ -624,24 +624,22 @@ impl Exchange {
         // establish the watermark first. update_trailing_stops() will adjust the
         // stop price relative to the watermark, so the raw stop_price check would
         // be misleading.
-        if !is_trailing {
-            if let Some(last_price) = self.last_trade_price {
-                let should_trigger = match side {
-                    Side::Buy => last_price >= stop_price,
-                    Side::Sell => last_price <= stop_price,
+        if !is_trailing && let Some(last_price) = self.last_trade_price {
+            let should_trigger = match side {
+                Side::Buy => last_price >= stop_price,
+                Side::Sell => last_price <= stop_price,
+            };
+            if should_trigger {
+                self.process_trade_triggers();
+                let status = self
+                    .stop_book
+                    .get(id)
+                    .map(|o| o.status)
+                    .unwrap_or(StopStatus::Triggered);
+                return StopSubmitResult {
+                    order_id: id,
+                    status,
                 };
-                if should_trigger {
-                    self.process_trade_triggers();
-                    let status = self
-                        .stop_book
-                        .get(id)
-                        .map(|o| o.status)
-                        .unwrap_or(StopStatus::Triggered);
-                    return StopSubmitResult {
-                        order_id: id,
-                        status,
-                    };
-                }
             }
         }
 

@@ -57,28 +57,26 @@ impl MarketMaker {
     fn check_fills(&mut self, exchange: &mut Exchange) -> bool {
         let mut filled = false;
 
-        if let Some(id) = self.bid_id {
-            if let Some(order) = exchange.get_order(id) {
-                if order.filled_quantity > 0 {
-                    println!(
-                        "  Bid filled: {} @ {} (remaining: {})",
-                        order.filled_quantity, order.price, order.remaining_quantity
-                    );
-                    filled = true;
-                }
-            }
+        if let Some(id) = self.bid_id
+            && let Some(order) = exchange.get_order(id)
+            && order.filled_quantity > 0
+        {
+            println!(
+                "  Bid filled: {} @ {} (remaining: {})",
+                order.filled_quantity, order.price, order.remaining_quantity
+            );
+            filled = true;
         }
 
-        if let Some(id) = self.ask_id {
-            if let Some(order) = exchange.get_order(id) {
-                if order.filled_quantity > 0 {
-                    println!(
-                        "  Ask filled: {} @ {} (remaining: {})",
-                        order.filled_quantity, order.price, order.remaining_quantity
-                    );
-                    filled = true;
-                }
-            }
+        if let Some(id) = self.ask_id
+            && let Some(order) = exchange.get_order(id)
+            && order.filled_quantity > 0
+        {
+            println!(
+                "  Ask filled: {} @ {} (remaining: {})",
+                order.filled_quantity, order.price, order.remaining_quantity
+            );
+            filled = true;
         }
 
         filled

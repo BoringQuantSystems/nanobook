@@ -122,12 +122,12 @@ impl Level {
     /// The caller provides the index into the VecDeque (tracked in OrderBook's
     /// HashMap). The order's quantity is subtracted from the level total.
     pub fn mark_tombstone(&mut self, index: usize, quantity: Quantity) {
-        if let Some(id_ref) = self.orders.get_mut(index) {
-            if id_ref.0 != 0 {
-                id_ref.0 = 0; // Set to tombstone ID
-                self.total_quantity = self.total_quantity.saturating_sub(quantity);
-                self.tombstone_count += 1;
-            }
+        if let Some(id_ref) = self.orders.get_mut(index)
+            && id_ref.0 != 0
+        {
+            id_ref.0 = 0; // Set to tombstone ID
+            self.total_quantity = self.total_quantity.saturating_sub(quantity);
+            self.tombstone_count += 1;
         }
     }
 

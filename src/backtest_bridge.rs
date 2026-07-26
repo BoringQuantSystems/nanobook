@@ -407,16 +407,17 @@ pub fn decompose_backtest(
 
             if previous == 0.0 && weight != 0.0 {
                 open_trades.insert(symbol, (period_index, weight));
-            } else if previous != 0.0 && weight == 0.0 {
-                if let Some((entry_index, entry_weight)) = open_trades.remove(&symbol) {
-                    trades.push(AttributionTrade {
-                        symbol,
-                        entry_index,
-                        exit_index: Some(period_index),
-                        entry_weight,
-                        exit_weight: previous,
-                    });
-                }
+            } else if previous != 0.0
+                && weight == 0.0
+                && let Some((entry_index, entry_weight)) = open_trades.remove(&symbol)
+            {
+                trades.push(AttributionTrade {
+                    symbol,
+                    entry_index,
+                    exit_index: Some(period_index),
+                    entry_weight,
+                    exit_weight: previous,
+                });
             }
 
             let period_return = return_map
@@ -651,17 +652,16 @@ fn effective_stop_level(
         candidates.push((level, "trailing"));
     }
 
-    // Nested rather than a let-chain: let-chains need Rust 1.88, MSRV is 1.86.
-    if let Some(mult) = cfg.atr_multiple {
-        if let Some(atr) = tracker.atr(cfg.atr_period) {
-            let level = if tracker.side > 0 {
-                (tracker.reference_price as f64 - mult * atr).round() as i64
-            } else {
-                (tracker.reference_price as f64 + mult * atr).round() as i64
-            }
-            .max(1);
-            candidates.push((level, "atr"));
+    if let Some(mult) = cfg.atr_multiple
+        && let Some(atr) = tracker.atr(cfg.atr_period)
+    {
+        let level = if tracker.side > 0 {
+            (tracker.reference_price as f64 - mult * atr).round() as i64
+        } else {
+            (tracker.reference_price as f64 + mult * atr).round() as i64
         }
+        .max(1);
+        candidates.push((level, "atr"));
     }
 
     if candidates.is_empty() {

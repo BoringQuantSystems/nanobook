@@ -173,14 +173,14 @@ impl StopBook {
         for key in buy_keys {
             if let Some(ids) = self.buy_stops.remove(&key) {
                 for id in ids {
-                    if let Some(order) = self.orders.get_mut(&id) {
-                        if order.status == StopStatus::Pending {
-                            order.status = StopStatus::Triggered;
-                            // Clone needed: order must remain in book for trailing stop logic
-                            // and audit trail. Consider refactoring to return OrderIds if this
-                            // becomes a performance bottleneck.
-                            triggered.push(order.clone());
-                        }
+                    if let Some(order) = self.orders.get_mut(&id)
+                        && order.status == StopStatus::Pending
+                    {
+                        order.status = StopStatus::Triggered;
+                        // Clone needed: order must remain in book for trailing stop logic
+                        // and audit trail. Consider refactoring to return OrderIds if this
+                        // becomes a performance bottleneck.
+                        triggered.push(order.clone());
                     }
                 }
             }
@@ -196,14 +196,14 @@ impl StopBook {
         for key in sell_keys {
             if let Some(ids) = self.sell_stops.remove(&key) {
                 for id in ids {
-                    if let Some(order) = self.orders.get_mut(&id) {
-                        if order.status == StopStatus::Pending {
-                            order.status = StopStatus::Triggered;
-                            // Clone needed: order must remain in book for trailing stop logic
-                            // and audit trail. Consider refactoring to return OrderIds if this
-                            // becomes a performance bottleneck.
-                            triggered.push(order.clone());
-                        }
+                    if let Some(order) = self.orders.get_mut(&id)
+                        && order.status == StopStatus::Pending
+                    {
+                        order.status = StopStatus::Triggered;
+                        // Clone needed: order must remain in book for trailing stop logic
+                        // and audit trail. Consider refactoring to return OrderIds if this
+                        // becomes a performance bottleneck.
+                        triggered.push(order.clone());
                     }
                 }
             }

@@ -2,7 +2,7 @@
 name = "nanobook-broker"
 version = "0.8.1"
 edition = "2024"
-rust-version = "1.86"
+rust-version = "1.88"
 description = "Broker abstraction and IBKR/Binance adapters for nanobook execution workflows"
 license = "MIT"
 repository = "https://github.com/BoringQuantSystems/nanobook"

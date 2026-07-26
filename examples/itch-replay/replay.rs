@@ -195,7 +195,7 @@ impl Replay {
     /// True when this event should carry a top-5 book snapshot.
     #[inline]
     fn should_snapshot(&self) -> bool {
-        self.snapshot_every > 0 && self.stats.messages % self.snapshot_every == 0
+        self.snapshot_every > 0 && self.stats.messages.is_multiple_of(self.snapshot_every)
     }
 
     /// Either the recorded book snapshot or all-nulls — depending on
@@ -602,18 +602,16 @@ impl Replay {
     }
 
     fn check_monotonic(&mut self, stock: &str, timestamp: u64) -> io::Result<()> {
-        // Nested rather than a let-chain: let-chains need Rust 1.88, MSRV is 1.86.
         if let Some(previous) = self
             .last_timestamp_by_symbol
             .insert(stock.to_string(), timestamp)
+            && timestamp < previous
         {
-            if timestamp < previous {
-                self.write_violation(
-                    timestamp,
-                    stock,
-                    format!("timestamp went backwards: previous={previous}, current={timestamp}"),
-                )?;
-            }
+            self.write_violation(
+                timestamp,
+                stock,
+                format!("timestamp went backwards: previous={previous}, current={timestamp}"),
+            )?;
         }
         Ok(())
     }

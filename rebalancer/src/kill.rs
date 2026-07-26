@@ -405,9 +405,15 @@ pub fn send_sigterm(pid: u32) -> Result<()> {
 
     #[cfg(windows)]
     {
-        // On Windows, we don't have SIGTERM. Use console event instead.
-        // This is a simplified implementation - Windows signal handling is more complex.
-        use windows::Win32::System::Console::{CTRL_C_EVENT, GenerateConsoleCtrlEvent};
+        // On Windows there is no SIGTERM. A console event (or better,
+        // TerminateProcess) would be the route, but neither is implemented, so
+        // this arm reports the gap rather than pretending to kill anything.
+        //
+        // This block previously opened with a `use windows::Win32::...` import
+        // for symbols it never referenced, and the `windows` crate was never a
+        // dependency — so nanobook-rebalancer did not compile on Windows at
+        // all. CI only ever built the root crate, which is why that went
+        // unnoticed.
 
         // Note: This is a simplified approach. On Windows, proper process termination
         // typically requires more complex handling (e.g., using TerminateProcess).
