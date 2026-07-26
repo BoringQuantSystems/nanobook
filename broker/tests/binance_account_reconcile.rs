@@ -53,10 +53,15 @@ mod binance_reconcile_tests {
 
         let mut broker = BinanceBroker::new("test_key", "test_secret", true);
 
-        // Connect the broker
-        broker.connect().unwrap();
-
-        // Block reconciliation
+        // Deliberately not connected. `submit_order` checks the
+        // reconciliation flag before `require_client()`, so the block must
+        // fire without a client — and calling `connect()` here would ping the
+        // live Binance API, which answers 451 from a restricted region and
+        // made this test depend on where the runner happens to sit.
+        //
+        // This still catches a reordering regression: if the client check
+        // moved ahead of the flag check, the error would be `NotConnected`
+        // and the match below would hit its panic arm.
         broker.block_reconciliation();
 
         // Try to submit an order - should fail

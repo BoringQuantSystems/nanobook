@@ -7,7 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.2] - 2026-07-26 - Release-gate fix
+
+0.17.1 reached PyPI and the GitHub release but never reached crates.io: the
+publish gate ran the workspace test suite and one test failed on the runner.
+This release carries the same contents as 0.17.1 plus the fix, and is the
+version to use. Crate versions: `nanobook` 0.17.2, `nanobook-broker` 0.8.1,
+`nanobook-risk` 0.6.4, `nanobook-rebalancer` 0.8.4.
+
+### Fixed
+
+- **`test_reconciliation_blocks_submission` no longer calls the live Binance
+  API.** It opened a real connection as setup, so it failed with
+  `451 Unavailable For Legal Reasons` on runners in regions Binance
+  restricts. `submit_order` checks the reconciliation flag before it requires
+  a client, so the connection was never needed for the assertion; the test
+  still fails if that check order is ever reversed.
+- **CI ran `cargo test --all-features` without `--workspace`**, so it only
+  ever tested the root crate — the broker, risk and rebalancer suites were
+  invisible to it apart from three explicitly-named failure-injection drills.
+  That is why a test making live network calls survived unnoticed. The test
+  job now runs the whole workspace.
+
 ## [0.17.1] - 2026-07-26 - Dependency sweep and MSRV 1.86
+
+**Superseded by 0.17.2.** Published to PyPI and GitHub releases only; the
+crates.io publish did not run. See 0.17.2 for the reason.
 
 A maintenance release. No public API changed in any crate, and no numerical
 output moved. The one behavioural change is the TLS trust store used by the
@@ -1095,7 +1120,8 @@ Initial release of nanobook - a deterministic limit order book and matching engi
 - Fixed-point price representation (avoids floating-point errors)
 - Deterministic via monotonic timestamps (not system clock)
 
-[Unreleased]: https://github.com/BoringQuantSystems/nanobook/compare/v0.17.1...HEAD
+[Unreleased]: https://github.com/BoringQuantSystems/nanobook/compare/v0.17.2...HEAD
+[0.17.2]: https://github.com/BoringQuantSystems/nanobook/compare/v0.17.1...v0.17.2
 [0.17.1]: https://github.com/BoringQuantSystems/nanobook/compare/v0.17.0...v0.17.1
 [0.17.0]: https://github.com/BoringQuantSystems/nanobook/compare/v0.16.2...v0.17.0
 [0.16.2]: https://github.com/BoringQuantSystems/nanobook/compare/v0.16.1...v0.16.2

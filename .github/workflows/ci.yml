@@ -44,8 +44,12 @@ jobs:
 
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
+      # `--workspace` matters: without it this only tested the root crate,
+      # so the broker/risk/rebalancer suites never ran here and a test that
+      # called the live Binance API sat undetected until the release gate
+      # tried to publish and hit a 451 from a restricted runner region.
       - name: Run tests (all features)
-        run: cargo test --all-features
+        run: cargo test --workspace --all-features
 
       - name: Run tests (no default features)
         run: cargo test --no-default-features
