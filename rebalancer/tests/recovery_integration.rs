@@ -434,7 +434,10 @@ port = 7497
 client_id = 1
 
 [logging]
-dir = "{}"
+# Literal string (single quotes): a Windows temp path such as
+# C:\Users\RUNNER~1\AppData\Local\Temp\... contains \U, \A and \T, which are
+# invalid escapes in a TOML basic string and made Config::load fail here.
+dir = '{}'
 audit_file = "audit.jsonl"
 
 [execution]
