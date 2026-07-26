@@ -7,19 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.1] - 2026-07-26 - Dependency sweep and MSRV 1.86
+
+A maintenance release. No public API changed in any crate, and no numerical
+output moved. The one behavioural change is the TLS trust store used by the
+optional Binance HTTPS client, which is why `nanobook-broker` takes a minor
+bump while everything else is a patch.
+
+**Breaking (nanobook-broker 0.7.2 → 0.8.0):**
+
+- **The `rustls` TLS backend now uses the OS trust store, not a bundled one.**
+  `reqwest` 0.13 renamed its `rustls-tls` feature to `rustls` and changed what
+  it pulls in: `rustls-platform-verifier` (system trust anchors) and `aws-lc-rs`
+  replace the previously vendored `webpki-roots` and `ring`. The
+  `nanobook-broker` feature names (`rustls`, `native-tls`) are unchanged, so no
+  manifest edit is needed — but a minimal container image that ships no CA
+  bundle will now fail the TLS handshake to Binance where it previously
+  succeeded. Install `ca-certificates`, or select `native-tls` instead. Only
+  affects builds with the `binance` feature enabled; `nanobook-risk` and
+  `nanobook-rebalancer` do not enable it.
+
 ### Changed
 
 - **MSRV raised from 1.85 to 1.86.** `criterion` 0.8 requires rustc 1.86, and
   holding the benchmark harness three majors back to preserve 1.85 was the worse
   trade. The library itself uses no 1.86-only features, so this is a floor
   change rather than a code change; let-chains still need 1.88 and remain
-  written out longhand.
+  written out longhand. Cargo's resolver has been MSRV-aware since 1.84, so a
+  toolchain still on 1.85 resolves to 0.17.0 rather than failing to build.
 - **Dependencies brought current** — GitHub Actions: `checkout` 7.0.1,
   `setup-python` 7.0.0, `setup-uv` 9.0.0, `action-gh-release` 3.0.2,
   `gh-action-pypi-publish` 1.14.1. Cargo: `serde` 1.0.229, `criterion` 0.8,
-  `toml` 1.1, `dialoguer` 0.12, `sha2` 0.11 with `hmac` 0.13 (the digest 0.11
-  generation — `new_from_slice` moved from `Mac` to `KeyInit`). Binance request
-  signing is unchanged; the known-signature vector still matches.
+  `toml` 1.1, `dialoguer` 0.12, `nix` 0.31, `signal-hook` 0.4,
+  `tokio-tungstenite` 0.30, `reqwest` 0.13, and `sha2` 0.11 with `hmac` 0.13
+  (the digest 0.11 generation — `new_from_slice` moved from `Mac` to
+  `KeyInit`). Binance request signing is unchanged; the known-signature vector
+  still matches.
+- **`rand` 0.8 → 0.10** (with `rand_chacha` 0.3 → 0.10 and `rand_distr` 0.4 →
+  0.6). The only affected call site is the `seed=None` helper in
+  `scenarios`; seeded Monte Carlo output was compared before and after the
+  upgrade for a fixed seed and is bit-identical to 17 significant digits.
+- **Patch versions**: `nanobook` and `nanobook-python` to 0.17.1,
+  `nanobook-risk` to 0.6.3, `nanobook-rebalancer` to 0.8.3. `ibapi` stays on
+  the 2.x line deliberately; the 3.x migration changes disconnect-detection
+  semantics in live order placement and is scoped as its own change.
 
 ## [0.17.0] - 2026-07-25 - TA-Lib indicators + Monte Carlo scenarios
 
@@ -1064,7 +1095,8 @@ Initial release of nanobook - a deterministic limit order book and matching engi
 - Fixed-point price representation (avoids floating-point errors)
 - Deterministic via monotonic timestamps (not system clock)
 
-[Unreleased]: https://github.com/BoringQuantSystems/nanobook/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/BoringQuantSystems/nanobook/compare/v0.17.1...HEAD
+[0.17.1]: https://github.com/BoringQuantSystems/nanobook/compare/v0.17.0...v0.17.1
 [0.17.0]: https://github.com/BoringQuantSystems/nanobook/compare/v0.16.2...v0.17.0
 [0.16.2]: https://github.com/BoringQuantSystems/nanobook/compare/v0.16.1...v0.16.2
 [0.16.1]: https://github.com/BoringQuantSystems/nanobook/compare/v0.16.0...v0.16.1
