@@ -917,8 +917,19 @@ timeout_secs = {timeout_secs}
         let result = run_kill(&config);
 
         std::env::set_current_dir(original_dir).unwrap();
+
+        // The two platforms fail for different reasons and the test pins both.
+        // On unix the signal reaches nix and comes back ESRCH, so the PID is
+        // reported missing. On Windows the kill switch is not implemented, so
+        // it refuses before it ever looks the process up — assert that refusal
+        // rather than a message Windows cannot produce.
+        #[cfg(unix)]
         assert!(
             matches!(result, Err(Error::Aborted(message)) if message.contains("does not exist"))
+        );
+        #[cfg(windows)]
+        assert!(
+            matches!(result, Err(Error::Aborted(message)) if message.contains("not fully supported"))
         );
     }
 
