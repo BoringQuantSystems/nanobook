@@ -30,7 +30,7 @@ thiserror = "2.0"
 sha2 = "0.11"
 
 # IBKR dependencies (optional)
-ibapi = { version = "2.7", default-features = false, features = ["sync"], optional = true }
+ibapi = { version = "3.3", default-features = false, features = ["sync"], optional = true }
 log = { version = "0.4", optional = true }
 
 # Binance dependencies (optional). TLS backend is selected via the
