@@ -711,6 +711,83 @@ mod tests {
         assert_eq!(a.median_price(), b.median_price());
     }
 
+    /// Frozen reference values for the native ChaCha20 path.
+    ///
+    /// `native_mc_reproducible` above only compares two runs inside one build,
+    /// so it passes whether or not an RNG upgrade moved the stream. This test
+    /// pins the actual numbers, captured on 2026-07-31 with rand 0.10.2 /
+    /// rand_chacha 0.10. If a future rand bump changes the draw sequence, these
+    /// values move by whole percent and this fails loudly, instead of the shift
+    /// having to be caught by hand.
+    ///
+    /// The comparison is relative rather than bitwise on purpose: the draws
+    /// themselves are exact, but the terminal math runs through `exp`/`ln`,
+    /// whose last ulp is libm-dependent and so can differ between Linux, macOS
+    /// and Windows. 1e-12 is far tighter than any stream change and far looser
+    /// than that platform noise.
+    #[test]
+    fn native_mc_matches_frozen_reference() {
+        fn close(actual: f64, expected: f64, what: &str) {
+            let tol = 1e-12 * expected.abs();
+            assert!(
+                (actual - expected).abs() <= tol,
+                "{what}: got {actual:.17e}, expected {expected:.17e}"
+            );
+        }
+
+        // (version, expected median, first six terminal prices)
+        let cases: [(ModelVersion, f64, [f64; 6]); 2] = [
+            (
+                ModelVersion::Simple,
+                82.72,
+                [
+                    83.8342845450791,
+                    75.0777746721276,
+                    62.07229385240271,
+                    43.482335154890144,
+                    51.38091457588956,
+                    71.13543229003699,
+                ],
+            ),
+            (
+                ModelVersion::Advanced,
+                87.31,
+                [
+                    65.12115044541964,
+                    79.01696441262114,
+                    110.75436660707012,
+                    68.65094077523544,
+                    101.49080641203211,
+                    75.51724580675427,
+                ],
+            ),
+        ];
+
+        for (version, expected_median, expected_head) in cases {
+            let result = monte_carlo_stock_valuation(
+                "T".to_string(),
+                74.0,
+                version,
+                256,
+                1.0,
+                42,
+                0.18,
+                0.38,
+                ValuationParams::default(),
+                0.08,
+                None,
+                None,
+            )
+            .unwrap();
+
+            assert_eq!(result.terminal_prices.len(), 256, "{version:?}: path count");
+            close(result.median_price(), expected_median, "median");
+            for (i, expected) in expected_head.iter().enumerate() {
+                close(result.terminal_prices[i], *expected, &format!("path {i}"));
+            }
+        }
+    }
+
     /// With `parallel` enabled, rayon preserves index order in `collect()`; terminal
     /// math on independent paths must remain bitwise reproducible across runs.
     #[cfg(feature = "parallel")]
