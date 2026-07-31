@@ -13,15 +13,15 @@
 #![allow(clippy::inconsistent_digit_grouping)]
 
 use nanobook::Symbol;
-use nanobook::portfolio::{CostModel, Portfolio, Position};
+use nanobook::portfolio::{CostModel, Portfolio, Position, Shares};
 
 #[test]
 fn market_value_does_not_panic_on_large_quantity_times_price() {
     let sym = Symbol::new("FZ0");
     let mut pos = Position::new(sym);
-    // Fill that puts quantity near 2B so quantity * price overflows i64
+    // Fill that puts quantity near 2B shares so quantity * price overflows i64
     // for any price > ~4.6 billion cents.
-    pos.apply_fill(2_000_000_000, 5_000_000_000);
+    pos.apply_fill(Shares::from_whole(2_000_000_000), 5_000_000_000);
 
     // Was previously a panic; now must return a saturated i64.
     let mv = pos.market_value(5_000_000_000);
@@ -35,7 +35,7 @@ fn market_value_does_not_panic_on_large_quantity_times_price() {
 fn unrealized_pnl_does_not_panic_on_large_inputs() {
     let sym = Symbol::new("FZ0");
     let mut pos = Position::new(sym);
-    pos.apply_fill(2_000_000_000, 5_000_000_000);
+    pos.apply_fill(Shares::from_whole(2_000_000_000), 5_000_000_000);
 
     // Must not panic. Specific value depends on saturation but should be saturated.
     let _pnl = pos.unrealized_pnl(6_000_000_000);
@@ -46,10 +46,10 @@ fn apply_fill_does_not_panic_on_overflow() {
     let sym = Symbol::new("FZ0");
     let mut pos = Position::new(sym);
     // Sequence that would have overflowed total_cost accumulation
-    pos.apply_fill(1_000_000_000, 1_000_000_000);
-    pos.apply_fill(1_000_000_000, 1_000_000_000);
+    pos.apply_fill(Shares::from_whole(1_000_000_000), 1_000_000_000);
+    pos.apply_fill(Shares::from_whole(1_000_000_000), 1_000_000_000);
     // Just assert it didn't panic
-    assert!(pos.quantity > 0);
+    assert!(pos.quantity.is_positive());
 }
 
 #[test]

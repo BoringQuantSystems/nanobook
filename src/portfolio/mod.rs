@@ -34,7 +34,7 @@ pub mod sweep;
 
 pub use cost_model::CostModel;
 pub use metrics::{Metrics, compute_metrics};
-pub use position::Position;
+pub use position::{Position, Shares};
 pub use strategy::{BacktestResult, EqualWeight, Strategy, run_backtest};
 
 use crate::types::Symbol;
@@ -68,7 +68,7 @@ mod serde_positions {
 /// All monetary values (cash, equity) are in the smallest currency unit (cents).
 ///
 /// ```
-/// use nanobook::portfolio::{CostModel, Portfolio};
+/// use nanobook::portfolio::{CostModel, Portfolio, Shares};
 /// use nanobook::Symbol;
 ///
 /// let mut portfolio = Portfolio::new(100_000_00, CostModel::zero());
@@ -77,7 +77,7 @@ mod serde_positions {
 /// portfolio.rebalance_simple(&[(aapl, 0.50)], &[(aapl, 200_00)]);
 ///
 /// let position = portfolio.position(&aapl).unwrap();
-/// assert_eq!(position.quantity, 250);
+/// assert_eq!(position.quantity, Shares::from_whole(250));
 /// assert_eq!(portfolio.current_weights(&[(aapl, 200_00)])[0].1, 0.5);
 /// ```
 #[derive(Clone, Debug)]
@@ -102,6 +102,18 @@ pub struct Portfolio {
     equity_curve: Vec<i64>,
     /// Previous equity for return calculation
     prev_equity: i64,
+    /// Order sizing granularity, in micro-shares (see [`Shares`]). Positions are
+    /// always sized to a multiple of this step. Defaults to `Shares::SCALE`
+    /// (whole shares), which reproduces pre-fractional-share behaviour exactly.
+    #[cfg_attr(feature = "serde", serde(default = "default_quantity_step"))]
+    quantity_step: i64,
+}
+
+/// Serde default for `Portfolio::quantity_step`: whole shares, so JSON saved
+/// before this field existed still loads with pre-fractional-share behaviour.
+#[cfg(feature = "serde")]
+fn default_quantity_step() -> i64 {
+    Shares::SCALE
 }
 
 impl Portfolio {
@@ -109,6 +121,10 @@ impl Portfolio {
     ///
     /// `initial_cash` is in cents (e.g., `1_000_000_00` = $1,000,000).
     /// Negative initial cash is a programming error (use `debug_assert`).
+    ///
+    /// Order sizing defaults to whole shares (`quantity_step = Shares::SCALE`).
+    /// Use [`Portfolio::set_quantity_step`] or [`Portfolio::with_quantity_step`]
+    /// to size at fractional-share granularity instead.
     pub fn new(initial_cash: i64, cost_model: CostModel) -> Self {
         debug_assert!(
             initial_cash >= 0,
@@ -121,7 +137,31 @@ impl Portfolio {
             returns: Vec::new(),
             equity_curve: vec![initial_cash],
             prev_equity: initial_cash,
+            quantity_step: Shares::SCALE,
         }
+    }
+
+    /// Builder-style variant of [`Portfolio::new`] with an explicit sizing step
+    /// (micro-shares). Useful values: `1_000_000` (whole shares, the default),
+    /// `1_000` (Alpaca's 0.001-share minimum), `100` (IBKR's 0.0001-share
+    /// minimum), `1` (effectively continuous).
+    pub fn with_quantity_step(initial_cash: i64, cost_model: CostModel, step: i64) -> Self {
+        let mut p = Self::new(initial_cash, cost_model);
+        p.set_quantity_step(step);
+        p
+    }
+
+    /// Set the order sizing granularity (micro-shares). Must be positive;
+    /// values `<= 0` are a programming error (use `debug_assert`).
+    pub fn set_quantity_step(&mut self, step: i64) {
+        debug_assert!(step > 0, "quantity_step must be positive, got {step}");
+        self.quantity_step = step;
+    }
+
+    /// The current order sizing granularity (micro-shares).
+    #[inline]
+    pub fn quantity_step(&self) -> i64 {
+        self.quantity_step
     }
 
     // === Queries ===
@@ -237,9 +277,10 @@ impl Portfolio {
             let target_value = (equity as f64 * target_weight) as i64;
             let diff_value = target_value.saturating_sub(current_value);
 
-            // Convert value difference to shares
-            let diff_qty = diff_value / price;
-            if diff_qty != 0 {
+            // Convert value difference to shares, rounded to a multiple of
+            // quantity_step and truncated toward zero.
+            let diff_qty = size_qty(diff_value, price, self.quantity_step);
+            if !diff_qty.is_zero() {
                 self.execute_fill(sym, diff_qty, price);
             }
         }
@@ -307,14 +348,18 @@ impl Portfolio {
             .collect();
 
         for sym in to_close {
+            // The LOB only matches whole lots (Quantity = u64 order-book units,
+            // out of scope for fractional shares), so truncate to whole shares
+            // regardless of `quantity_step`.
             let (qty, side) = match self.positions.get(&sym) {
                 Some(pos) if !pos.is_flat() => {
-                    let side = if pos.quantity > 0 {
+                    let whole = pos.quantity.whole();
+                    let side = if whole > 0 {
                         crate::Side::Sell
                     } else {
                         crate::Side::Buy
                     };
-                    (pos.quantity.unsigned_abs(), side)
+                    (whole.unsigned_abs(), side)
                 }
                 _ => continue,
             };
@@ -326,7 +371,7 @@ impl Portfolio {
                 } else {
                     trade.quantity as i64
                 };
-                self.execute_fill(sym, fill_qty, trade.price.0);
+                self.execute_fill(sym, Shares::from_whole(fill_qty), trade.price.0);
             }
         }
 
@@ -365,7 +410,7 @@ impl Portfolio {
                 } else {
                     -(trade.quantity as i64)
                 };
-                self.execute_fill(sym, fill_qty, trade.price.0);
+                self.execute_fill(sym, Shares::from_whole(fill_qty), trade.price.0);
             }
         }
     }
@@ -455,18 +500,25 @@ impl Portfolio {
     }
 
     /// Execute a fill: update position, deduct cost, adjust cash.
-    fn execute_fill(&mut self, symbol: Symbol, qty: i64, price: i64) {
-        if qty == 0 {
+    ///
+    /// `qty` is signed micro-shares (see [`Shares`]).
+    fn execute_fill(&mut self, symbol: Symbol, qty: Shares, price: i64) {
+        if qty.is_zero() {
             return;
         }
         // [Inference: rounding mode] round() = round-half-away-from-zero; a plausible default
         // but arguable. Flag: effective_price rounding mode unspecified by ADR-0003.
-        let sign = if qty > 0 { 1.0_f64 } else { -1.0_f64 };
+        let sign = if qty.is_positive() { 1.0_f64 } else { -1.0_f64 };
         let slippage_factor = 1.0 + sign * self.cost_model.slippage_bps / 10_000.0;
         let effective_price_f = price as f64 * slippage_factor;
         let effective_price = effective_price_f.round() as i64;
 
-        let notional = qty.saturating_abs().saturating_mul(effective_price);
+        // i128 intermediate: at micro-share granularity a large position
+        // (e.g. 1e6 shares at $10,000) overflows i64 before normalizing by
+        // Shares::SCALE, so raw_qty * price must not be computed in i64.
+        let notional_i128 = (qty.raw().unsigned_abs() as i128) * (effective_price.unsigned_abs() as i128)
+            / (Shares::SCALE as i128);
+        let notional = notional_i128.clamp(0, i64::MAX as i128) as i64;
         let cost = self.cost_model.compute_cost(notional);
 
         let pos = self
@@ -475,10 +527,30 @@ impl Portfolio {
             .or_insert_with(|| Position::new(symbol));
         pos.apply_fill(qty, effective_price);
 
-        self.cash = self
-            .cash
-            .saturating_sub(qty.saturating_mul(effective_price).saturating_add(cost));
+        let cash_delta_i128 =
+            (qty.raw() as i128) * (effective_price as i128) / (Shares::SCALE as i128);
+        let cash_delta = cash_delta_i128.clamp(i64::MIN as i128, i64::MAX as i128) as i64;
+        self.cash = self.cash.saturating_sub(cash_delta.saturating_add(cost));
     }
+}
+
+/// Convert a target value difference (cents) at a given price (cents/share)
+/// into a signed micro-share quantity ([`Shares`]), rounded down in magnitude
+/// to the nearest multiple of `step` (micro-shares) — i.e. truncated toward
+/// zero identically for buys (`diff_value > 0`) and sells (`diff_value < 0`).
+///
+/// `price` must be positive; `step` must be positive. Uses `i128`
+/// intermediates so large notional values can't overflow before scaling.
+fn size_qty(diff_value: i64, price: i64, step: i64) -> Shares {
+    if diff_value == 0 || price <= 0 || step <= 0 {
+        return Shares::ZERO;
+    }
+    let sign: i128 = if diff_value < 0 { -1 } else { 1 };
+    let abs_value = diff_value.unsigned_abs() as i128;
+    let raw_micro = abs_value * (Shares::SCALE as i128) / (price as i128);
+    let snapped = (raw_micro / (step as i128)) * (step as i128);
+    let signed = snapped * sign;
+    Shares::from_raw(signed.clamp(i64::MIN as i128, i64::MAX as i128) as i64)
 }
 
 /// A point-in-time snapshot of portfolio state.
@@ -524,9 +596,9 @@ mod tests {
         portfolio.rebalance_simple(&targets, &prices);
 
         let pos = portfolio.position(&aapl()).unwrap();
-        assert!(pos.quantity > 0);
+        assert!(pos.quantity.is_positive());
         // Should have bought ~$500,000 worth at $150 = ~3333 shares
-        assert_eq!(pos.quantity, 3333);
+        assert_eq!(pos.quantity, Shares::from_whole(3333));
     }
 
     #[test]
@@ -570,8 +642,8 @@ mod tests {
 
         // First: buy AAPL and MSFT
         portfolio.rebalance_simple(&[(aapl(), 0.5), (msft(), 0.5)], &prices);
-        assert!(portfolio.position(&aapl()).unwrap().quantity > 0);
-        assert!(portfolio.position(&msft()).unwrap().quantity > 0);
+        assert!(portfolio.position(&aapl()).unwrap().quantity.is_positive());
+        assert!(portfolio.position(&msft()).unwrap().quantity.is_positive());
 
         // Second: only AAPL — MSFT should be closed
         portfolio.rebalance_simple(&[(aapl(), 0.5)], &prices);
@@ -583,7 +655,7 @@ mod tests {
         let mut portfolio = Portfolio::new(1_000_000_00, CostModel::zero());
         let prices = [(aapl(), 150_00)];
         portfolio.rebalance_simple(&[(aapl(), 0.8)], &prices);
-        assert!(portfolio.position(&aapl()).unwrap().quantity > 0);
+        assert!(portfolio.position(&aapl()).unwrap().quantity.is_positive());
 
         let closed = portfolio.close_position_at(aapl(), 155_00);
         assert!(closed);
@@ -628,6 +700,161 @@ mod tests {
         assert_eq!(weights.len(), 1);
         // Weight should be approximately 0.5
         assert!((weights[0].1 - 0.5).abs() < 0.01);
+    }
+
+    // === Fractional-share sizing (default quantity_step == Shares::SCALE) ===
+
+    #[test]
+    fn default_quantity_step_is_whole_shares() {
+        let portfolio = Portfolio::new(1_000_000_00, CostModel::zero());
+        assert_eq!(portfolio.quantity_step(), Shares::SCALE);
+    }
+
+    /// Pins the exact whole-share sizing and equity at the default
+    /// `quantity_step`, so any future change to sizing that alters today's
+    /// numbers is caught here — this is the "bit-identical at default" proof.
+    #[test]
+    fn default_step_pins_exact_quantities_and_equity() {
+        let mut portfolio = Portfolio::new(1_000_000_00, CostModel::zero()); // $1,000,000
+        let prices = [(aapl(), 150_00), (msft(), 300_00)];
+        let targets = [(aapl(), 0.6), (msft(), 0.4)];
+
+        portfolio.rebalance_simple(&targets, &prices);
+
+        // target_value(AAPL) = 60_000_000 cents / 150_00 cents/share = 4000 shares exactly.
+        assert_eq!(
+            portfolio.position(&aapl()).unwrap().quantity,
+            Shares::from_whole(4000)
+        );
+        // target_value(MSFT) = 40_000_000 cents / 300_00 cents/share = 1333.33 -> 1333 shares.
+        assert_eq!(
+            portfolio.position(&msft()).unwrap().quantity,
+            Shares::from_whole(1333)
+        );
+
+        // Zero cost, no slippage, both fills exactly reversible in cash terms:
+        // equity is conserved to the cent (only integer share truncation on
+        // MSFT leaves a cash remainder, no value is destroyed).
+        let equity = portfolio.total_equity(&prices);
+        assert_eq!(equity, 1_000_000_00);
+    }
+
+    // === Fractional sizing (quantity_step < Shares::SCALE) ===
+
+    /// With a $1,000 account and 20 equal-weight $219 names, whole-share
+    /// sizing rounds every target to zero shares (50 / 219 < 1). Alpaca's
+    /// fractional minimum (`quantity_step = 1_000`, 0.001 share) must let
+    /// every target hold a non-zero position and invest > 99% of capital.
+    #[test]
+    fn fractional_step_invests_small_account() {
+        let mut portfolio =
+            Portfolio::with_quantity_step(1_000_00, CostModel::zero(), 1_000); // $1,000, 0.001-share step
+        let price = 219_00; // $219, matches the plan's median-price figure
+        let n = 20;
+        let weight = 1.0 / n as f64;
+        let symbols: Vec<Symbol> = (0..n)
+            .map(|i| Symbol::new(&format!("SYM{i}")))
+            .collect();
+        let prices: Vec<(Symbol, i64)> = symbols.iter().map(|s| (*s, price)).collect();
+        let targets: Vec<(Symbol, f64)> = symbols.iter().map(|s| (*s, weight)).collect();
+
+        portfolio.rebalance_simple(&targets, &prices);
+
+        for sym in &symbols {
+            let pos = portfolio.position(sym).unwrap();
+            assert!(
+                !pos.is_flat(),
+                "{sym} rounded to zero shares under fractional sizing"
+            );
+        }
+
+        let equity = portfolio.total_equity(&prices);
+        let invested_fraction = 1.0 - portfolio.cash() as f64 / equity as f64;
+        assert!(
+            invested_fraction > 0.99,
+            "only {:.2}% of capital invested",
+            invested_fraction * 100.0
+        );
+    }
+
+    /// Under whole-share sizing (the pre-fractional default), the same
+    /// $1,000 / 20-name setup rounds every target to zero — this is the
+    /// defect the plan measured, reproduced here as the "before" baseline
+    /// for the fractional-step test above.
+    #[test]
+    fn whole_share_step_leaves_small_account_uninvested() {
+        let mut portfolio = Portfolio::new(1_000_00, CostModel::zero()); // $1,000, default step
+        let price = 219_00;
+        let n = 20;
+        let weight = 1.0 / n as f64;
+        let symbols: Vec<Symbol> = (0..n)
+            .map(|i| Symbol::new(&format!("SYM{i}")))
+            .collect();
+        let prices: Vec<(Symbol, i64)> = symbols.iter().map(|s| (*s, price)).collect();
+        let targets: Vec<(Symbol, f64)> = symbols.iter().map(|s| (*s, weight)).collect();
+
+        portfolio.rebalance_simple(&targets, &prices);
+
+        for sym in &symbols {
+            // A target that rounds to zero shares never gets a position at
+            // all (execute_fill is skipped for a zero diff_qty).
+            let flat = portfolio.position(sym).is_none_or(|p| p.is_flat());
+            assert!(flat, "{sym} unexpectedly holds a position");
+        }
+        assert_eq!(portfolio.cash(), 1_000_00);
+    }
+
+    // === Sign symmetry ===
+
+    /// Sizing must truncate toward zero identically for a buy (positive
+    /// diff_value) and a sell (negative diff_value): equal-magnitude
+    /// opposite-sign inputs give equal-magnitude opposite-sign quantities.
+    #[test]
+    fn size_qty_truncates_toward_zero_symmetrically() {
+        let price = 15_137; // deliberately not a clean divisor
+        let step = 1_000; // 0.001-share granularity
+        let buy = size_qty(1_000_00, price, step);
+        let sell = size_qty(-1_000_00, price, step);
+        assert!(buy.is_positive());
+        assert!(sell.is_negative());
+        assert_eq!(buy.raw(), -sell.raw());
+
+        // Also true at the default whole-share step.
+        let buy_whole = size_qty(1_000_00, price, Shares::SCALE);
+        let sell_whole = size_qty(-1_000_00, price, Shares::SCALE);
+        assert_eq!(buy_whole.raw(), -sell_whole.raw());
+    }
+
+    // === Overflow guard ===
+
+    /// A position of 1,000,000 shares at $10,000/share: multiplying qty_raw
+    /// (micro-shares) by price would be ~1e21 if computed naively in i64
+    /// before normalizing by `Shares::SCALE` (i64::MAX is ~9.2e18). The i128
+    /// intermediates in `execute_fill` and `Position::market_value` must not
+    /// let this wrap.
+    #[test]
+    fn execute_fill_i128_guard_does_not_overflow() {
+        let mut portfolio =
+            Portfolio::with_quantity_step(i64::MAX, CostModel::zero(), Shares::SCALE);
+        let price = 1_000_000_00; // $10,000/share, in cents
+        let sym = aapl();
+
+        // Force a target value large enough to size a 1,000,000-share position.
+        let target_value = 1_000_000i64 * price; // 1e12 cents
+        // Emulate rebalance_simple's internals directly via a target weight
+        // computed from a controlled equity so the intended quantity is exact.
+        let weight = target_value as f64 / i64::MAX as f64;
+        portfolio.rebalance_simple(&[(sym, weight)], &[(sym, price)]);
+
+        let pos = portfolio.position(&sym).unwrap();
+        assert!(!pos.is_flat());
+        // Naive i64 multiplication (raw_micro_shares * price) would have wrapped;
+        // the i128-computed market value must be exactly qty_whole * price with
+        // no sign flip or truncation artifact from wraparound.
+        let mv = pos.market_value(price);
+        let expected = pos.quantity.whole() as i128 * price as i128;
+        assert_eq!(mv as i128, expected);
+        assert!(mv > 0, "market value wrapped negative under overflow");
     }
 }
 

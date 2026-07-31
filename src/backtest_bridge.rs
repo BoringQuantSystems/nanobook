@@ -578,7 +578,7 @@ fn apply_stop_cfg(
             if px <= 0 {
                 return None;
             }
-            Some((*sym, pos.quantity, px))
+            Some((*sym, pos.quantity.raw(), px))
         })
         .collect();
 

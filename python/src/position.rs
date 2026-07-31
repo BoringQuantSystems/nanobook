@@ -16,7 +16,11 @@ impl PyPosition {
 
     #[getter]
     fn quantity(&self) -> i64 {
-        self.inner.quantity
+        // Truncates to whole shares. nanobook 0.17.2's portfolio quantity became
+        // fractional internally (see `Shares`); the Python binding surface is
+        // intentionally not extended here (Stage A is Rust-only, extension not
+        // rebuilt) — a future stage should expose the fractional value.
+        self.inner.quantity.whole()
     }
 
     #[getter]
@@ -42,7 +46,7 @@ impl PyPosition {
         format!(
             "Position(symbol={}, qty={}, avg_price={}, realized_pnl={})",
             self.inner.symbol,
-            self.inner.quantity,
+            self.inner.quantity.whole(),
             self.inner.avg_entry_price,
             self.inner.realized_pnl
         )

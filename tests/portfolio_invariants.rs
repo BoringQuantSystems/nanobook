@@ -4,7 +4,7 @@
 #![allow(clippy::inconsistent_digit_grouping)]
 
 use nanobook::Symbol;
-use nanobook::portfolio::{CostModel, Portfolio, Position, compute_metrics};
+use nanobook::portfolio::{CostModel, Portfolio, Position, Shares, compute_metrics};
 
 fn aapl() -> Symbol {
     Symbol::new("AAPL")
@@ -81,8 +81,8 @@ fn position_pnl_round_trip() {
     let mut pos = Position::new(aapl());
 
     // Buy 100 @ $50, sell 100 @ $60 → $1,000 profit
-    pos.apply_fill(100, 50_00);
-    pos.apply_fill(-100, 60_00);
+    pos.apply_fill(Shares::from_whole(100), 50_00);
+    pos.apply_fill(Shares::from_whole(-100), 60_00);
 
     assert!(pos.is_flat());
     assert_eq!(pos.realized_pnl, 100 * 10_00);
@@ -93,9 +93,9 @@ fn position_pnl_round_trip() {
 fn position_pnl_partial_close() {
     let mut pos = Position::new(aapl());
 
-    pos.apply_fill(200, 50_00); // buy 200 @ $50
-    pos.apply_fill(-100, 60_00); // sell 100 @ $60
-    pos.apply_fill(-100, 55_00); // sell 100 @ $55
+    pos.apply_fill(Shares::from_whole(200), 50_00); // buy 200 @ $50
+    pos.apply_fill(Shares::from_whole(-100), 60_00); // sell 100 @ $60
+    pos.apply_fill(Shares::from_whole(-100), 55_00); // sell 100 @ $55
 
     assert!(pos.is_flat());
     assert_eq!(
@@ -108,8 +108,8 @@ fn position_pnl_partial_close() {
 fn position_short_pnl() {
     let mut pos = Position::new(aapl());
 
-    pos.apply_fill(-100, 60_00); // short 100 @ $60
-    pos.apply_fill(100, 50_00); // cover @ $50 → $10/share profit
+    pos.apply_fill(Shares::from_whole(-100), 60_00); // short 100 @ $60
+    pos.apply_fill(Shares::from_whole(100), 50_00); // cover @ $50 → $10/share profit
 
     assert!(pos.is_flat());
     assert_eq!(pos.realized_pnl, 100 * 10_00);
@@ -119,10 +119,10 @@ fn position_short_pnl() {
 fn position_flip_tracks_pnl() {
     let mut pos = Position::new(aapl());
 
-    pos.apply_fill(100, 50_00); // long 100 @ $50
-    pos.apply_fill(-200, 60_00); // sell 200: close 100 (profit), open short 100
+    pos.apply_fill(Shares::from_whole(100), 50_00); // long 100 @ $50
+    pos.apply_fill(Shares::from_whole(-200), 60_00); // sell 200: close 100 (profit), open short 100
 
-    assert_eq!(pos.quantity, -100);
+    assert_eq!(pos.quantity, Shares::from_whole(-100));
     assert_eq!(pos.avg_entry_price, 60_00);
     assert_eq!(pos.realized_pnl, 100 * 10_00); // profit on closed long
 }

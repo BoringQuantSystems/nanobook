@@ -195,7 +195,7 @@ mod portfolio_edges {
         let mut portfolio = Portfolio::new(1_000_000_00, CostModel::zero());
         let prices = [(aapl(), 100_00)];
         portfolio.rebalance_simple(&[(aapl(), 0.5)], &prices);
-        assert!(portfolio.position(&aapl()).unwrap().quantity > 0);
+        assert!(portfolio.position(&aapl()).unwrap().quantity.is_positive());
 
         // Rebalance to empty targets — should close AAPL
         portfolio.rebalance_simple(&[], &prices);
