@@ -14,3 +14,15 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      # ibapi 3.x is not a version bump, it is an API migration in code that
+      # places real orders. It drops `PlaceOrder::Message(notice)` and
+      # `Orders::Notice`, the arm that spots IBKR disconnect codes
+      # 1100/1101/1102 mid-execution, and turns `OrderStatus::filled` into an
+      # `Option<f64>` where mapping `None` to 0.0 would misreport fills. All
+      # 27 resulting errors are quick to silence, which is exactly the
+      # hazard. Doing it properly means driving it from the mock-TWS
+      # reconnect drills, so it gets its own change rather than arriving as a
+      # weekly PR. Minor and patch bumps still come through.
+      - dependency-name: "ibapi"
+        update-types: ["version-update:semver-major"]
