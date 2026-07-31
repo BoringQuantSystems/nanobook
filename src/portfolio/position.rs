@@ -355,6 +355,23 @@ mod tests {
         assert!(!half.is_zero());
     }
 
+    /// Exercises the exact accessor triple the Python bindings expose
+    /// (`quantity` -> `to_f64`, `quantity_micro` -> `raw`, `quantity_whole` ->
+    /// `whole`) on Alpaca's 0.001-share fractional minimum, applied through a
+    /// real fill so the position (not just a bare `Shares` value) is checked.
+    #[test]
+    fn alpaca_minimum_fractional_position_reads_back_correctly() {
+        let mut pos = Position::new(sym());
+        pos.apply_fill(Shares::from_raw(1_000), 50_00); // buy 0.001 share @ $50
+
+        assert_eq!(pos.quantity.to_f64(), 0.001); // Python `quantity`
+        assert_eq!(pos.quantity.raw(), 1_000); // Python `quantity_micro` — exact
+        assert_eq!(pos.quantity.whole(), 0); // Python `quantity_whole` — truncates
+
+        // `quantity_micro` round-trips losslessly back to the same `Shares`.
+        assert_eq!(Shares::from_raw(pos.quantity.raw()), pos.quantity);
+    }
+
     #[test]
     fn market_value_overflow_guard() {
         // 1,000,000 shares at $10,000 (1_000_000_00 cents): the raw micro-share

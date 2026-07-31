@@ -49,6 +49,11 @@ impl BacktestStopConfig {
 pub struct BacktestBridgeOptions {
     /// Optional stop simulation configuration.
     pub stop_cfg: Option<BacktestStopConfig>,
+    /// Order sizing granularity, in micro-shares (see [`crate::portfolio::Shares`]).
+    /// `None` keeps the default: whole shares (`Shares::SCALE`), so existing
+    /// callers are unaffected. Set e.g. `Some(1_000)` for Alpaca's 0.001-share
+    /// minimum.
+    pub quantity_step: Option<i64>,
 }
 
 #[derive(Clone, Debug, Copy)]
@@ -183,6 +188,9 @@ pub fn backtest_weights_with_options(
         .and_then(BacktestStopConfig::sanitized);
 
     let mut portfolio = Portfolio::new(initial_cash_cents, cost_model);
+    if let Some(step) = options.quantity_step {
+        portfolio.set_quantity_step(step);
+    }
     let mut equity_curve = Vec::with_capacity(weight_schedule.len() + 1);
     equity_curve.push(initial_cash_cents);
 
@@ -702,6 +710,46 @@ mod tests {
         }
     }
 
+    /// `BacktestBridgeOptions.quantity_step` must actually reach the
+    /// `Portfolio` built inside the loop: an account too small to afford one
+    /// whole share can only take a position at all if sized at fractional
+    /// granularity.
+    #[test]
+    fn quantity_step_option_enables_fractional_sizing() {
+        let weights = vec![vec![(aapl(), 1.0)]];
+        let prices = vec![vec![(aapl(), bar(50_00))]]; // $50/share
+
+        // Default (whole shares): $10 can't afford a single $50 share.
+        let whole_result = backtest_weights_with_options(
+            &weights,
+            &prices,
+            10_00, // $10
+            CostModel::zero(),
+            FillPolicy::SignalBarClose,
+            252.0,
+            0.0,
+            BacktestBridgeOptions::default(),
+        );
+        assert_eq!(whole_result.final_cash, 10_00);
+
+        // quantity_step = 1 (continuous, 1e-6 share) sizes a fractional
+        // position instead of leaving the account entirely in cash.
+        let fractional_result = backtest_weights_with_options(
+            &weights,
+            &prices,
+            10_00,
+            CostModel::zero(),
+            FillPolicy::SignalBarClose,
+            252.0,
+            0.0,
+            BacktestBridgeOptions {
+                quantity_step: Some(1),
+                ..Default::default()
+            },
+        );
+        assert!(fractional_result.final_cash < 10_00);
+    }
+
     #[test]
     fn signal_bar_close_parity_with_degenerate_ohlc() {
         let weights = vec![vec![(aapl(), 1.0)]; 3];
@@ -1031,6 +1079,7 @@ mod tests {
                 atr_multiple: None,
                 atr_period: 14,
             }),
+            ..Default::default()
         };
 
         let result = backtest_weights_with_options(
@@ -1072,6 +1121,7 @@ mod tests {
                 atr_multiple: None,
                 atr_period: 14,
             }),
+            ..Default::default()
         };
 
         let result = backtest_weights_with_options(
@@ -1109,6 +1159,7 @@ mod tests {
                 atr_multiple: None,
                 atr_period: 14,
             }),
+            ..Default::default()
         };
 
         let result = backtest_weights_with_options(
@@ -1147,6 +1198,7 @@ mod tests {
                 atr_multiple: None,
                 atr_period: 14,
             }),
+            ..Default::default()
         };
 
         let result = backtest_weights_with_options(
@@ -1188,6 +1240,7 @@ mod tests {
                 atr_multiple: Some(2.0), // 2x ATR stop
                 atr_period: 3,
             }),
+            ..Default::default()
         };
 
         let result = backtest_weights_with_options(
@@ -1219,6 +1272,7 @@ mod tests {
                 atr_multiple: None,
                 atr_period: 14,
             }),
+            ..Default::default()
         };
 
         let result = backtest_weights_with_options(
@@ -1259,6 +1313,7 @@ mod tests {
                 atr_multiple: None,
                 atr_period: 14,
             }),
+            ..Default::default()
         };
 
         let result = backtest_weights_with_options(
@@ -1297,6 +1352,7 @@ mod tests {
                 atr_multiple: None,
                 atr_period: 14,
             }),
+            ..Default::default()
         };
 
         let result = backtest_weights_with_options(
@@ -1335,6 +1391,7 @@ mod tests {
                 atr_multiple: None,
                 atr_period: 14,
             }),
+            ..Default::default()
         };
 
         let result = backtest_weights_with_options(
@@ -1376,6 +1433,7 @@ mod tests {
                 atr_multiple: Some(3.0), // high multiple but low volatility
                 atr_period: 3,
             }),
+            ..Default::default()
         };
 
         let result = backtest_weights_with_options(
@@ -1413,6 +1471,7 @@ mod tests {
                 atr_multiple: None,
                 atr_period: 14,
             }),
+            ..Default::default()
         };
 
         let result = backtest_weights_with_options(

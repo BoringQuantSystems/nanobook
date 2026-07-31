@@ -143,12 +143,17 @@ fn parse_bar_prices_schedule(
 ///     risk_free: Risk-free rate per period.
 ///     stop_cfg: Optional stop simulation config dictionary with supported keys:
 ///         ``fixed_stop_pct``, ``trailing_stop_pct``, ``atr_multiple``, ``atr_period``.
+///     quantity_step: Optional order sizing granularity, in micro-shares (1 share =
+///         1_000_000). Defaults to ``None``, which sizes at whole shares
+///         (identical to pre-fractional-share behavior). Useful values:
+///         1_000_000 = whole shares, 1_000 = 0.001 share (Alpaca minimum),
+///         100 = 0.0001 share (IBKR minimum), 1 = 0.000001 share (continuous).
 ///
 /// Returns a dict with keys:
 ///     ``returns``, ``equity_curve``, ``final_cash``, ``metrics``, ``holdings``,
 ///     ``symbol_returns``, ``stop_events``.
 #[pyfunction]
-#[pyo3(signature = (weight_schedule, price_schedule, initial_cash, cost_model, fill_policy, periods_per_year=252.0, risk_free=0.0, stop_cfg=None))]
+#[pyo3(signature = (weight_schedule, price_schedule, initial_cash, cost_model, fill_policy, periods_per_year=252.0, risk_free=0.0, stop_cfg=None, quantity_step=None))]
 #[allow(clippy::too_many_arguments)]
 pub fn backtest_weights(
     py: Python<'_>,
@@ -160,13 +165,23 @@ pub fn backtest_weights(
     periods_per_year: f64,
     risk_free: f64,
     stop_cfg: Option<Bound<'_, PyDict>>,
+    quantity_step: Option<i64>,
 ) -> PyResult<Py<PyAny>> {
     // Convert Python types to Rust types.
     let rust_weights = parse_symbol_schedule(&weight_schedule)?;
     let rust_prices = parse_bar_prices_schedule(&price_schedule)?;
 
+    if let Some(step) = quantity_step
+        && step <= 0
+    {
+        return Err(PyValueError::new_err(format!(
+            "quantity_step must be positive, got {step}"
+        )));
+    }
+
     let options = BacktestBridgeOptions {
         stop_cfg: parse_stop_cfg(stop_cfg)?,
+        quantity_step,
     };
 
     // Release GIL during computation.
@@ -354,7 +369,7 @@ pub fn py_tear_sheet(
 
 /// Backward-compatible alias for older callers using ``py_backtest_weights``.
 #[pyfunction]
-#[pyo3(signature = (weight_schedule, price_schedule, initial_cash, cost_model, fill_policy, periods_per_year=252.0, risk_free=0.0, stop_cfg=None))]
+#[pyo3(signature = (weight_schedule, price_schedule, initial_cash, cost_model, fill_policy, periods_per_year=252.0, risk_free=0.0, stop_cfg=None, quantity_step=None))]
 #[allow(clippy::too_many_arguments)]
 pub fn py_backtest_weights(
     py: Python<'_>,
@@ -366,6 +381,7 @@ pub fn py_backtest_weights(
     periods_per_year: f64,
     risk_free: f64,
     stop_cfg: Option<Bound<'_, PyDict>>,
+    quantity_step: Option<i64>,
 ) -> PyResult<Py<PyAny>> {
     backtest_weights(
         py,
@@ -377,6 +393,7 @@ pub fn py_backtest_weights(
         periods_per_year,
         risk_free,
         stop_cfg,
+        quantity_step,
     )
 }
 

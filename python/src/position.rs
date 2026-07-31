@@ -14,12 +14,28 @@ impl PyPosition {
         self.inner.symbol.to_string()
     }
 
+    /// Position quantity as a fractional share count (e.g. `0.001`).
+    ///
+    /// Backed by a fixed-point micro-share integer (1 share = 1_000_000 units);
+    /// converting through `f64` loses precision beyond that resolution. Use
+    /// `quantity_micro` for an exact, lossless round trip.
     #[getter]
-    fn quantity(&self) -> i64 {
-        // Truncates to whole shares. nanobook 0.17.2's portfolio quantity became
-        // fractional internally (see `Shares`); the Python binding surface is
-        // intentionally not extended here (Stage A is Rust-only, extension not
-        // rebuilt) — a future stage should expose the fractional value.
+    fn quantity(&self) -> f64 {
+        self.inner.quantity.to_f64()
+    }
+
+    /// Position quantity in raw micro-share units (1 share = 1_000_000 units).
+    /// Exact and lossless — the native representation.
+    #[getter]
+    fn quantity_micro(&self) -> i64 {
+        self.inner.quantity.raw()
+    }
+
+    /// Position quantity truncated to whole shares, dropping any fractional
+    /// remainder. Only useful for callers that genuinely want whole shares
+    /// (e.g. legacy reporting); use `quantity` or `quantity_micro` otherwise.
+    #[getter]
+    fn quantity_whole(&self) -> i64 {
         self.inner.quantity.whole()
     }
 
@@ -46,7 +62,7 @@ impl PyPosition {
         format!(
             "Position(symbol={}, qty={}, avg_price={}, realized_pnl={})",
             self.inner.symbol,
-            self.inner.quantity.whole(),
+            self.inner.quantity.to_f64(),
             self.inner.avg_entry_price,
             self.inner.realized_pnl
         )

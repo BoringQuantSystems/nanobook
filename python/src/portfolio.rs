@@ -65,11 +65,24 @@ impl PyCostModel {
 /// Args:
 ///     initial_cash: Starting cash in cents (e.g., 1_000_000_00 = $1M)
 ///     cost_model: A CostModel instance
+///     quantity_step: Optional order sizing granularity, in micro-shares
+///         (1 share = 1_000_000 units). Positions are always sized to a
+///         multiple of this step. Defaults to whole shares. Four useful
+///         values:
+///
+///         - ``1_000_000`` — whole shares (the default)
+///         - ``1_000`` — 0.001 share (Alpaca's fractional minimum)
+///         - ``100`` — 0.0001 share (IBKR's fractional minimum)
+///         - ``1`` — 0.000001 share (effectively continuous)
 ///
 /// Example::
 ///
 ///     portfolio = Portfolio(1_000_000_00, CostModel.zero())
 ///     portfolio.rebalance_simple([("AAPL", 0.6)], [("AAPL", 15000)])
+///
+///     # Fractional-share account sized to Alpaca's 0.001-share minimum:
+///     fractional = Portfolio(1_000_00, CostModel.zero(), quantity_step=1_000)
+///     fractional.rebalance_simple([("AAPL", 0.6)], [("AAPL", 15000)])
 ///
 #[pyclass(name = "Portfolio", from_py_object)]
 #[derive(Clone)]
@@ -86,10 +99,45 @@ impl PyPortfolio {
 #[pymethods]
 impl PyPortfolio {
     #[new]
-    fn new(initial_cash: i64, cost_model: &PyCostModel) -> Self {
-        Self {
-            inner: Portfolio::new(initial_cash, cost_model.inner),
+    #[pyo3(signature = (initial_cash, cost_model, quantity_step=None))]
+    fn new(initial_cash: i64, cost_model: &PyCostModel, quantity_step: Option<i64>) -> PyResult<Self> {
+        let mut inner = Portfolio::new(initial_cash, cost_model.inner);
+        if let Some(step) = quantity_step {
+            validate_quantity_step(step)?;
+            inner.set_quantity_step(step);
         }
+        Ok(Self { inner })
+    }
+
+    /// Order sizing granularity, in micro-shares (1 share = 1_000_000 units).
+    /// See the class docstring for useful values.
+    #[getter]
+    fn quantity_step(&self) -> i64 {
+        self.inner.quantity_step()
+    }
+
+    /// Set the order sizing granularity, in micro-shares. Must be positive.
+    #[setter]
+    fn set_quantity_step(&mut self, step: i64) -> PyResult<()> {
+        validate_quantity_step(step)?;
+        self.inner.set_quantity_step(step);
+        Ok(())
+    }
+
+    /// Set the order sizing granularity from a fractional share size (e.g.
+    /// ``0.001``) instead of raw micro-share units. The fraction is rounded
+    /// to the nearest micro-share (`round(fraction * 1_000_000)`) and must
+    /// round to a positive number of micro-shares.
+    fn set_quantity_step_fraction(&mut self, fraction: f64) -> PyResult<()> {
+        if !fraction.is_finite() {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "quantity_step fraction must be finite",
+            ));
+        }
+        let step = (fraction * nanobook::portfolio::Shares::SCALE as f64).round() as i64;
+        validate_quantity_step(step)?;
+        self.inner.set_quantity_step(step);
+        Ok(())
     }
 
     /// Current cash balance in cents.
@@ -234,6 +282,16 @@ impl PyPortfolio {
             self.inner.returns().len()
         )
     }
+}
+
+/// Validate a `quantity_step` value (micro-shares): must be positive.
+fn validate_quantity_step(step: i64) -> PyResult<()> {
+    if step <= 0 {
+        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "quantity_step must be positive, got {step}"
+        )));
+    }
+    Ok(())
 }
 
 /// Parse Python list of (str, i64) into Vec<(Symbol, i64)>.
