@@ -422,12 +422,12 @@ pub fn execute_limit_order(
                 }) => {
                     debug!("Cancel rejected (order may have filled): {reason}");
                     // Reconcile order state to handle fill/cancel race condition
-                    if let Ok(is_filled) = reconcile_filled_order(oid, &reason) {
-                        if is_filled {
-                            // Order filled before cancel reached broker - treat as filled
-                            final_status = OrderOutcome::Filled;
-                            break;
-                        }
+                    if let Ok(is_filled) = reconcile_filled_order(oid, &reason)
+                        && is_filled
+                    {
+                        // Order filled before cancel reached broker - treat as filled
+                        final_status = OrderOutcome::Filled;
+                        break;
                     }
                 }
                 Err(e) => {

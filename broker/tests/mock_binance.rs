@@ -1,3 +1,12 @@
+// Shared test helper: four test binaries pull this in with `mod mock_binance;`,
+// and each compiles the whole module while using only the part it needs. That
+// makes every method look dead from the perspective of the binaries that do not
+// call it, even though something does — `simulate_websocket_disconnect` and
+// `simulate_partial_fill`, for instance, are driven by
+// binance_f_bin2_reconnect_drill. Deleting on the strength of that warning
+// would break the drills.
+#![allow(dead_code)]
+
 //! Mock Binance implementation with failure injection support.
 //!
 //! This module provides a mock of the Binance spot API that can inject
@@ -385,27 +394,27 @@ impl Broker for MockBroker {
 
         // Check for duplicate in audit log if enabled (requires binance feature)
         #[cfg(feature = "binance")]
-        if let (Some(audit_path), Some(seq)) = (&self.audit_log_path, sequence_number) {
-            if check_audit_log_for_sequence(audit_path, seq).unwrap_or(false) {
-                let cid_str = client_order_id.unwrap_or("");
-                log_idempotency_rejection(
-                    audit_path,
-                    order.symbol,
-                    seq,
-                    cid_str,
-                    "duplicate sequence number in audit log",
-                );
-                return Err(BrokerError::DuplicateOrder {
-                    client_order_id: cid_str.to_string(),
-                });
-            }
+        if let (Some(audit_path), Some(seq)) = (&self.audit_log_path, sequence_number)
+            && check_audit_log_for_sequence(audit_path, seq).unwrap_or(false)
+        {
+            let cid_str = client_order_id.unwrap_or("");
+            log_idempotency_rejection(
+                audit_path,
+                order.symbol,
+                seq,
+                cid_str,
+                "duplicate sequence number in audit log",
+            );
+            return Err(BrokerError::DuplicateOrder {
+                client_order_id: cid_str.to_string(),
+            });
         }
 
         // Submit the order
         let order_id = self
             .binance
             .submit_order(order.symbol.as_str(), side_str, &qty_str, client_order_id)
-            .map_err(|e| BrokerError::Order(e))?
+            .map_err(BrokerError::Order)?
             .parse::<u64>()
             .map_err(|e| BrokerError::Order(format!("Invalid order ID: {}", e)))?;
 
@@ -463,7 +472,7 @@ impl Broker for MockBroker {
         let mut result = Vec::new();
 
         for order in orders {
-            let order_id: u64 = order.symbol.parse().unwrap_or_else(|_| 0); // Fallback, though this shouldn't happen
+            let order_id: u64 = order.symbol.parse().unwrap_or(0); // Fallback, though this shouldn't happen
             let quantity: u64 = order
                 .quantity
                 .parse()
@@ -489,7 +498,7 @@ impl Broker for MockBroker {
         let order_id_str = id.0.to_string();
         self.binance
             .cancel_order(&order_id_str)
-            .map_err(|e| BrokerError::Order(e))
+            .map_err(BrokerError::Order)
     }
 
     fn quote(&self, symbol: &Symbol) -> Result<Quote, BrokerError> {

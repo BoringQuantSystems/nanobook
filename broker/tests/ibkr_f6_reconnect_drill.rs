@@ -226,7 +226,7 @@ fn test_reconciliation_detects_orphan_order() {
 
     // Simulate reconcile_state() by comparing broker state vs local state
     let broker_orders = mock.all_orders();
-    let local_order_ids = vec![order_id]; // Only tracked the first order locally
+    let local_order_ids = [order_id]; // Only tracked the first order locally
 
     // Detect orphan orders (orders in broker but not in local state)
     let orphan_orders: Vec<_> = broker_orders
@@ -253,5 +253,5 @@ fn test_reconciliation_detects_orphan_order() {
 
     // In a real system, this would trigger reconciliation_blocked = true
     // For this test, we verify detection logic works
-    assert!(orphan_orders.len() > 0, "Expected to detect orphan order");
+    assert!(!orphan_orders.is_empty(), "Expected to detect orphan order");
 }

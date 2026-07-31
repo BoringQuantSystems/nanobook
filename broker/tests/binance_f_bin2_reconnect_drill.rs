@@ -46,14 +46,14 @@ fn reconcile_mock_binance(
             continue;
         }
 
-        if let Some(cached) = broker.get_cached_order(order_id) {
-            if cached.status != exchange_order.status {
-                discrepancies.push(Discrepancy::OrderStatusMismatch {
-                    order_id,
-                    local_status: format!("{:?}", cached.status),
-                    broker_status: exchange_order.status,
-                });
-            }
+        if let Some(cached) = broker.get_cached_order(order_id)
+            && cached.status != exchange_order.status
+        {
+            discrepancies.push(Discrepancy::OrderStatusMismatch {
+                order_id,
+                local_status: format!("{:?}", cached.status),
+                broker_status: exchange_order.status,
+            });
         }
     }
 

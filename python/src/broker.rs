@@ -105,6 +105,10 @@ impl PyIbkrBroker {
     ///
     /// Returns the broker-assigned order ID.
     #[pyo3(signature = (symbol, side, quantity, order_type="market", limit_price_cents=None, client_order_id=None, stop_price_cents=None))]
+    // The argument list is the Python-facing keyword API, so it is shaped by
+    // what callers type rather than by Rust ergonomics. Collapsing it into a
+    // struct would force Python users to build one first.
+    #[allow(clippy::too_many_arguments)]
     fn submit_order(
         &self,
         symbol: &str,

@@ -1,3 +1,11 @@
+// Shared test helper: four test binaries pull this in with `mod mock_tws;`, and
+// each compiles the whole module while using only the part it needs. That makes
+// every method look dead from the perspective of the binaries that do not call
+// it, even though something does — `simulate_partial_fill`, for instance, is
+// driven by ibkr_f6_reconnect_drill. Deleting on the strength of that warning
+// would break the drills.
+#![allow(dead_code)]
+
 //! Wire-level TWS mock with deterministic failure injection.
 //!
 //! This module provides a mock of the IBKR TWS/Gateway wire protocol that

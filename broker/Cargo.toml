@@ -59,3 +59,10 @@ serde_json = "1"
 [[test]]
 name = "binance_audit_idempotency"
 required-features = ["binance"]
+
+[lints.clippy]
+# Our dollar.cents digit grouping convention (e.g. 100_00 = $100.00). Declared
+# here rather than as a crate-root attribute because every file under tests/ is
+# its own crate root, so an attribute in lib.rs cannot reach the integration
+# tests -- which is where most of these literals live.
+inconsistent_digit_grouping = "allow"

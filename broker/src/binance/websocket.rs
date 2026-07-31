@@ -141,12 +141,12 @@ impl BinanceWebSocket {
             .send(Message::Text(subscription.to_string().into()))
             .await?;
 
-        if let Some(message) = client.next().await {
-            if let Some(event) = Self::parse_frame(message?)? {
-                self.events.push(event);
-                // Update heartbeat on successful message processing
-                self.update_heartbeat();
-            }
+        if let Some(message) = client.next().await
+            && let Some(event) = Self::parse_frame(message?)?
+        {
+            self.events.push(event);
+            // Update heartbeat on successful message processing
+            self.update_heartbeat();
         }
 
         Ok(())

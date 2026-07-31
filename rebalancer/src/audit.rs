@@ -213,15 +213,15 @@ pub fn validate_checkpoints_from_parsed(events: &[AuditEvent]) -> Result<()> {
                 ))
             })?;
 
-            if let Some(last_seq) = last_sequence {
-                if sequence_number <= last_seq {
-                    return Err(Error::AuditValidation(format!(
-                        "Checkpoint sequence not monotonic at line {}: got {}, expected > {}",
-                        index + 1,
-                        sequence_number,
-                        last_seq
-                    )));
-                }
+            if let Some(last_seq) = last_sequence
+                && sequence_number <= last_seq
+            {
+                return Err(Error::AuditValidation(format!(
+                    "Checkpoint sequence not monotonic at line {}: got {}, expected > {}",
+                    index + 1,
+                    sequence_number,
+                    last_seq
+                )));
             }
             last_sequence = Some(sequence_number);
 
@@ -297,22 +297,22 @@ pub fn validate_checkpoints_from_parsed(events: &[AuditEvent]) -> Result<()> {
                 "OrderIntent must come after RiskCheckPassed".to_string(),
             ));
         }
-    } else if let Some(run_completed_idx) = index_of(Checkpoint::RunCompleted) {
-        if run_completed_idx <= diff_idx {
-            return Err(Error::AuditValidation(
-                "RunCompleted must come after empty DiffComputed".to_string(),
-            ));
-        }
+    } else if let Some(run_completed_idx) = index_of(Checkpoint::RunCompleted)
+        && run_completed_idx <= diff_idx
+    {
+        return Err(Error::AuditValidation(
+            "RunCompleted must come after empty DiffComputed".to_string(),
+        ));
     }
 
     #[cfg(feature = "write_ahead_logging")]
     if let Some(intent_idx) = index_of(Checkpoint::AccountSummaryIntent) {
-        if let Some(result_idx) = index_of(Checkpoint::AccountSummaryResult) {
-            if result_idx <= intent_idx {
-                return Err(Error::AuditValidation(
-                    "AccountSummaryResult must come after AccountSummaryIntent".to_string(),
-                ));
-            }
+        if let Some(result_idx) = index_of(Checkpoint::AccountSummaryResult)
+            && result_idx <= intent_idx
+        {
+            return Err(Error::AuditValidation(
+                "AccountSummaryResult must come after AccountSummaryIntent".to_string(),
+            ));
         }
         if intent_idx <= run_started_idx {
             return Err(Error::AuditValidation(
@@ -322,25 +322,23 @@ pub fn validate_checkpoints_from_parsed(events: &[AuditEvent]) -> Result<()> {
     }
 
     #[cfg(feature = "write_ahead_logging")]
-    if let Some(intent_idx) = index_of(Checkpoint::QuotesIntent) {
-        if let Some(result_idx) = index_of(Checkpoint::QuotesResult) {
-            if result_idx <= intent_idx {
-                return Err(Error::AuditValidation(
-                    "QuotesResult must come after QuotesIntent".to_string(),
-                ));
-            }
-        }
+    if let Some(intent_idx) = index_of(Checkpoint::QuotesIntent)
+        && let Some(result_idx) = index_of(Checkpoint::QuotesResult)
+        && result_idx <= intent_idx
+    {
+        return Err(Error::AuditValidation(
+            "QuotesResult must come after QuotesIntent".to_string(),
+        ));
     }
 
     #[cfg(feature = "write_ahead_logging")]
-    if let Some(intent_idx) = index_of(Checkpoint::CancelIntent) {
-        if let Some(result_idx) = index_of(Checkpoint::CancelResult) {
-            if result_idx <= intent_idx {
-                return Err(Error::AuditValidation(
-                    "CancelResult must come after CancelIntent".to_string(),
-                ));
-            }
-        }
+    if let Some(intent_idx) = index_of(Checkpoint::CancelIntent)
+        && let Some(result_idx) = index_of(Checkpoint::CancelResult)
+        && result_idx <= intent_idx
+    {
+        return Err(Error::AuditValidation(
+            "CancelResult must come after CancelIntent".to_string(),
+        ));
     }
 
     // Validate that OrderIntent has either OrderSubmitted or OrderFailed after it (not incomplete)
@@ -668,10 +666,11 @@ impl AuditLog {
 
         let mut last_sequence: Option<u64> = None;
         for event in parse_audit_events(&self.path)? {
-            if event.event == "cron_completed" && event.window_id.as_deref() == Some(window_id) {
-                if let Some(seq) = event.sequence_number {
-                    last_sequence = Some(seq);
-                }
+            if event.event == "cron_completed"
+                && event.window_id.as_deref() == Some(window_id)
+                && let Some(seq) = event.sequence_number
+            {
+                last_sequence = Some(seq);
             }
         }
 

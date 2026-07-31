@@ -531,7 +531,7 @@ fn test_recovery_time_realistic_order_counts() {
 
         // Verify recovery completed
         assert_eq!(state.checkpoint, Checkpoint::RunCompleted);
-        assert_eq!(state.orders.len() as usize, order_count);
+        assert_eq!(state.orders.len(), order_count);
 
         // Verify recovery time is reasonable (< 5 seconds for 100 orders)
         // This is a generous threshold; actual time should be much faster

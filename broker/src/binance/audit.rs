@@ -116,14 +116,12 @@ pub fn check_audit_log_for_sequence(path: &Path, sequence: u64) -> Result<bool, 
     for line in content.lines() {
         if let Ok(value) = serde_json::from_str::<serde_json::Value>(line) {
             // Check if this is an OrderSubmitted event with matching sequence
-            if let Some(event_type) = value.get("event_type").and_then(|v| v.as_str()) {
-                if event_type == "order_submitted" {
-                    if let Some(seq) = value.get("sequence").and_then(|v| v.as_u64()) {
-                        if seq == sequence {
-                            return Ok(true);
-                        }
-                    }
-                }
+            if let Some(event_type) = value.get("event_type").and_then(|v| v.as_str())
+                && event_type == "order_submitted"
+                && let Some(seq) = value.get("sequence").and_then(|v| v.as_u64())
+                && seq == sequence
+            {
+                return Ok(true);
             }
         }
     }

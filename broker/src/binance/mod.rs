@@ -620,41 +620,41 @@ impl BinanceBroker {
         };
 
         // Check for duplicate in audit log if enabled
-        if let (Some(audit_path), Some(seq)) = (&self.audit_log_path, sequence_number) {
-            if check_audit_log_for_sequence(audit_path, seq).unwrap_or(false) {
-                let cid_str = client_order_id.as_ref().map(|c| c.as_str()).unwrap_or("");
+        if let (Some(audit_path), Some(seq)) = (&self.audit_log_path, sequence_number)
+            && check_audit_log_for_sequence(audit_path, seq).unwrap_or(false)
+        {
+            let cid_str = client_order_id.as_ref().map(|c| c.as_str()).unwrap_or("");
+            log_idempotency_rejection(
+                audit_path,
+                order.symbol,
+                seq,
+                cid_str,
+                "duplicate sequence number in audit log",
+            );
+            return Err(BrokerError::DuplicateOrder {
+                client_order_id: cid_str.to_string(),
+            });
+        }
+
+        // Check for duplicate if we have a client order ID
+        if let Some(ref cid) = client_order_id
+            && self.check_duplicate_client_order_id(cid.as_str())
+        {
+            // Log idempotency rejection if audit log is enabled
+            if let Some(ref audit_path) = self.audit_log_path
+                && let Some(seq) = sequence_number
+            {
                 log_idempotency_rejection(
                     audit_path,
                     order.symbol,
                     seq,
-                    cid_str,
-                    "duplicate sequence number in audit log",
+                    cid.as_str(),
+                    "duplicate client order ID in cache",
                 );
-                return Err(BrokerError::DuplicateOrder {
-                    client_order_id: cid_str.to_string(),
-                });
             }
-        }
-
-        // Check for duplicate if we have a client order ID
-        if let Some(ref cid) = client_order_id {
-            if self.check_duplicate_client_order_id(cid.as_str()) {
-                // Log idempotency rejection if audit log is enabled
-                if let Some(ref audit_path) = self.audit_log_path {
-                    if let Some(seq) = sequence_number {
-                        log_idempotency_rejection(
-                            audit_path,
-                            order.symbol,
-                            seq,
-                            cid.as_str(),
-                            "duplicate client order ID in cache",
-                        );
-                    }
-                }
-                return Err(BrokerError::DuplicateOrder {
-                    client_order_id: cid.as_str().to_string(),
-                });
-            }
+            return Err(BrokerError::DuplicateOrder {
+                client_order_id: cid.as_str().to_string(),
+            });
         }
 
         // Create a modified order with the client order ID

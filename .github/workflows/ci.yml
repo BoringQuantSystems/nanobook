@@ -187,8 +187,13 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+      # `--workspace`, for the same reason the test job needs it: without it
+      # only the root crate is linted, and broker/risk/rebalancer accumulate
+      # unchecked. Bringing them in cleared 141 findings, most of them the
+      # dollar.cents digit-grouping convention that was never declared for
+      # those crates.
       - name: Clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   # The `security` job moved to .github/workflows/audit.yml so it can run on
   # a weekly schedule. Here it only fired on push/PR, so an advisory filed

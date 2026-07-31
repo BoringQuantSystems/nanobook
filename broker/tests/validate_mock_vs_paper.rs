@@ -1,3 +1,11 @@
+// This harness records more than it asserts on: `ValidationResult.test_case`
+// and `.divergences` are populated and never read, and several
+// `ValidationContext` methods are never called. That is a real gap in the
+// harness rather than a lint to chase — the data is collected but nothing
+// checks it — so the warning is silenced here instead of the fields being
+// deleted, which would remove the scaffolding a proper assertion pass needs.
+#![allow(dead_code)]
+
 //! Side-by-side comparison of MockTws vs real IBKR paper trading.
 //!
 //! This test validates that the MockTws implementation accurately simulates
@@ -126,9 +134,11 @@ impl ValidationContext {
             let paper_cb = &self.paper_callbacks[i];
 
             if mock_cb != paper_cb {
-                let severity = if mock_cb.event_type != paper_cb.event_type {
-                    Severity::Critical
-                } else if mock_cb.order_id != paper_cb.order_id {
+                // A wrong event type and a wrong order id are both Critical, so
+                // they share one arm; only the sequence number is softer.
+                let severity = if mock_cb.event_type != paper_cb.event_type
+                    || mock_cb.order_id != paper_cb.order_id
+                {
                     Severity::Critical
                 } else if mock_cb.sequence != paper_cb.sequence {
                     Severity::Warning
@@ -524,22 +534,22 @@ fn generate_divergence_report() {
 
             if let Some(ref mock_cb) = div.mock_callback {
                 report.push_str("**Mock Callback**:\n");
-                report.push_str(&format!("```\n"));
+                report.push_str("```\n");
                 report.push_str(&format!(
                     "{} - Order ID: {:?} - Sequence: {:?} - Details: {}\n",
                     mock_cb.event_type, mock_cb.order_id, mock_cb.sequence, mock_cb.details
                 ));
-                report.push_str(&format!("```\n\n"));
+                report.push_str("```\n\n");
             }
 
             if let Some(ref paper_cb) = div.paper_callback {
                 report.push_str("**Paper Callback**:\n");
-                report.push_str(&format!("```\n"));
+                report.push_str("```\n");
                 report.push_str(&format!(
                     "{} - Order ID: {:?} - Sequence: {:?} - Details: {}\n",
                     paper_cb.event_type, paper_cb.order_id, paper_cb.sequence, paper_cb.details
                 ));
-                report.push_str(&format!("```\n\n"));
+                report.push_str("```\n\n");
             }
 
             report.push_str("**Description**:\n");
@@ -556,7 +566,7 @@ fn generate_divergence_report() {
     report.push_str("| test_order_cancellation | PASS | 0 |\n");
     report.push_str("| test_disconnect_reconnect | PASS | 0 |\n");
     report.push_str("| test_f3_partial_fill_disconnect | PASS | 0 |\n");
-    report.push_str("\n");
+    report.push('\n');
 
     report.push_str("## Remediation Checklist\n\n");
     report.push_str("### Critical Divergences\n\n");

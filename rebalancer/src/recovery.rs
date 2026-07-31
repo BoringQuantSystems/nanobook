@@ -223,14 +223,14 @@ pub fn compare_broker_state(
             .iter()
             .find(|rp| rp.symbol == broker_position.symbol);
 
-        if let Some(recovered_position) = recovered_position {
-            if recovered_position.quantity != broker_position.quantity {
-                discrepancies.push(Discrepancy::PositionMismatch {
-                    symbol: broker_position.symbol.as_str().to_string(),
-                    broker_qty: broker_position.quantity,
-                    expected_qty: recovered_position.quantity,
-                });
-            }
+        if let Some(recovered_position) = recovered_position
+            && recovered_position.quantity != broker_position.quantity
+        {
+            discrepancies.push(Discrepancy::PositionMismatch {
+                symbol: broker_position.symbol.as_str().to_string(),
+                broker_qty: broker_position.quantity,
+                expected_qty: recovered_position.quantity,
+            });
         }
     }
 
@@ -660,32 +660,32 @@ pub fn reconstruct_state(
                 state.sequence_number = event.sequence_number.unwrap_or(0);
                 state.timestamp = event.ts;
 
-                if let Some(positions_array) = event.data.get("positions") {
-                    if let Some(positions) = positions_array.as_array() {
-                        state.positions = positions
-                            .iter()
-                            .filter_map(|p| {
-                                let symbol = p.get("symbol")?.as_str()?;
-                                let qty = p.get("qty")?.as_i64()?;
-                                let avg_cost_f64 = p.get("avg_cost")?.as_f64()?;
-                                let avg_cost_cents =
-                                    f64_cents_checked(avg_cost_f64, "avg_cost").ok()?;
-                                Symbol::try_new(symbol).map(|sym| CurrentPosition {
-                                    symbol: sym,
-                                    quantity: qty,
-                                    avg_cost_cents,
-                                })
+                if let Some(positions_array) = event.data.get("positions")
+                    && let Some(positions) = positions_array.as_array()
+                {
+                    state.positions = positions
+                        .iter()
+                        .filter_map(|p| {
+                            let symbol = p.get("symbol")?.as_str()?;
+                            let qty = p.get("qty")?.as_i64()?;
+                            let avg_cost_f64 = p.get("avg_cost")?.as_f64()?;
+                            let avg_cost_cents =
+                                f64_cents_checked(avg_cost_f64, "avg_cost").ok()?;
+                            Symbol::try_new(symbol).map(|sym| CurrentPosition {
+                                symbol: sym,
+                                quantity: qty,
+                                avg_cost_cents,
                             })
-                            .collect();
-                    }
+                        })
+                        .collect();
                 }
 
-                if let Some(equity) = event.data.get("equity") {
-                    if let Some(equity_val) = equity.as_f64() {
-                        // Skip equity update if value is out of i64 range; positions remain valid.
-                        if let Ok(cents) = f64_cents_checked(equity_val, "equity") {
-                            state.equity_cents = cents;
-                        }
+                if let Some(equity) = event.data.get("equity")
+                    && let Some(equity_val) = equity.as_f64()
+                {
+                    // Skip equity update if value is out of i64 range; positions remain valid.
+                    if let Ok(cents) = f64_cents_checked(equity_val, "equity") {
+                        state.equity_cents = cents;
                     }
                 }
             }
@@ -698,32 +698,32 @@ pub fn reconstruct_state(
                 state.last_positions_result_sequence = event.sequence_number;
 
                 // Extract positions from PositionsResult (same format as PositionsFetched)
-                if let Some(positions_array) = event.data.get("positions") {
-                    if let Some(positions) = positions_array.as_array() {
-                        state.positions = positions
-                            .iter()
-                            .filter_map(|p| {
-                                let symbol = p.get("symbol")?.as_str()?;
-                                let qty = p.get("qty")?.as_i64()?;
-                                let avg_cost_f64 = p.get("avg_cost")?.as_f64()?;
-                                let avg_cost_cents =
-                                    f64_cents_checked(avg_cost_f64, "avg_cost").ok()?;
-                                Symbol::try_new(symbol).map(|sym| CurrentPosition {
-                                    symbol: sym,
-                                    quantity: qty,
-                                    avg_cost_cents,
-                                })
+                if let Some(positions_array) = event.data.get("positions")
+                    && let Some(positions) = positions_array.as_array()
+                {
+                    state.positions = positions
+                        .iter()
+                        .filter_map(|p| {
+                            let symbol = p.get("symbol")?.as_str()?;
+                            let qty = p.get("qty")?.as_i64()?;
+                            let avg_cost_f64 = p.get("avg_cost")?.as_f64()?;
+                            let avg_cost_cents =
+                                f64_cents_checked(avg_cost_f64, "avg_cost").ok()?;
+                            Symbol::try_new(symbol).map(|sym| CurrentPosition {
+                                symbol: sym,
+                                quantity: qty,
+                                avg_cost_cents,
                             })
-                            .collect();
-                    }
+                        })
+                        .collect();
                 }
 
-                if let Some(equity) = event.data.get("equity") {
-                    if let Some(equity_val) = equity.as_f64() {
-                        // Skip equity update if value is out of i64 range; positions remain valid.
-                        if let Ok(cents) = f64_cents_checked(equity_val, "equity") {
-                            state.equity_cents = cents;
-                        }
+                if let Some(equity) = event.data.get("equity")
+                    && let Some(equity_val) = equity.as_f64()
+                {
+                    // Skip equity update if value is out of i64 range; positions remain valid.
+                    if let Ok(cents) = f64_cents_checked(equity_val, "equity") {
+                        state.equity_cents = cents;
                     }
                 }
             }
@@ -732,32 +732,32 @@ pub fn reconstruct_state(
                 state.sequence_number = event.sequence_number.unwrap_or(0);
                 state.timestamp = event.ts;
 
-                if let Some(orders_array) = event.data.get("orders") {
-                    if let Some(orders) = orders_array.as_array() {
-                        state.orders = orders
-                            .iter()
-                            .map(|o| {
-                                let symbol = o.get("symbol").and_then(|s| s.as_str()).unwrap_or("");
-                                let action = o.get("action").and_then(|a| a.as_str()).unwrap_or("");
-                                let shares = o.get("shares").and_then(|s| s.as_i64()).unwrap_or(0);
-                                let limit =
-                                    o.get("limit").and_then(|l| l.as_f64()).unwrap_or(0.0) as i64;
-                                RecoveredOrder {
-                                    symbol: Symbol::try_new(symbol)
-                                        .unwrap_or(Symbol::try_new("UNKNOWN").unwrap()),
-                                    action: action.to_string(),
-                                    shares,
-                                    limit_price_cents: limit,
-                                    ibkr_id: 0,
-                                    client_order_id: None,
-                                    submitted: false,
-                                    filled: false,
-                                    failed: false,
-                                    failure_reason: None,
-                                }
-                            })
-                            .collect();
-                    }
+                if let Some(orders_array) = event.data.get("orders")
+                    && let Some(orders) = orders_array.as_array()
+                {
+                    state.orders = orders
+                        .iter()
+                        .map(|o| {
+                            let symbol = o.get("symbol").and_then(|s| s.as_str()).unwrap_or("");
+                            let action = o.get("action").and_then(|a| a.as_str()).unwrap_or("");
+                            let shares = o.get("shares").and_then(|s| s.as_i64()).unwrap_or(0);
+                            let limit =
+                                o.get("limit").and_then(|l| l.as_f64()).unwrap_or(0.0) as i64;
+                            RecoveredOrder {
+                                symbol: Symbol::try_new(symbol)
+                                    .unwrap_or(Symbol::try_new("UNKNOWN").unwrap()),
+                                action: action.to_string(),
+                                shares,
+                                limit_price_cents: limit,
+                                ibkr_id: 0,
+                                client_order_id: None,
+                                submitted: false,
+                                filled: false,
+                                failed: false,
+                                failure_reason: None,
+                            }
+                        })
+                        .collect();
                 }
             }
             Some(Checkpoint::RiskCheckPassed) => {
@@ -771,42 +771,40 @@ pub fn reconstruct_state(
                 state.timestamp = event.ts;
 
                 // Extract order details from OrderIntent event
-                if let Some(symbol) = event.data.get("symbol").and_then(|s| s.as_str()) {
-                    if let Some(action) = event.data.get("action").and_then(|a| a.as_str()) {
-                        if let Some(shares) = event.data.get("shares").and_then(|s| s.as_i64()) {
-                            if let Some(limit) = event.data.get("limit").and_then(|l| l.as_f64()) {
-                                let client_order_id = event
-                                    .data
-                                    .get("client_order_id")
-                                    .and_then(|id| id.as_str())
-                                    .map(|s| s.to_string());
+                if let Some(symbol) = event.data.get("symbol").and_then(|s| s.as_str())
+                    && let Some(action) = event.data.get("action").and_then(|a| a.as_str())
+                    && let Some(shares) = event.data.get("shares").and_then(|s| s.as_i64())
+                    && let Some(limit) = event.data.get("limit").and_then(|l| l.as_f64())
+                {
+                    let client_order_id = event
+                        .data
+                        .get("client_order_id")
+                        .and_then(|id| id.as_str())
+                        .map(|s| s.to_string());
 
-                                // Check if order already exists (from DiffComputed)
-                                if let Some(order) = state
-                                    .orders
-                                    .iter_mut()
-                                    .find(|o| o.symbol.as_str() == symbol)
-                                {
-                                    // Update existing order with intent details
-                                    order.client_order_id = client_order_id;
-                                } else {
-                                    // Create new order from intent
-                                    state.orders.push(RecoveredOrder {
-                                        symbol: Symbol::try_new(symbol)
-                                            .unwrap_or(Symbol::try_new("UNKNOWN").unwrap()),
-                                        action: action.to_string(),
-                                        shares,
-                                        limit_price_cents: limit as i64,
-                                        ibkr_id: 0,
-                                        client_order_id,
-                                        submitted: false,
-                                        filled: false,
-                                        failed: false,
-                                        failure_reason: None,
-                                    });
-                                }
-                            }
-                        }
+                    // Check if order already exists (from DiffComputed)
+                    if let Some(order) = state
+                        .orders
+                        .iter_mut()
+                        .find(|o| o.symbol.as_str() == symbol)
+                    {
+                        // Update existing order with intent details
+                        order.client_order_id = client_order_id;
+                    } else {
+                        // Create new order from intent
+                        state.orders.push(RecoveredOrder {
+                            symbol: Symbol::try_new(symbol)
+                                .unwrap_or(Symbol::try_new("UNKNOWN").unwrap()),
+                            action: action.to_string(),
+                            shares,
+                            limit_price_cents: limit as i64,
+                            ibkr_id: 0,
+                            client_order_id,
+                            submitted: false,
+                            filled: false,
+                            failed: false,
+                            failure_reason: None,
+                        });
                     }
                 }
             }
@@ -822,15 +820,14 @@ pub fn reconstruct_state(
                     .and_then(|r| r.as_str())
                     .map(|s| s.to_string());
 
-                if let Some(symbol) = event.data.get("symbol").and_then(|s| s.as_str()) {
-                    if let Some(order) = state
+                if let Some(symbol) = event.data.get("symbol").and_then(|s| s.as_str())
+                    && let Some(order) = state
                         .orders
                         .iter_mut()
                         .find(|o| o.symbol.as_str() == symbol)
-                    {
-                        order.failed = true;
-                        order.failure_reason = failure_reason;
-                    }
+                {
+                    order.failed = true;
+                    order.failure_reason = failure_reason;
                 }
             }
             Some(Checkpoint::OrderSubmitted) => {
@@ -838,17 +835,15 @@ pub fn reconstruct_state(
                 state.sequence_number = event.sequence_number.unwrap_or(0);
                 state.timestamp = event.ts;
 
-                if let Some(ibkr_id) = event.data.get("ibkr_id").and_then(|id| id.as_i64()) {
-                    if let Some(symbol) = event.data.get("symbol").and_then(|s| s.as_str()) {
-                        if let Some(order) = state
-                            .orders
-                            .iter_mut()
-                            .find(|o| o.symbol.as_str() == symbol)
-                        {
-                            order.ibkr_id = ibkr_id as i32;
-                            order.submitted = true;
-                        }
-                    }
+                if let Some(ibkr_id) = event.data.get("ibkr_id").and_then(|id| id.as_i64())
+                    && let Some(symbol) = event.data.get("symbol").and_then(|s| s.as_str())
+                    && let Some(order) = state
+                        .orders
+                        .iter_mut()
+                        .find(|o| o.symbol.as_str() == symbol)
+                {
+                    order.ibkr_id = ibkr_id as i32;
+                    order.submitted = true;
                 }
             }
             Some(Checkpoint::OrderFilled) => {
@@ -856,14 +851,13 @@ pub fn reconstruct_state(
                 state.sequence_number = event.sequence_number.unwrap_or(0);
                 state.timestamp = event.ts;
 
-                if let Some(ibkr_id) = event.data.get("ibkr_id").and_then(|id| id.as_i64()) {
-                    if let Some(order) = state
+                if let Some(ibkr_id) = event.data.get("ibkr_id").and_then(|id| id.as_i64())
+                    && let Some(order) = state
                         .orders
                         .iter_mut()
                         .find(|o| o.ibkr_id as i64 == ibkr_id)
-                    {
-                        order.filled = true;
-                    }
+                {
+                    order.filled = true;
                 }
             }
             #[cfg(feature = "write_ahead_logging")]
@@ -901,12 +895,11 @@ pub fn reconstruct_state(
                 state.last_account_summary_result_sequence = event.sequence_number;
 
                 // Extract equity from AccountSummaryResult
-                if let Some(equity) = event.data.get("equity") {
-                    if let Some(equity_val) = equity.as_f64() {
-                        if let Ok(cents) = f64_cents_checked(equity_val, "equity") {
-                            state.equity_cents = cents;
-                        }
-                    }
+                if let Some(equity) = event.data.get("equity")
+                    && let Some(equity_val) = equity.as_f64()
+                    && let Ok(cents) = f64_cents_checked(equity_val, "equity")
+                {
+                    state.equity_cents = cents;
                 }
                 // Cash is not stored in RecoveredState but could be added if needed
             }

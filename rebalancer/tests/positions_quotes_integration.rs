@@ -103,7 +103,7 @@ impl BrokerGateway for MockBroker {
             Ok(symbols
                 .iter()
                 .map(|s| nanobook_broker::types::Quote {
-                    symbol: s.clone(),
+                    symbol: *s,
                     bid_cents: 14900,
                     ask_cents: 15100,
                     last_cents: 15000,
@@ -149,7 +149,7 @@ fn test_positions_fetch_with_write_ahead() {
     let current_positions: Vec<CurrentPosition> = positions_result
         .iter()
         .map(|p| CurrentPosition {
-            symbol: p.symbol.clone(),
+            symbol: p.symbol,
             quantity: p.quantity,
             avg_cost_cents: p.avg_cost_cents,
         })
@@ -299,7 +299,7 @@ fn test_positions_intent_to_result_ratio() {
     let current_positions: Vec<CurrentPosition> = positions_result
         .iter()
         .map(|p| CurrentPosition {
-            symbol: p.symbol.clone(),
+            symbol: p.symbol,
             quantity: p.quantity,
             avg_cost_cents: p.avg_cost_cents,
         })
