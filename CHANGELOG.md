@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **CI now lints the whole workspace.** `cargo clippy` ran without
+  `--workspace`, so only the root crate was checked and broker, risk and
+  rebalancer accumulated 141 unchecked findings. Clearing them was mostly
+  mechanical: 46 were the `100_00` = $100.00 digit-grouping convention, which
+  the root crate had declared crate-wide but the other two had not — now set
+  once per crate in `[lints.clippy]`, which reaches integration tests as well
+  (each file under `tests/` is its own crate root, so a `lib.rs` attribute
+  cannot). Another 38 were machine-applied by `cargo clippy --fix`. The
+  remainder were dead-code warnings on shared test mocks: `mock_binance.rs`
+  and `mock_tws.rs` are each pulled into four test binaries, so a method one
+  binary drives looks dead to the other three.
+- **Public API baselines regenerated** (`docs/public-api/`) — they were eight
+  releases out of date. Nothing was removed; the growth is `scenarios` and
+  `indicators` arriving in v0.17.0, plus a rendering change in newer
+  `cargo-public-api`. Regeneration is now a step in `RELEASING.md`, and
+  `docs/public-api/README.md` records the tool version, since the output
+  format is not stable across releases of it.
+- **`rebalancer kill` states plainly that it does nothing on Windows.** It
+  already refused there, but with a bare "not fully supported"; it now names
+  the manual steps (`taskkill`, then cancel open orders at the broker) so an
+  operator is not left assuming an emergency stop happened.
+  `docs/operations/kill-switch.md` marks live execution on Windows unsupported.
+- **`ibapi` major bumps are now ignored by dependabot**, with the reasoning in
+  `.github/dependabot.yml`. 3.x removes the arm that detects IBKR disconnects
+  mid-execution; it needs its own change driven by the mock-TWS drills rather
+  than arriving as a weekly PR. Minor and patch bumps still come through.
+
+### Added
+
+- **Frozen reference test for the native ChaCha20 Monte Carlo path**
+  (`native_mc_matches_frozen_reference`). The existing reproducibility test
+  compares two runs inside one build, so it passes whether or not an RNG
+  upgrade moves the stream — the `rand` 0.8 → 0.10 bump in 0.17.1 had to be
+  checked by hand. The comparison is relative to 1e-12 rather than bitwise,
+  because the terminal math goes through `exp`/`ln` whose last ulp is
+  libm-dependent across platforms; any real stream change moves the numbers by
+  whole percent.
+
 ## [0.17.2] - 2026-07-26 - Release-gate fix
 
 0.17.1 reached PyPI and the GitHub release but never reached crates.io: the

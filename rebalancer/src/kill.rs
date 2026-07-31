@@ -415,12 +415,17 @@ pub fn send_sigterm(pid: u32) -> Result<()> {
         // all. CI only ever built the root crate, which is why that went
         // unnoticed.
 
-        // Note: This is a simplified approach. On Windows, proper process termination
-        // typically requires more complex handling (e.g., using TerminateProcess).
-        // For now, we'll return an error indicating this is not fully supported.
-        return Err(Error::Aborted(
-            "Kill switch not fully supported on Windows yet".to_string(),
-        ));
+        // Refuse loudly and tell the operator what to do by hand. Half of an
+        // emergency stop is worse than none: reporting success here would let
+        // the audit log claim a runner was stopped while it kept placing
+        // orders. See docs/operations/kill-switch.md.
+        return Err(Error::Aborted(format!(
+            "Kill switch is not supported on Windows: the rebalancer stops the \
+             runner with SIGTERM, which Windows has no equivalent for. Stop \
+             process {pid} manually (`taskkill /PID {pid} /F`) and then cancel \
+             any open orders in your broker's interface — this command has \
+             cancelled nothing."
+        )));
     }
 
     info!("Successfully sent SIGTERM to process {}", pid);
@@ -929,7 +934,7 @@ timeout_secs = {timeout_secs}
         );
         #[cfg(windows)]
         assert!(
-            matches!(result, Err(Error::Aborted(message)) if message.contains("not fully supported"))
+            matches!(result, Err(Error::Aborted(message)) if message.contains("not supported on Windows"))
         );
     }
 

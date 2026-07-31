@@ -2,6 +2,19 @@
 
 The rebalancer kill switch is the emergency stop path for an active rebalance. It first tries to stop the runner gracefully, then, when built with the forceful kill feature, can connect directly to the broker and cancel remaining open orders.
 
+## Platform support
+
+**The kill switch works on Unix only.** It stops the runner with `SIGTERM`, and
+Windows has no equivalent. On Windows `rebalancer kill` refuses immediately and
+returns an error rather than reporting a stop it did not perform — but that
+means there is no automated emergency stop on that platform. If you run the
+rebalancer on Windows, stop it through Task Manager or `taskkill /PID <pid> /F`
+and then cancel any open orders in the broker's own interface, because nothing
+in the audit log will do it for you.
+
+The crate compiles on Windows and everything except the kill switch behaves
+normally. Treat live execution on Windows as unsupported until this gap closes.
+
 ## Modes
 
 ### Graceful-only mode

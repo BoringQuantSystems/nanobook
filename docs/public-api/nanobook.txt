@@ -1,37 +1,256 @@
 pub mod nanobook
 pub mod nanobook::backtest_bridge
+pub enum nanobook::backtest_bridge::FillPolicy
+pub nanobook::backtest_bridge::FillPolicy::NextBarOpen
+pub nanobook::backtest_bridge::FillPolicy::NextBarTypical
+pub nanobook::backtest_bridge::FillPolicy::SignalBarClose
+impl core::clone::Clone for nanobook::backtest_bridge::FillPolicy
+pub fn nanobook::backtest_bridge::FillPolicy::clone(&self) -> nanobook::backtest_bridge::FillPolicy
+impl core::cmp::PartialEq for nanobook::backtest_bridge::FillPolicy
+pub fn nanobook::backtest_bridge::FillPolicy::eq(&self, &nanobook::backtest_bridge::FillPolicy) -> bool
+impl core::fmt::Debug for nanobook::backtest_bridge::FillPolicy
+pub fn nanobook::backtest_bridge::FillPolicy::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for nanobook::backtest_bridge::FillPolicy
+impl core::marker::StructuralPartialEq for nanobook::backtest_bridge::FillPolicy
+impl core::marker::Freeze for nanobook::backtest_bridge::FillPolicy
+impl core::marker::Send for nanobook::backtest_bridge::FillPolicy
+impl core::marker::Sync for nanobook::backtest_bridge::FillPolicy
+impl core::marker::Unpin for nanobook::backtest_bridge::FillPolicy
+impl core::marker::UnsafeUnpin for nanobook::backtest_bridge::FillPolicy
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::backtest_bridge::FillPolicy
+impl core::panic::unwind_safe::UnwindSafe for nanobook::backtest_bridge::FillPolicy
+pub struct nanobook::backtest_bridge::AttributionResult
+pub nanobook::backtest_bridge::AttributionResult::contributions: alloc::vec::Vec<alloc::vec::Vec<(nanobook::Symbol, f64)>>
+pub nanobook::backtest_bridge::AttributionResult::cumulative_contributions: alloc::vec::Vec<alloc::vec::Vec<(nanobook::Symbol, f64)>>
+pub nanobook::backtest_bridge::AttributionResult::trades: alloc::vec::Vec<nanobook::backtest_bridge::AttributionTrade>
+impl core::clone::Clone for nanobook::backtest_bridge::AttributionResult
+pub fn nanobook::backtest_bridge::AttributionResult::clone(&self) -> nanobook::backtest_bridge::AttributionResult
+impl core::cmp::PartialEq for nanobook::backtest_bridge::AttributionResult
+pub fn nanobook::backtest_bridge::AttributionResult::eq(&self, &nanobook::backtest_bridge::AttributionResult) -> bool
+impl core::fmt::Debug for nanobook::backtest_bridge::AttributionResult
+pub fn nanobook::backtest_bridge::AttributionResult::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for nanobook::backtest_bridge::AttributionResult
+impl core::marker::Freeze for nanobook::backtest_bridge::AttributionResult
+impl core::marker::Send for nanobook::backtest_bridge::AttributionResult
+impl core::marker::Sync for nanobook::backtest_bridge::AttributionResult
+impl core::marker::Unpin for nanobook::backtest_bridge::AttributionResult
+impl core::marker::UnsafeUnpin for nanobook::backtest_bridge::AttributionResult
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::backtest_bridge::AttributionResult
+impl core::panic::unwind_safe::UnwindSafe for nanobook::backtest_bridge::AttributionResult
+pub struct nanobook::backtest_bridge::AttributionTrade
+pub nanobook::backtest_bridge::AttributionTrade::entry_index: usize
+pub nanobook::backtest_bridge::AttributionTrade::entry_weight: f64
+pub nanobook::backtest_bridge::AttributionTrade::exit_index: core::option::Option<usize>
+pub nanobook::backtest_bridge::AttributionTrade::exit_weight: f64
+pub nanobook::backtest_bridge::AttributionTrade::symbol: nanobook::Symbol
+impl core::clone::Clone for nanobook::backtest_bridge::AttributionTrade
+pub fn nanobook::backtest_bridge::AttributionTrade::clone(&self) -> nanobook::backtest_bridge::AttributionTrade
+impl core::cmp::PartialEq for nanobook::backtest_bridge::AttributionTrade
+pub fn nanobook::backtest_bridge::AttributionTrade::eq(&self, &nanobook::backtest_bridge::AttributionTrade) -> bool
+impl core::fmt::Debug for nanobook::backtest_bridge::AttributionTrade
+pub fn nanobook::backtest_bridge::AttributionTrade::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for nanobook::backtest_bridge::AttributionTrade
+impl core::marker::Freeze for nanobook::backtest_bridge::AttributionTrade
+impl core::marker::Send for nanobook::backtest_bridge::AttributionTrade
+impl core::marker::Sync for nanobook::backtest_bridge::AttributionTrade
+impl core::marker::Unpin for nanobook::backtest_bridge::AttributionTrade
+impl core::marker::UnsafeUnpin for nanobook::backtest_bridge::AttributionTrade
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::backtest_bridge::AttributionTrade
+impl core::panic::unwind_safe::UnwindSafe for nanobook::backtest_bridge::AttributionTrade
 pub struct nanobook::backtest_bridge::BacktestBridgeOptions
 pub nanobook::backtest_bridge::BacktestBridgeOptions::stop_cfg: core::option::Option<nanobook::backtest_bridge::BacktestStopConfig>
+impl core::clone::Clone for nanobook::backtest_bridge::BacktestBridgeOptions
+pub fn nanobook::backtest_bridge::BacktestBridgeOptions::clone(&self) -> nanobook::backtest_bridge::BacktestBridgeOptions
+impl core::default::Default for nanobook::backtest_bridge::BacktestBridgeOptions
+pub fn nanobook::backtest_bridge::BacktestBridgeOptions::default() -> nanobook::backtest_bridge::BacktestBridgeOptions
+impl core::fmt::Debug for nanobook::backtest_bridge::BacktestBridgeOptions
+pub fn nanobook::backtest_bridge::BacktestBridgeOptions::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for nanobook::backtest_bridge::BacktestBridgeOptions
+impl core::marker::Send for nanobook::backtest_bridge::BacktestBridgeOptions
+impl core::marker::Sync for nanobook::backtest_bridge::BacktestBridgeOptions
+impl core::marker::Unpin for nanobook::backtest_bridge::BacktestBridgeOptions
+impl core::marker::UnsafeUnpin for nanobook::backtest_bridge::BacktestBridgeOptions
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::backtest_bridge::BacktestBridgeOptions
+impl core::panic::unwind_safe::UnwindSafe for nanobook::backtest_bridge::BacktestBridgeOptions
 pub struct nanobook::backtest_bridge::BacktestBridgeResult
 pub nanobook::backtest_bridge::BacktestBridgeResult::equity_curve: alloc::vec::Vec<i64>
 pub nanobook::backtest_bridge::BacktestBridgeResult::final_cash: i64
 pub nanobook::backtest_bridge::BacktestBridgeResult::holdings: alloc::vec::Vec<alloc::vec::Vec<(nanobook::Symbol, f64)>>
 pub nanobook::backtest_bridge::BacktestBridgeResult::metrics: core::option::Option<nanobook::portfolio::metrics::Metrics>
 pub nanobook::backtest_bridge::BacktestBridgeResult::returns: alloc::vec::Vec<f64>
+pub nanobook::backtest_bridge::BacktestBridgeResult::skipped_rebalances: alloc::vec::Vec<usize>
 pub nanobook::backtest_bridge::BacktestBridgeResult::stop_events: alloc::vec::Vec<nanobook::backtest_bridge::BacktestStopEvent>
 pub nanobook::backtest_bridge::BacktestBridgeResult::symbol_returns: alloc::vec::Vec<alloc::vec::Vec<(nanobook::Symbol, f64)>>
+impl core::marker::Freeze for nanobook::backtest_bridge::BacktestBridgeResult
+impl core::marker::Send for nanobook::backtest_bridge::BacktestBridgeResult
+impl core::marker::Sync for nanobook::backtest_bridge::BacktestBridgeResult
+impl core::marker::Unpin for nanobook::backtest_bridge::BacktestBridgeResult
+impl core::marker::UnsafeUnpin for nanobook::backtest_bridge::BacktestBridgeResult
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::backtest_bridge::BacktestBridgeResult
+impl core::panic::unwind_safe::UnwindSafe for nanobook::backtest_bridge::BacktestBridgeResult
 pub struct nanobook::backtest_bridge::BacktestStopConfig
 pub nanobook::backtest_bridge::BacktestStopConfig::atr_multiple: core::option::Option<f64>
 pub nanobook::backtest_bridge::BacktestStopConfig::atr_period: usize
 pub nanobook::backtest_bridge::BacktestStopConfig::fixed_stop_pct: core::option::Option<f64>
 pub nanobook::backtest_bridge::BacktestStopConfig::trailing_stop_pct: core::option::Option<f64>
+impl core::clone::Clone for nanobook::backtest_bridge::BacktestStopConfig
+pub fn nanobook::backtest_bridge::BacktestStopConfig::clone(&self) -> nanobook::backtest_bridge::BacktestStopConfig
+impl core::default::Default for nanobook::backtest_bridge::BacktestStopConfig
+pub fn nanobook::backtest_bridge::BacktestStopConfig::default() -> nanobook::backtest_bridge::BacktestStopConfig
+impl core::fmt::Debug for nanobook::backtest_bridge::BacktestStopConfig
+pub fn nanobook::backtest_bridge::BacktestStopConfig::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for nanobook::backtest_bridge::BacktestStopConfig
+impl core::marker::Send for nanobook::backtest_bridge::BacktestStopConfig
+impl core::marker::Sync for nanobook::backtest_bridge::BacktestStopConfig
+impl core::marker::Unpin for nanobook::backtest_bridge::BacktestStopConfig
+impl core::marker::UnsafeUnpin for nanobook::backtest_bridge::BacktestStopConfig
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::backtest_bridge::BacktestStopConfig
+impl core::panic::unwind_safe::UnwindSafe for nanobook::backtest_bridge::BacktestStopConfig
 pub struct nanobook::backtest_bridge::BacktestStopEvent
 pub nanobook::backtest_bridge::BacktestStopEvent::exit_price: i64
 pub nanobook::backtest_bridge::BacktestStopEvent::period_index: usize
 pub nanobook::backtest_bridge::BacktestStopEvent::reason: &'static str
 pub nanobook::backtest_bridge::BacktestStopEvent::symbol: nanobook::Symbol
 pub nanobook::backtest_bridge::BacktestStopEvent::trigger_price: i64
-pub fn nanobook::backtest_bridge::backtest_weights(weight_schedule: &[alloc::vec::Vec<(nanobook::Symbol, f64)>], price_schedule: &[alloc::vec::Vec<(nanobook::Symbol, i64)>], initial_cash_cents: i64, cost_bps: u32, periods_per_year: f64, risk_free: f64) -> nanobook::backtest_bridge::BacktestBridgeResult
-pub fn nanobook::backtest_bridge::backtest_weights_with_options(weight_schedule: &[alloc::vec::Vec<(nanobook::Symbol, f64)>], price_schedule: &[alloc::vec::Vec<(nanobook::Symbol, i64)>], initial_cash_cents: i64, cost_bps: u32, periods_per_year: f64, risk_free: f64, options: nanobook::backtest_bridge::BacktestBridgeOptions) -> nanobook::backtest_bridge::BacktestBridgeResult
+impl core::clone::Clone for nanobook::backtest_bridge::BacktestStopEvent
+pub fn nanobook::backtest_bridge::BacktestStopEvent::clone(&self) -> nanobook::backtest_bridge::BacktestStopEvent
+impl core::fmt::Debug for nanobook::backtest_bridge::BacktestStopEvent
+pub fn nanobook::backtest_bridge::BacktestStopEvent::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for nanobook::backtest_bridge::BacktestStopEvent
+impl core::marker::Send for nanobook::backtest_bridge::BacktestStopEvent
+impl core::marker::Sync for nanobook::backtest_bridge::BacktestStopEvent
+impl core::marker::Unpin for nanobook::backtest_bridge::BacktestStopEvent
+impl core::marker::UnsafeUnpin for nanobook::backtest_bridge::BacktestStopEvent
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::backtest_bridge::BacktestStopEvent
+impl core::panic::unwind_safe::UnwindSafe for nanobook::backtest_bridge::BacktestStopEvent
+pub struct nanobook::backtest_bridge::BarPrices
+pub nanobook::backtest_bridge::BarPrices::close: i64
+pub nanobook::backtest_bridge::BarPrices::high: i64
+pub nanobook::backtest_bridge::BarPrices::low: i64
+pub nanobook::backtest_bridge::BarPrices::open: i64
+impl core::clone::Clone for nanobook::backtest_bridge::BarPrices
+pub fn nanobook::backtest_bridge::BarPrices::clone(&self) -> nanobook::backtest_bridge::BarPrices
+impl core::fmt::Debug for nanobook::backtest_bridge::BarPrices
+pub fn nanobook::backtest_bridge::BarPrices::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for nanobook::backtest_bridge::BarPrices
+impl core::marker::Freeze for nanobook::backtest_bridge::BarPrices
+impl core::marker::Send for nanobook::backtest_bridge::BarPrices
+impl core::marker::Sync for nanobook::backtest_bridge::BarPrices
+impl core::marker::Unpin for nanobook::backtest_bridge::BarPrices
+impl core::marker::UnsafeUnpin for nanobook::backtest_bridge::BarPrices
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::backtest_bridge::BarPrices
+impl core::panic::unwind_safe::UnwindSafe for nanobook::backtest_bridge::BarPrices
+pub struct nanobook::backtest_bridge::TearSheet
+pub nanobook::backtest_bridge::TearSheet::drawdown_events: alloc::vec::Vec<nanobook::portfolio::metrics::DrawdownEvent>
+pub nanobook::backtest_bridge::TearSheet::monthly_returns: alloc::vec::Vec<alloc::vec::Vec<f64>>
+pub nanobook::backtest_bridge::TearSheet::rolling_sharpe: alloc::vec::Vec<f64>
+pub nanobook::backtest_bridge::TearSheet::trade_analytics: nanobook::backtest_bridge::TradeAnalytics
+impl core::clone::Clone for nanobook::backtest_bridge::TearSheet
+pub fn nanobook::backtest_bridge::TearSheet::clone(&self) -> nanobook::backtest_bridge::TearSheet
+impl core::fmt::Debug for nanobook::backtest_bridge::TearSheet
+pub fn nanobook::backtest_bridge::TearSheet::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for nanobook::backtest_bridge::TearSheet
+impl core::marker::Send for nanobook::backtest_bridge::TearSheet
+impl core::marker::Sync for nanobook::backtest_bridge::TearSheet
+impl core::marker::Unpin for nanobook::backtest_bridge::TearSheet
+impl core::marker::UnsafeUnpin for nanobook::backtest_bridge::TearSheet
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::backtest_bridge::TearSheet
+impl core::panic::unwind_safe::UnwindSafe for nanobook::backtest_bridge::TearSheet
+pub struct nanobook::backtest_bridge::TradeAnalytics
+pub nanobook::backtest_bridge::TradeAnalytics::closed_trade_count: usize
+pub nanobook::backtest_bridge::TradeAnalytics::open_trade_count: usize
+pub nanobook::backtest_bridge::TradeAnalytics::trade_count: usize
+impl core::clone::Clone for nanobook::backtest_bridge::TradeAnalytics
+pub fn nanobook::backtest_bridge::TradeAnalytics::clone(&self) -> nanobook::backtest_bridge::TradeAnalytics
+impl core::cmp::PartialEq for nanobook::backtest_bridge::TradeAnalytics
+pub fn nanobook::backtest_bridge::TradeAnalytics::eq(&self, &nanobook::backtest_bridge::TradeAnalytics) -> bool
+impl core::fmt::Debug for nanobook::backtest_bridge::TradeAnalytics
+pub fn nanobook::backtest_bridge::TradeAnalytics::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for nanobook::backtest_bridge::TradeAnalytics
+impl core::marker::Freeze for nanobook::backtest_bridge::TradeAnalytics
+impl core::marker::Send for nanobook::backtest_bridge::TradeAnalytics
+impl core::marker::Sync for nanobook::backtest_bridge::TradeAnalytics
+impl core::marker::Unpin for nanobook::backtest_bridge::TradeAnalytics
+impl core::marker::UnsafeUnpin for nanobook::backtest_bridge::TradeAnalytics
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::backtest_bridge::TradeAnalytics
+impl core::panic::unwind_safe::UnwindSafe for nanobook::backtest_bridge::TradeAnalytics
+pub fn nanobook::backtest_bridge::backtest_weights(&[alloc::vec::Vec<(nanobook::Symbol, f64)>], &[alloc::vec::Vec<(nanobook::Symbol, nanobook::backtest_bridge::BarPrices)>], i64, nanobook::portfolio::cost_model::CostModel, nanobook::backtest_bridge::FillPolicy, f64, f64) -> nanobook::backtest_bridge::BacktestBridgeResult
+pub fn nanobook::backtest_bridge::backtest_weights_with_options(&[alloc::vec::Vec<(nanobook::Symbol, f64)>], &[alloc::vec::Vec<(nanobook::Symbol, nanobook::backtest_bridge::BarPrices)>], i64, nanobook::portfolio::cost_model::CostModel, nanobook::backtest_bridge::FillPolicy, f64, f64, nanobook::backtest_bridge::BacktestBridgeOptions) -> nanobook::backtest_bridge::BacktestBridgeResult
+pub fn nanobook::backtest_bridge::decompose_backtest(&[alloc::vec::Vec<(nanobook::Symbol, f64)>], &[alloc::vec::Vec<(nanobook::Symbol, f64)>]) -> nanobook::backtest_bridge::AttributionResult
+pub fn nanobook::backtest_bridge::tear_sheet(&nanobook::backtest_bridge::BacktestBridgeResult, usize, usize) -> nanobook::backtest_bridge::TearSheet
 pub mod nanobook::cv
-pub fn nanobook::cv::time_series_split(n_samples: usize, n_splits: usize) -> alloc::vec::Vec<(alloc::vec::Vec<usize>, alloc::vec::Vec<usize>)>
+pub struct nanobook::cv::WalkForwardWindow
+pub nanobook::cv::WalkForwardWindow::test_end: usize
+pub nanobook::cv::WalkForwardWindow::test_metrics: core::option::Option<nanobook::portfolio::metrics::Metrics>
+pub nanobook::cv::WalkForwardWindow::test_start: usize
+pub nanobook::cv::WalkForwardWindow::train_end: usize
+pub nanobook::cv::WalkForwardWindow::train_metrics: core::option::Option<nanobook::portfolio::metrics::Metrics>
+pub nanobook::cv::WalkForwardWindow::train_start: usize
+impl core::clone::Clone for nanobook::cv::WalkForwardWindow
+pub fn nanobook::cv::WalkForwardWindow::clone(&self) -> nanobook::cv::WalkForwardWindow
+impl core::fmt::Debug for nanobook::cv::WalkForwardWindow
+pub fn nanobook::cv::WalkForwardWindow::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for nanobook::cv::WalkForwardWindow
+impl core::marker::Send for nanobook::cv::WalkForwardWindow
+impl core::marker::Sync for nanobook::cv::WalkForwardWindow
+impl core::marker::Unpin for nanobook::cv::WalkForwardWindow
+impl core::marker::UnsafeUnpin for nanobook::cv::WalkForwardWindow
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::cv::WalkForwardWindow
+impl core::panic::unwind_safe::UnwindSafe for nanobook::cv::WalkForwardWindow
+pub fn nanobook::cv::time_series_split(usize, usize) -> alloc::vec::Vec<(alloc::vec::Vec<usize>, alloc::vec::Vec<usize>)>
+pub fn nanobook::cv::walkforward(&[f64], usize, f64, f64, f64) -> alloc::vec::Vec<nanobook::cv::WalkForwardWindow>
 pub mod nanobook::garch
-pub fn nanobook::garch::garch_ewma_forecast(returns: &[f64], p: usize, q: usize, mean: &str) -> f64
+pub fn nanobook::garch::garch_ewma_forecast(&[f64], usize, usize, &str) -> f64
 pub mod nanobook::indicators
-pub fn nanobook::indicators::atr(high: &[f64], low: &[f64], close: &[f64], period: usize) -> alloc::vec::Vec<f64>
-pub fn nanobook::indicators::bbands(close: &[f64], period: usize, num_std_up: f64, num_std_dn: f64) -> (alloc::vec::Vec<f64>, alloc::vec::Vec<f64>, alloc::vec::Vec<f64>)
-pub fn nanobook::indicators::macd(close: &[f64], fast_period: usize, slow_period: usize, signal_period: usize) -> (alloc::vec::Vec<f64>, alloc::vec::Vec<f64>, alloc::vec::Vec<f64>)
-pub fn nanobook::indicators::rsi(close: &[f64], period: usize) -> alloc::vec::Vec<f64>
+pub struct nanobook::indicators::IndicatorMeta
+pub nanobook::indicators::IndicatorMeta::category: &'static str
+pub nanobook::indicators::IndicatorMeta::has_parity: bool
+pub nanobook::indicators::IndicatorMeta::input_type: &'static str
+pub nanobook::indicators::IndicatorMeta::name: &'static str
+pub nanobook::indicators::IndicatorMeta::rust_fn: &'static str
+impl core::clone::Clone for nanobook::indicators::IndicatorMeta
+pub fn nanobook::indicators::IndicatorMeta::clone(&self) -> nanobook::indicators::IndicatorMeta
+impl core::cmp::Eq for nanobook::indicators::IndicatorMeta
+impl core::cmp::PartialEq for nanobook::indicators::IndicatorMeta
+pub fn nanobook::indicators::IndicatorMeta::eq(&self, &nanobook::indicators::IndicatorMeta) -> bool
+impl core::fmt::Debug for nanobook::indicators::IndicatorMeta
+pub fn nanobook::indicators::IndicatorMeta::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for nanobook::indicators::IndicatorMeta
+impl core::marker::Freeze for nanobook::indicators::IndicatorMeta
+impl core::marker::Send for nanobook::indicators::IndicatorMeta
+impl core::marker::Sync for nanobook::indicators::IndicatorMeta
+impl core::marker::Unpin for nanobook::indicators::IndicatorMeta
+impl core::marker::UnsafeUnpin for nanobook::indicators::IndicatorMeta
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::indicators::IndicatorMeta
+impl core::panic::unwind_safe::UnwindSafe for nanobook::indicators::IndicatorMeta
+pub fn nanobook::indicators::ad(&[f64], &[f64], &[f64], &[f64]) -> alloc::vec::Vec<f64>
+pub fn nanobook::indicators::adosc(&[f64], &[f64], &[f64], &[f64], usize, usize) -> alloc::vec::Vec<f64>
+pub fn nanobook::indicators::adx(&[f64], &[f64], &[f64], usize) -> alloc::vec::Vec<f64>
+pub fn nanobook::indicators::atr(&[f64], &[f64], &[f64], usize) -> alloc::vec::Vec<f64>
+pub fn nanobook::indicators::bbands(&[f64], usize, f64, f64) -> (alloc::vec::Vec<f64>, alloc::vec::Vec<f64>, alloc::vec::Vec<f64>)
+pub fn nanobook::indicators::bollinger(&[f64], usize, f64, f64) -> (alloc::vec::Vec<f64>, alloc::vec::Vec<f64>, alloc::vec::Vec<f64>)
+pub fn nanobook::indicators::cci(&[f64], &[f64], &[f64], usize) -> alloc::vec::Vec<f64>
+pub fn nanobook::indicators::dx(&[f64], &[f64], &[f64], usize) -> alloc::vec::Vec<f64>
+pub fn nanobook::indicators::ema(&[f64], usize) -> alloc::vec::Vec<f64>
+pub fn nanobook::indicators::list_supported() -> &'static [nanobook::indicators::IndicatorMeta]
+pub fn nanobook::indicators::macd(&[f64], usize, usize, usize) -> (alloc::vec::Vec<f64>, alloc::vec::Vec<f64>, alloc::vec::Vec<f64>)
+pub fn nanobook::indicators::minus_di(&[f64], &[f64], &[f64], usize) -> alloc::vec::Vec<f64>
+pub fn nanobook::indicators::mom(&[f64], usize) -> alloc::vec::Vec<f64>
+pub fn nanobook::indicators::natr(&[f64], &[f64], &[f64], usize) -> alloc::vec::Vec<f64>
+pub fn nanobook::indicators::obv(&[f64], &[f64]) -> alloc::vec::Vec<f64>
+pub fn nanobook::indicators::plus_di(&[f64], &[f64], &[f64], usize) -> alloc::vec::Vec<f64>
+pub fn nanobook::indicators::roc(&[f64], usize) -> alloc::vec::Vec<f64>
+pub fn nanobook::indicators::rocp(&[f64], usize) -> alloc::vec::Vec<f64>
+pub fn nanobook::indicators::rocr(&[f64], usize) -> alloc::vec::Vec<f64>
+pub fn nanobook::indicators::rsi(&[f64], usize) -> alloc::vec::Vec<f64>
+pub fn nanobook::indicators::sma(&[f64], usize) -> alloc::vec::Vec<f64>
+pub fn nanobook::indicators::stoch(&[f64], &[f64], &[f64], usize, usize, usize) -> (alloc::vec::Vec<f64>, alloc::vec::Vec<f64>)
+pub fn nanobook::indicators::stochf(&[f64], &[f64], &[f64], usize, usize) -> (alloc::vec::Vec<f64>, alloc::vec::Vec<f64>)
+pub fn nanobook::indicators::stochrsi(&[f64], usize, usize, usize) -> (alloc::vec::Vec<f64>, alloc::vec::Vec<f64>)
+pub fn nanobook::indicators::trange(&[f64], &[f64], &[f64]) -> alloc::vec::Vec<f64>
+pub fn nanobook::indicators::ultosc(&[f64], &[f64], &[f64], usize, usize, usize) -> alloc::vec::Vec<f64>
+pub fn nanobook::indicators::wilder_atr(&[f64], &[f64], &[f64], usize) -> alloc::vec::Vec<f64>
+pub fn nanobook::indicators::willr(&[f64], &[f64], &[f64], usize) -> alloc::vec::Vec<f64>
 pub mod nanobook::itch
 pub enum nanobook::itch::ItchMessage
 pub nanobook::itch::ItchMessage::AddOrder
@@ -77,64 +296,226 @@ pub nanobook::itch::ItchMessage::Trade::shares: u32
 pub nanobook::itch::ItchMessage::Trade::side: nanobook::Side
 pub nanobook::itch::ItchMessage::Trade::stock: alloc::string::String
 pub nanobook::itch::ItchMessage::Trade::timestamp: u64
-pub struct nanobook::itch::ItchParser<R: std::io::Read>
-impl<R: std::io::Read> nanobook::itch::ItchParser<R>
-pub fn nanobook::itch::ItchParser<R>::new(reader: R) -> Self
-pub fn nanobook::itch::ItchParser<R>::next_message(&mut self) -> std::io::error::Result<core::option::Option<nanobook::itch::ItchMessage>>
-pub fn nanobook::itch::itch_to_event(msg: nanobook::itch::ItchMessage) -> core::option::Option<(alloc::string::String, nanobook::Event)>
+impl core::clone::Clone for nanobook::itch::ItchMessage
+pub fn nanobook::itch::ItchMessage::clone(&self) -> nanobook::itch::ItchMessage
+impl core::cmp::PartialEq for nanobook::itch::ItchMessage
+pub fn nanobook::itch::ItchMessage::eq(&self, &nanobook::itch::ItchMessage) -> bool
+impl core::fmt::Debug for nanobook::itch::ItchMessage
+pub fn nanobook::itch::ItchMessage::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for nanobook::itch::ItchMessage
+impl core::marker::Freeze for nanobook::itch::ItchMessage
+impl core::marker::Send for nanobook::itch::ItchMessage
+impl core::marker::Sync for nanobook::itch::ItchMessage
+impl core::marker::Unpin for nanobook::itch::ItchMessage
+impl core::marker::UnsafeUnpin for nanobook::itch::ItchMessage
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::itch::ItchMessage
+impl core::panic::unwind_safe::UnwindSafe for nanobook::itch::ItchMessage
+pub struct nanobook::itch::ItchParser<R: alloc::io::read::Read>
+impl<R: alloc::io::read::Read> nanobook::itch::ItchParser<R>
+pub fn nanobook::itch::ItchParser<R>::new(R) -> Self
+pub fn nanobook::itch::ItchParser<R>::next_message(&mut self) -> core::io::error::Result<core::option::Option<nanobook::itch::ItchMessage>>
+impl<R> core::marker::Freeze for nanobook::itch::ItchParser<R> where R: core::marker::Freeze
+impl<R> core::marker::Send for nanobook::itch::ItchParser<R> where R: core::marker::Send
+impl<R> core::marker::Sync for nanobook::itch::ItchParser<R> where R: core::marker::Sync
+impl<R> core::marker::Unpin for nanobook::itch::ItchParser<R> where R: core::marker::Unpin
+impl<R> core::marker::UnsafeUnpin for nanobook::itch::ItchParser<R> where R: core::marker::UnsafeUnpin
+impl<R> core::panic::unwind_safe::RefUnwindSafe for nanobook::itch::ItchParser<R> where R: core::panic::unwind_safe::RefUnwindSafe
+impl<R> core::panic::unwind_safe::UnwindSafe for nanobook::itch::ItchParser<R> where R: core::panic::unwind_safe::UnwindSafe
+pub fn nanobook::itch::itch_to_event(nanobook::itch::ItchMessage) -> core::option::Option<(alloc::string::String, nanobook::Event)>
 pub mod nanobook::multi_exchange
 pub struct nanobook::multi_exchange::MultiExchange
 impl nanobook::multi_exchange::MultiExchange
 pub fn nanobook::multi_exchange::MultiExchange::best_prices(&self) -> alloc::vec::Vec<(nanobook::Symbol, core::option::Option<nanobook::Price>, core::option::Option<nanobook::Price>)>
-pub fn nanobook::multi_exchange::MultiExchange::get(&self, symbol: &nanobook::Symbol) -> core::option::Option<&nanobook::Exchange>
-pub fn nanobook::multi_exchange::MultiExchange::get_mut(&mut self, symbol: &nanobook::Symbol) -> core::option::Option<&mut nanobook::Exchange>
-pub fn nanobook::multi_exchange::MultiExchange::get_or_create(&mut self, symbol: &nanobook::Symbol) -> &mut nanobook::Exchange
+pub fn nanobook::multi_exchange::MultiExchange::get(&self, &nanobook::Symbol) -> core::option::Option<&nanobook::Exchange>
+pub fn nanobook::multi_exchange::MultiExchange::get_mut(&mut self, &nanobook::Symbol) -> core::option::Option<&mut nanobook::Exchange>
+pub fn nanobook::multi_exchange::MultiExchange::get_or_create(&mut self, &nanobook::Symbol) -> &mut nanobook::Exchange
 pub fn nanobook::multi_exchange::MultiExchange::is_empty(&self) -> bool
 pub fn nanobook::multi_exchange::MultiExchange::len(&self) -> usize
 pub fn nanobook::multi_exchange::MultiExchange::new() -> Self
 pub fn nanobook::multi_exchange::MultiExchange::symbols(&self) -> impl core::iter::traits::iterator::Iterator<Item = &nanobook::Symbol>
+impl core::clone::Clone for nanobook::multi_exchange::MultiExchange
+pub fn nanobook::multi_exchange::MultiExchange::clone(&self) -> nanobook::multi_exchange::MultiExchange
+impl core::default::Default for nanobook::multi_exchange::MultiExchange
+pub fn nanobook::multi_exchange::MultiExchange::default() -> nanobook::multi_exchange::MultiExchange
+impl core::fmt::Debug for nanobook::multi_exchange::MultiExchange
+pub fn nanobook::multi_exchange::MultiExchange::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for nanobook::multi_exchange::MultiExchange
+impl core::marker::Send for nanobook::multi_exchange::MultiExchange
+impl core::marker::Sync for nanobook::multi_exchange::MultiExchange
+impl core::marker::Unpin for nanobook::multi_exchange::MultiExchange
+impl core::marker::UnsafeUnpin for nanobook::multi_exchange::MultiExchange
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::multi_exchange::MultiExchange
+impl core::panic::unwind_safe::UnwindSafe for nanobook::multi_exchange::MultiExchange
 pub mod nanobook::optimize
 pub enum nanobook::optimize::OptimizeError
 pub nanobook::optimize::OptimizeError::DegenerateProjection
 pub nanobook::optimize::OptimizeError::EmptyInput
+impl core::clone::Clone for nanobook::optimize::OptimizeError
+pub fn nanobook::optimize::OptimizeError::clone(&self) -> nanobook::optimize::OptimizeError
+impl core::cmp::Eq for nanobook::optimize::OptimizeError
+impl core::cmp::PartialEq for nanobook::optimize::OptimizeError
+pub fn nanobook::optimize::OptimizeError::eq(&self, &nanobook::optimize::OptimizeError) -> bool
 impl core::error::Error for nanobook::optimize::OptimizeError
+impl core::fmt::Debug for nanobook::optimize::OptimizeError
+pub fn nanobook::optimize::OptimizeError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for nanobook::optimize::OptimizeError
-pub fn nanobook::optimize::OptimizeError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn nanobook::optimize::OptimizeError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for nanobook::optimize::OptimizeError
+impl core::marker::StructuralPartialEq for nanobook::optimize::OptimizeError
+impl serde_core::ser::Serialize for nanobook::optimize::OptimizeError
+pub fn nanobook::optimize::OptimizeError::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::optimize::OptimizeError
+pub fn nanobook::optimize::OptimizeError::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::optimize::OptimizeError
+impl core::marker::Send for nanobook::optimize::OptimizeError
+impl core::marker::Sync for nanobook::optimize::OptimizeError
+impl core::marker::Unpin for nanobook::optimize::OptimizeError
+impl core::marker::UnsafeUnpin for nanobook::optimize::OptimizeError
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::optimize::OptimizeError
+impl core::panic::unwind_safe::UnwindSafe for nanobook::optimize::OptimizeError
+pub struct nanobook::optimize::LinkageMerge
+pub nanobook::optimize::LinkageMerge::distance: f64
+pub nanobook::optimize::LinkageMerge::left: usize
+pub nanobook::optimize::LinkageMerge::right: usize
+pub nanobook::optimize::LinkageMerge::size: usize
+impl core::clone::Clone for nanobook::optimize::LinkageMerge
+pub fn nanobook::optimize::LinkageMerge::clone(&self) -> nanobook::optimize::LinkageMerge
+impl core::cmp::PartialEq for nanobook::optimize::LinkageMerge
+pub fn nanobook::optimize::LinkageMerge::eq(&self, &nanobook::optimize::LinkageMerge) -> bool
+impl core::fmt::Debug for nanobook::optimize::LinkageMerge
+pub fn nanobook::optimize::LinkageMerge::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for nanobook::optimize::LinkageMerge
+impl core::marker::Freeze for nanobook::optimize::LinkageMerge
+impl core::marker::Send for nanobook::optimize::LinkageMerge
+impl core::marker::Sync for nanobook::optimize::LinkageMerge
+impl core::marker::Unpin for nanobook::optimize::LinkageMerge
+impl core::marker::UnsafeUnpin for nanobook::optimize::LinkageMerge
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::optimize::LinkageMerge
+impl core::panic::unwind_safe::UnwindSafe for nanobook::optimize::LinkageMerge
 pub struct nanobook::optimize::OptimizerOptions
 pub nanobook::optimize::OptimizerOptions::max_iters: usize
 pub nanobook::optimize::OptimizerOptions::tol: f64
+impl core::clone::Clone for nanobook::optimize::OptimizerOptions
+pub fn nanobook::optimize::OptimizerOptions::clone(&self) -> nanobook::optimize::OptimizerOptions
+impl core::cmp::PartialEq for nanobook::optimize::OptimizerOptions
+pub fn nanobook::optimize::OptimizerOptions::eq(&self, &nanobook::optimize::OptimizerOptions) -> bool
 impl core::default::Default for nanobook::optimize::OptimizerOptions
 pub fn nanobook::optimize::OptimizerOptions::default() -> Self
+impl core::fmt::Debug for nanobook::optimize::OptimizerOptions
+pub fn nanobook::optimize::OptimizerOptions::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for nanobook::optimize::OptimizerOptions
+impl core::marker::StructuralPartialEq for nanobook::optimize::OptimizerOptions
+impl core::marker::Freeze for nanobook::optimize::OptimizerOptions
+impl core::marker::Send for nanobook::optimize::OptimizerOptions
+impl core::marker::Sync for nanobook::optimize::OptimizerOptions
+impl core::marker::Unpin for nanobook::optimize::OptimizerOptions
+impl core::marker::UnsafeUnpin for nanobook::optimize::OptimizerOptions
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::optimize::OptimizerOptions
+impl core::panic::unwind_safe::UnwindSafe for nanobook::optimize::OptimizerOptions
 pub struct nanobook::optimize::OptimizerResult
 pub nanobook::optimize::OptimizerResult::converged: bool
 pub nanobook::optimize::OptimizerResult::final_step_squared: f64
 pub nanobook::optimize::OptimizerResult::iters: usize
 pub nanobook::optimize::OptimizerResult::weights: alloc::vec::Vec<f64>
-pub fn nanobook::optimize::inverse_cdar_weights(returns: &[alloc::vec::Vec<f64>], alpha: f64) -> alloc::vec::Vec<f64>
-pub fn nanobook::optimize::inverse_cvar_weights(returns: &[alloc::vec::Vec<f64>], alpha: f64) -> alloc::vec::Vec<f64>
-pub fn nanobook::optimize::optimize_max_sharpe(returns: &[alloc::vec::Vec<f64>], risk_free: f64) -> alloc::vec::Vec<f64>
-pub fn nanobook::optimize::optimize_min_variance(returns: &[alloc::vec::Vec<f64>]) -> alloc::vec::Vec<f64>
-pub fn nanobook::optimize::optimize_min_variance_ex(returns: &[alloc::vec::Vec<f64>], options: nanobook::optimize::OptimizerOptions) -> nanobook::optimize::OptimizerResult
-pub fn nanobook::optimize::optimize_risk_parity(returns: &[alloc::vec::Vec<f64>]) -> alloc::vec::Vec<f64>
-pub fn nanobook::optimize::project_simplex(v: &[f64]) -> core::result::Result<alloc::vec::Vec<f64>, nanobook::optimize::OptimizeError>
+impl core::clone::Clone for nanobook::optimize::OptimizerResult
+pub fn nanobook::optimize::OptimizerResult::clone(&self) -> nanobook::optimize::OptimizerResult
+impl core::cmp::PartialEq for nanobook::optimize::OptimizerResult
+pub fn nanobook::optimize::OptimizerResult::eq(&self, &nanobook::optimize::OptimizerResult) -> bool
+impl core::fmt::Debug for nanobook::optimize::OptimizerResult
+pub fn nanobook::optimize::OptimizerResult::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for nanobook::optimize::OptimizerResult
+impl core::marker::Freeze for nanobook::optimize::OptimizerResult
+impl core::marker::Send for nanobook::optimize::OptimizerResult
+impl core::marker::Sync for nanobook::optimize::OptimizerResult
+impl core::marker::Unpin for nanobook::optimize::OptimizerResult
+impl core::marker::UnsafeUnpin for nanobook::optimize::OptimizerResult
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::optimize::OptimizerResult
+impl core::panic::unwind_safe::UnwindSafe for nanobook::optimize::OptimizerResult
+pub fn nanobook::optimize::correlation_matrix(&[alloc::vec::Vec<f64>]) -> alloc::vec::Vec<alloc::vec::Vec<f64>>
+pub fn nanobook::optimize::inverse_cdar_weights(&[alloc::vec::Vec<f64>], f64) -> alloc::vec::Vec<f64>
+pub fn nanobook::optimize::inverse_cvar_weights(&[alloc::vec::Vec<f64>], f64) -> alloc::vec::Vec<f64>
+pub fn nanobook::optimize::optimize_hrp(&[alloc::vec::Vec<f64>]) -> alloc::vec::Vec<f64>
+pub fn nanobook::optimize::optimize_max_sharpe(&[alloc::vec::Vec<f64>], f64) -> alloc::vec::Vec<f64>
+pub fn nanobook::optimize::optimize_min_variance(&[alloc::vec::Vec<f64>]) -> alloc::vec::Vec<f64>
+pub fn nanobook::optimize::optimize_min_variance_ex(&[alloc::vec::Vec<f64>], nanobook::optimize::OptimizerOptions) -> nanobook::optimize::OptimizerResult
+pub fn nanobook::optimize::optimize_risk_parity(&[alloc::vec::Vec<f64>]) -> alloc::vec::Vec<f64>
+pub fn nanobook::optimize::project_simplex(&[f64]) -> core::result::Result<alloc::vec::Vec<f64>, nanobook::optimize::OptimizeError>
 pub mod nanobook::persistence
-pub fn nanobook::persistence::load_events(path: &std::path::Path) -> std::io::error::Result<alloc::vec::Vec<nanobook::Event>>
-pub fn nanobook::persistence::save_events(events: &[nanobook::Event], path: &std::path::Path) -> std::io::error::Result<()>
+pub fn nanobook::persistence::load_events(&std::path::Path) -> core::io::error::Result<alloc::vec::Vec<nanobook::Event>>
+pub fn nanobook::persistence::save_events(&[nanobook::Event], &std::path::Path) -> core::io::error::Result<()>
 pub mod nanobook::portfolio
 pub mod nanobook::portfolio::cost_model
 pub struct nanobook::portfolio::cost_model::CostModel
-pub nanobook::portfolio::cost_model::CostModel::commission_bps: u32
-pub nanobook::portfolio::cost_model::CostModel::min_trade_fee: i64
-pub nanobook::portfolio::cost_model::CostModel::slippage_bps: u32
+pub nanobook::portfolio::cost_model::CostModel::commission_bps: f64
+pub nanobook::portfolio::cost_model::CostModel::min_commission: i64
+pub nanobook::portfolio::cost_model::CostModel::slippage_bps: f64
 impl nanobook::portfolio::cost_model::CostModel
-pub fn nanobook::portfolio::cost_model::CostModel::compute_cost(&self, notional: i64) -> i64
+pub fn nanobook::portfolio::cost_model::CostModel::compute_cost(&self, i64) -> i64
 pub fn nanobook::portfolio::cost_model::CostModel::zero() -> Self
+impl core::clone::Clone for nanobook::portfolio::cost_model::CostModel
+pub fn nanobook::portfolio::cost_model::CostModel::clone(&self) -> nanobook::portfolio::cost_model::CostModel
 impl core::default::Default for nanobook::portfolio::cost_model::CostModel
 pub fn nanobook::portfolio::cost_model::CostModel::default() -> Self
+impl core::fmt::Debug for nanobook::portfolio::cost_model::CostModel
+pub fn nanobook::portfolio::cost_model::CostModel::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for nanobook::portfolio::cost_model::CostModel
+impl serde_core::ser::Serialize for nanobook::portfolio::cost_model::CostModel
+pub fn nanobook::portfolio::cost_model::CostModel::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::portfolio::cost_model::CostModel
+pub fn nanobook::portfolio::cost_model::CostModel::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::portfolio::cost_model::CostModel
+impl core::marker::Send for nanobook::portfolio::cost_model::CostModel
+impl core::marker::Sync for nanobook::portfolio::cost_model::CostModel
+impl core::marker::Unpin for nanobook::portfolio::cost_model::CostModel
+impl core::marker::UnsafeUnpin for nanobook::portfolio::cost_model::CostModel
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::portfolio::cost_model::CostModel
+impl core::panic::unwind_safe::UnwindSafe for nanobook::portfolio::cost_model::CostModel
 pub mod nanobook::portfolio::metrics
 pub enum nanobook::portfolio::metrics::CVaRMethod
 pub nanobook::portfolio::metrics::CVaRMethod::Historical
 pub nanobook::portfolio::metrics::CVaRMethod::ParametricNormal
+impl core::clone::Clone for nanobook::portfolio::metrics::CVaRMethod
+pub fn nanobook::portfolio::metrics::CVaRMethod::clone(&self) -> nanobook::portfolio::metrics::CVaRMethod
+impl core::cmp::Eq for nanobook::portfolio::metrics::CVaRMethod
+impl core::cmp::PartialEq for nanobook::portfolio::metrics::CVaRMethod
+pub fn nanobook::portfolio::metrics::CVaRMethod::eq(&self, &nanobook::portfolio::metrics::CVaRMethod) -> bool
+impl core::default::Default for nanobook::portfolio::metrics::CVaRMethod
+pub fn nanobook::portfolio::metrics::CVaRMethod::default() -> nanobook::portfolio::metrics::CVaRMethod
+impl core::fmt::Debug for nanobook::portfolio::metrics::CVaRMethod
+pub fn nanobook::portfolio::metrics::CVaRMethod::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for nanobook::portfolio::metrics::CVaRMethod
+impl core::marker::StructuralPartialEq for nanobook::portfolio::metrics::CVaRMethod
+impl serde_core::ser::Serialize for nanobook::portfolio::metrics::CVaRMethod
+pub fn nanobook::portfolio::metrics::CVaRMethod::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::portfolio::metrics::CVaRMethod
+pub fn nanobook::portfolio::metrics::CVaRMethod::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::portfolio::metrics::CVaRMethod
+impl core::marker::Send for nanobook::portfolio::metrics::CVaRMethod
+impl core::marker::Sync for nanobook::portfolio::metrics::CVaRMethod
+impl core::marker::Unpin for nanobook::portfolio::metrics::CVaRMethod
+impl core::marker::UnsafeUnpin for nanobook::portfolio::metrics::CVaRMethod
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::portfolio::metrics::CVaRMethod
+impl core::panic::unwind_safe::UnwindSafe for nanobook::portfolio::metrics::CVaRMethod
+pub struct nanobook::portfolio::metrics::DrawdownEvent
+pub nanobook::portfolio::metrics::DrawdownEvent::drawdown_pct: f64
+pub nanobook::portfolio::metrics::DrawdownEvent::peak_index: usize
+pub nanobook::portfolio::metrics::DrawdownEvent::recovery_index: core::option::Option<usize>
+pub nanobook::portfolio::metrics::DrawdownEvent::trough_index: usize
+pub nanobook::portfolio::metrics::DrawdownEvent::underwater_periods: usize
+impl core::clone::Clone for nanobook::portfolio::metrics::DrawdownEvent
+pub fn nanobook::portfolio::metrics::DrawdownEvent::clone(&self) -> nanobook::portfolio::metrics::DrawdownEvent
+impl core::cmp::PartialEq for nanobook::portfolio::metrics::DrawdownEvent
+pub fn nanobook::portfolio::metrics::DrawdownEvent::eq(&self, &nanobook::portfolio::metrics::DrawdownEvent) -> bool
+impl core::fmt::Debug for nanobook::portfolio::metrics::DrawdownEvent
+pub fn nanobook::portfolio::metrics::DrawdownEvent::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for nanobook::portfolio::metrics::DrawdownEvent
+impl core::marker::Freeze for nanobook::portfolio::metrics::DrawdownEvent
+impl core::marker::Send for nanobook::portfolio::metrics::DrawdownEvent
+impl core::marker::Sync for nanobook::portfolio::metrics::DrawdownEvent
+impl core::marker::Unpin for nanobook::portfolio::metrics::DrawdownEvent
+impl core::marker::UnsafeUnpin for nanobook::portfolio::metrics::DrawdownEvent
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::portfolio::metrics::DrawdownEvent
+impl core::panic::unwind_safe::UnwindSafe for nanobook::portfolio::metrics::DrawdownEvent
 pub struct nanobook::portfolio::metrics::Metrics
 pub nanobook::portfolio::metrics::Metrics::cagr: f64
 pub nanobook::portfolio::metrics::Metrics::calmar: f64
@@ -151,13 +532,30 @@ pub nanobook::portfolio::metrics::Metrics::total_return: f64
 pub nanobook::portfolio::metrics::Metrics::volatility: f64
 pub nanobook::portfolio::metrics::Metrics::win_rate: f64
 pub nanobook::portfolio::metrics::Metrics::winning_periods: usize
+impl core::clone::Clone for nanobook::portfolio::metrics::Metrics
+pub fn nanobook::portfolio::metrics::Metrics::clone(&self) -> nanobook::portfolio::metrics::Metrics
+impl core::fmt::Debug for nanobook::portfolio::metrics::Metrics
+pub fn nanobook::portfolio::metrics::Metrics::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for nanobook::portfolio::metrics::Metrics
-pub fn nanobook::portfolio::metrics::Metrics::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-pub fn nanobook::portfolio::metrics::compute_metrics(returns: &[f64], periods_per_year: f64, risk_free: f64) -> core::option::Option<nanobook::portfolio::metrics::Metrics>
-pub fn nanobook::portfolio::metrics::cvar(returns: &[f64], alpha: f64, method: nanobook::portfolio::metrics::CVaRMethod) -> f64
-pub fn nanobook::portfolio::metrics::rolling_sharpe(returns: &[f64], window: usize, periods_per_year: usize) -> alloc::vec::Vec<f64>
-pub fn nanobook::portfolio::metrics::rolling_volatility(returns: &[f64], window: usize, periods_per_year: usize) -> alloc::vec::Vec<f64>
-pub fn nanobook::portfolio::metrics::sortino(returns: &[f64], risk_free: f64, periods_per_year: f64, ddof: u32) -> f64
+pub fn nanobook::portfolio::metrics::Metrics::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for nanobook::portfolio::metrics::Metrics
+pub fn nanobook::portfolio::metrics::Metrics::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::portfolio::metrics::Metrics
+pub fn nanobook::portfolio::metrics::Metrics::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::portfolio::metrics::Metrics
+impl core::marker::Send for nanobook::portfolio::metrics::Metrics
+impl core::marker::Sync for nanobook::portfolio::metrics::Metrics
+impl core::marker::Unpin for nanobook::portfolio::metrics::Metrics
+impl core::marker::UnsafeUnpin for nanobook::portfolio::metrics::Metrics
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::portfolio::metrics::Metrics
+impl core::panic::unwind_safe::UnwindSafe for nanobook::portfolio::metrics::Metrics
+pub fn nanobook::portfolio::metrics::compute_metrics(&[f64], f64, f64) -> core::option::Option<nanobook::portfolio::metrics::Metrics>
+pub fn nanobook::portfolio::metrics::cvar(&[f64], f64, nanobook::portfolio::metrics::CVaRMethod) -> f64
+pub fn nanobook::portfolio::metrics::drawdown_series(&[f64]) -> alloc::vec::Vec<nanobook::portfolio::metrics::DrawdownEvent>
+pub fn nanobook::portfolio::metrics::rolling_max_drawdown(&[f64], usize) -> alloc::vec::Vec<f64>
+pub fn nanobook::portfolio::metrics::rolling_sharpe(&[f64], usize, usize) -> alloc::vec::Vec<f64>
+pub fn nanobook::portfolio::metrics::rolling_volatility(&[f64], usize, usize) -> alloc::vec::Vec<f64>
+pub fn nanobook::portfolio::metrics::sortino(&[f64], f64, f64, u32) -> f64
 pub mod nanobook::portfolio::position
 pub struct nanobook::portfolio::position::Position
 pub nanobook::portfolio::position::Position::avg_entry_price: i64
@@ -166,41 +564,108 @@ pub nanobook::portfolio::position::Position::realized_pnl: i64
 pub nanobook::portfolio::position::Position::symbol: nanobook::Symbol
 pub nanobook::portfolio::position::Position::total_cost: i64
 impl nanobook::portfolio::position::Position
-pub fn nanobook::portfolio::position::Position::apply_fill(&mut self, qty: i64, price: i64)
+pub fn nanobook::portfolio::position::Position::apply_fill(&mut self, i64, i64)
 pub fn nanobook::portfolio::position::Position::is_flat(&self) -> bool
-pub fn nanobook::portfolio::position::Position::market_value(&self, price: i64) -> i64
-pub fn nanobook::portfolio::position::Position::new(symbol: nanobook::Symbol) -> Self
-pub fn nanobook::portfolio::position::Position::unrealized_pnl(&self, price: i64) -> i64
+pub fn nanobook::portfolio::position::Position::market_value(&self, i64) -> i64
+pub fn nanobook::portfolio::position::Position::new(nanobook::Symbol) -> Self
+pub fn nanobook::portfolio::position::Position::unrealized_pnl(&self, i64) -> i64
+impl core::clone::Clone for nanobook::portfolio::position::Position
+pub fn nanobook::portfolio::position::Position::clone(&self) -> nanobook::portfolio::position::Position
+impl core::fmt::Debug for nanobook::portfolio::position::Position
+pub fn nanobook::portfolio::position::Position::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for nanobook::portfolio::position::Position
+pub fn nanobook::portfolio::position::Position::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::portfolio::position::Position
+pub fn nanobook::portfolio::position::Position::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::portfolio::position::Position
+impl core::marker::Send for nanobook::portfolio::position::Position
+impl core::marker::Sync for nanobook::portfolio::position::Position
+impl core::marker::Unpin for nanobook::portfolio::position::Position
+impl core::marker::UnsafeUnpin for nanobook::portfolio::position::Position
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::portfolio::position::Position
+impl core::panic::unwind_safe::UnwindSafe for nanobook::portfolio::position::Position
 pub mod nanobook::portfolio::strategy
 pub struct nanobook::portfolio::strategy::BacktestResult
 pub nanobook::portfolio::strategy::BacktestResult::metrics: core::option::Option<nanobook::portfolio::metrics::Metrics>
 pub nanobook::portfolio::strategy::BacktestResult::portfolio: nanobook::portfolio::Portfolio
+impl core::clone::Clone for nanobook::portfolio::strategy::BacktestResult
+pub fn nanobook::portfolio::strategy::BacktestResult::clone(&self) -> nanobook::portfolio::strategy::BacktestResult
+impl core::fmt::Debug for nanobook::portfolio::strategy::BacktestResult
+pub fn nanobook::portfolio::strategy::BacktestResult::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for nanobook::portfolio::strategy::BacktestResult
+impl core::marker::Send for nanobook::portfolio::strategy::BacktestResult
+impl core::marker::Sync for nanobook::portfolio::strategy::BacktestResult
+impl core::marker::Unpin for nanobook::portfolio::strategy::BacktestResult
+impl core::marker::UnsafeUnpin for nanobook::portfolio::strategy::BacktestResult
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::portfolio::strategy::BacktestResult
+impl core::panic::unwind_safe::UnwindSafe for nanobook::portfolio::strategy::BacktestResult
 pub struct nanobook::portfolio::strategy::EqualWeight
 impl nanobook::portfolio::strategy::Strategy for nanobook::portfolio::strategy::EqualWeight
-pub fn nanobook::portfolio::strategy::EqualWeight::compute_weights(&self, _bar_index: usize, prices: &[(nanobook::Symbol, i64)], _portfolio: &nanobook::portfolio::Portfolio) -> alloc::vec::Vec<(nanobook::Symbol, f64)>
+pub fn nanobook::portfolio::strategy::EqualWeight::compute_weights(&self, usize, &[(nanobook::Symbol, i64)], &nanobook::portfolio::Portfolio) -> alloc::vec::Vec<(nanobook::Symbol, f64)>
+impl core::marker::Freeze for nanobook::portfolio::strategy::EqualWeight
+impl core::marker::Send for nanobook::portfolio::strategy::EqualWeight
+impl core::marker::Sync for nanobook::portfolio::strategy::EqualWeight
+impl core::marker::Unpin for nanobook::portfolio::strategy::EqualWeight
+impl core::marker::UnsafeUnpin for nanobook::portfolio::strategy::EqualWeight
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::portfolio::strategy::EqualWeight
+impl core::panic::unwind_safe::UnwindSafe for nanobook::portfolio::strategy::EqualWeight
 pub trait nanobook::portfolio::strategy::Strategy
-pub fn nanobook::portfolio::strategy::Strategy::compute_weights(&self, bar_index: usize, prices: &[(nanobook::Symbol, i64)], portfolio: &nanobook::portfolio::Portfolio) -> alloc::vec::Vec<(nanobook::Symbol, f64)>
+pub fn nanobook::portfolio::strategy::Strategy::compute_weights(&self, usize, &[(nanobook::Symbol, i64)], &nanobook::portfolio::Portfolio) -> alloc::vec::Vec<(nanobook::Symbol, f64)>
 impl nanobook::portfolio::strategy::Strategy for nanobook::portfolio::strategy::EqualWeight
-pub fn nanobook::portfolio::strategy::EqualWeight::compute_weights(&self, _bar_index: usize, prices: &[(nanobook::Symbol, i64)], _portfolio: &nanobook::portfolio::Portfolio) -> alloc::vec::Vec<(nanobook::Symbol, f64)>
-pub fn nanobook::portfolio::strategy::run_backtest<S: nanobook::portfolio::strategy::Strategy>(strategy: &S, price_series: &[alloc::vec::Vec<(nanobook::Symbol, i64)>], initial_cash: i64, cost_model: nanobook::portfolio::cost_model::CostModel, periods_per_year: f64, risk_free: f64) -> nanobook::portfolio::strategy::BacktestResult
+pub fn nanobook::portfolio::strategy::EqualWeight::compute_weights(&self, usize, &[(nanobook::Symbol, i64)], &nanobook::portfolio::Portfolio) -> alloc::vec::Vec<(nanobook::Symbol, f64)>
+pub fn nanobook::portfolio::strategy::run_backtest<S: nanobook::portfolio::strategy::Strategy>(&S, &[alloc::vec::Vec<(nanobook::Symbol, i64)>], i64, nanobook::portfolio::cost_model::CostModel, f64, f64) -> nanobook::portfolio::strategy::BacktestResult
 pub mod nanobook::portfolio::sweep
-pub fn nanobook::portfolio::sweep::sweep<F, P>(params: &[P], periods_per_year: f64, risk_free: f64, run_fn: F) -> alloc::vec::Vec<core::option::Option<nanobook::portfolio::metrics::Metrics>> where F: core::ops::function::Fn(&P) -> alloc::vec::Vec<f64> + core::marker::Sync, P: core::marker::Sync
-pub fn nanobook::portfolio::sweep::sweep_strategy<F, P, S>(params: &[P], price_series: &[alloc::vec::Vec<(nanobook::Symbol, i64)>], initial_cash: i64, cost_model: nanobook::portfolio::cost_model::CostModel, periods_per_year: f64, risk_free: f64, make_strategy: F) -> alloc::vec::Vec<nanobook::portfolio::strategy::BacktestResult> where F: core::ops::function::Fn(&P) -> S + core::marker::Sync, P: core::marker::Sync, S: nanobook::portfolio::strategy::Strategy
+pub fn nanobook::portfolio::sweep::sweep<F, P>(&[P], f64, f64, F) -> alloc::vec::Vec<core::option::Option<nanobook::portfolio::metrics::Metrics>> where F: core::ops::function::Fn(&P) -> alloc::vec::Vec<f64> + core::marker::Sync, P: core::marker::Sync
+pub fn nanobook::portfolio::sweep::sweep_strategy<F, P, S>(&[P], &[alloc::vec::Vec<(nanobook::Symbol, i64)>], i64, nanobook::portfolio::cost_model::CostModel, f64, f64, F) -> alloc::vec::Vec<nanobook::portfolio::strategy::BacktestResult> where F: core::ops::function::Fn(&P) -> S + core::marker::Sync, P: core::marker::Sync, S: nanobook::portfolio::strategy::Strategy
 pub struct nanobook::portfolio::BacktestResult
 pub nanobook::portfolio::BacktestResult::metrics: core::option::Option<nanobook::portfolio::metrics::Metrics>
 pub nanobook::portfolio::BacktestResult::portfolio: nanobook::portfolio::Portfolio
+impl core::clone::Clone for nanobook::portfolio::strategy::BacktestResult
+pub fn nanobook::portfolio::strategy::BacktestResult::clone(&self) -> nanobook::portfolio::strategy::BacktestResult
+impl core::fmt::Debug for nanobook::portfolio::strategy::BacktestResult
+pub fn nanobook::portfolio::strategy::BacktestResult::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for nanobook::portfolio::strategy::BacktestResult
+impl core::marker::Send for nanobook::portfolio::strategy::BacktestResult
+impl core::marker::Sync for nanobook::portfolio::strategy::BacktestResult
+impl core::marker::Unpin for nanobook::portfolio::strategy::BacktestResult
+impl core::marker::UnsafeUnpin for nanobook::portfolio::strategy::BacktestResult
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::portfolio::strategy::BacktestResult
+impl core::panic::unwind_safe::UnwindSafe for nanobook::portfolio::strategy::BacktestResult
 pub struct nanobook::portfolio::CostModel
-pub nanobook::portfolio::CostModel::commission_bps: u32
-pub nanobook::portfolio::CostModel::min_trade_fee: i64
-pub nanobook::portfolio::CostModel::slippage_bps: u32
+pub nanobook::portfolio::CostModel::commission_bps: f64
+pub nanobook::portfolio::CostModel::min_commission: i64
+pub nanobook::portfolio::CostModel::slippage_bps: f64
 impl nanobook::portfolio::cost_model::CostModel
-pub fn nanobook::portfolio::cost_model::CostModel::compute_cost(&self, notional: i64) -> i64
+pub fn nanobook::portfolio::cost_model::CostModel::compute_cost(&self, i64) -> i64
 pub fn nanobook::portfolio::cost_model::CostModel::zero() -> Self
+impl core::clone::Clone for nanobook::portfolio::cost_model::CostModel
+pub fn nanobook::portfolio::cost_model::CostModel::clone(&self) -> nanobook::portfolio::cost_model::CostModel
 impl core::default::Default for nanobook::portfolio::cost_model::CostModel
 pub fn nanobook::portfolio::cost_model::CostModel::default() -> Self
+impl core::fmt::Debug for nanobook::portfolio::cost_model::CostModel
+pub fn nanobook::portfolio::cost_model::CostModel::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for nanobook::portfolio::cost_model::CostModel
+impl serde_core::ser::Serialize for nanobook::portfolio::cost_model::CostModel
+pub fn nanobook::portfolio::cost_model::CostModel::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::portfolio::cost_model::CostModel
+pub fn nanobook::portfolio::cost_model::CostModel::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::portfolio::cost_model::CostModel
+impl core::marker::Send for nanobook::portfolio::cost_model::CostModel
+impl core::marker::Sync for nanobook::portfolio::cost_model::CostModel
+impl core::marker::Unpin for nanobook::portfolio::cost_model::CostModel
+impl core::marker::UnsafeUnpin for nanobook::portfolio::cost_model::CostModel
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::portfolio::cost_model::CostModel
+impl core::panic::unwind_safe::UnwindSafe for nanobook::portfolio::cost_model::CostModel
 pub struct nanobook::portfolio::EqualWeight
 impl nanobook::portfolio::strategy::Strategy for nanobook::portfolio::strategy::EqualWeight
-pub fn nanobook::portfolio::strategy::EqualWeight::compute_weights(&self, _bar_index: usize, prices: &[(nanobook::Symbol, i64)], _portfolio: &nanobook::portfolio::Portfolio) -> alloc::vec::Vec<(nanobook::Symbol, f64)>
+pub fn nanobook::portfolio::strategy::EqualWeight::compute_weights(&self, usize, &[(nanobook::Symbol, i64)], &nanobook::portfolio::Portfolio) -> alloc::vec::Vec<(nanobook::Symbol, f64)>
+impl core::marker::Freeze for nanobook::portfolio::strategy::EqualWeight
+impl core::marker::Send for nanobook::portfolio::strategy::EqualWeight
+impl core::marker::Sync for nanobook::portfolio::strategy::EqualWeight
+impl core::marker::Unpin for nanobook::portfolio::strategy::EqualWeight
+impl core::marker::UnsafeUnpin for nanobook::portfolio::strategy::EqualWeight
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::portfolio::strategy::EqualWeight
+impl core::panic::unwind_safe::UnwindSafe for nanobook::portfolio::strategy::EqualWeight
 pub struct nanobook::portfolio::Metrics
 pub nanobook::portfolio::Metrics::cagr: f64
 pub nanobook::portfolio::Metrics::calmar: f64
@@ -217,32 +682,77 @@ pub nanobook::portfolio::Metrics::total_return: f64
 pub nanobook::portfolio::Metrics::volatility: f64
 pub nanobook::portfolio::Metrics::win_rate: f64
 pub nanobook::portfolio::Metrics::winning_periods: usize
+impl core::clone::Clone for nanobook::portfolio::metrics::Metrics
+pub fn nanobook::portfolio::metrics::Metrics::clone(&self) -> nanobook::portfolio::metrics::Metrics
+impl core::fmt::Debug for nanobook::portfolio::metrics::Metrics
+pub fn nanobook::portfolio::metrics::Metrics::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for nanobook::portfolio::metrics::Metrics
-pub fn nanobook::portfolio::metrics::Metrics::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn nanobook::portfolio::metrics::Metrics::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for nanobook::portfolio::metrics::Metrics
+pub fn nanobook::portfolio::metrics::Metrics::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::portfolio::metrics::Metrics
+pub fn nanobook::portfolio::metrics::Metrics::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::portfolio::metrics::Metrics
+impl core::marker::Send for nanobook::portfolio::metrics::Metrics
+impl core::marker::Sync for nanobook::portfolio::metrics::Metrics
+impl core::marker::Unpin for nanobook::portfolio::metrics::Metrics
+impl core::marker::UnsafeUnpin for nanobook::portfolio::metrics::Metrics
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::portfolio::metrics::Metrics
+impl core::panic::unwind_safe::UnwindSafe for nanobook::portfolio::metrics::Metrics
 pub struct nanobook::portfolio::Portfolio
 impl nanobook::portfolio::Portfolio
 pub fn nanobook::portfolio::Portfolio::cash(&self) -> i64
-pub fn nanobook::portfolio::Portfolio::close_position_at(&mut self, symbol: nanobook::Symbol, price: i64) -> bool
+pub fn nanobook::portfolio::Portfolio::close_position_at(&mut self, nanobook::Symbol, i64) -> bool
 pub fn nanobook::portfolio::Portfolio::cost_model(&self) -> &nanobook::portfolio::cost_model::CostModel
-pub fn nanobook::portfolio::Portfolio::current_weights(&self, prices: &[(nanobook::Symbol, i64)]) -> alloc::vec::Vec<(nanobook::Symbol, f64)>
+pub fn nanobook::portfolio::Portfolio::current_weights(&self, &[(nanobook::Symbol, i64)]) -> alloc::vec::Vec<(nanobook::Symbol, f64)>
 pub fn nanobook::portfolio::Portfolio::equity_curve(&self) -> &[i64]
-pub fn nanobook::portfolio::Portfolio::load_json(path: &std::path::Path) -> std::io::error::Result<Self>
-pub fn nanobook::portfolio::Portfolio::new(initial_cash: i64, cost_model: nanobook::portfolio::cost_model::CostModel) -> Self
-pub fn nanobook::portfolio::Portfolio::position(&self, symbol: &nanobook::Symbol) -> core::option::Option<&nanobook::portfolio::position::Position>
+pub fn nanobook::portfolio::Portfolio::load_json(&std::path::Path) -> core::io::error::Result<Self>
+pub fn nanobook::portfolio::Portfolio::new(i64, nanobook::portfolio::cost_model::CostModel) -> Self
+pub fn nanobook::portfolio::Portfolio::position(&self, &nanobook::Symbol) -> core::option::Option<&nanobook::portfolio::position::Position>
 pub fn nanobook::portfolio::Portfolio::positions(&self) -> impl core::iter::traits::iterator::Iterator<Item = (&nanobook::Symbol, &nanobook::portfolio::position::Position)>
-pub fn nanobook::portfolio::Portfolio::rebalance_lob(&mut self, targets: &[(nanobook::Symbol, f64)], exchanges: &mut nanobook::multi_exchange::MultiExchange)
-pub fn nanobook::portfolio::Portfolio::rebalance_simple(&mut self, targets: &[(nanobook::Symbol, f64)], prices: &[(nanobook::Symbol, i64)])
-pub fn nanobook::portfolio::Portfolio::record_return(&mut self, prices: &[(nanobook::Symbol, i64)])
+pub fn nanobook::portfolio::Portfolio::rebalance_lob(&mut self, &[(nanobook::Symbol, f64)], &mut nanobook::multi_exchange::MultiExchange)
+pub fn nanobook::portfolio::Portfolio::rebalance_simple(&mut self, &[(nanobook::Symbol, f64)], &[(nanobook::Symbol, i64)])
+pub fn nanobook::portfolio::Portfolio::record_return(&mut self, &[(nanobook::Symbol, i64)])
 pub fn nanobook::portfolio::Portfolio::returns(&self) -> &[f64]
-pub fn nanobook::portfolio::Portfolio::save_json(&self, path: &std::path::Path) -> std::io::error::Result<()>
-pub fn nanobook::portfolio::Portfolio::snapshot(&self, prices: &[(nanobook::Symbol, i64)]) -> nanobook::portfolio::PortfolioSnapshot
-pub fn nanobook::portfolio::Portfolio::total_equity(&self, prices: &[(nanobook::Symbol, i64)]) -> i64
+pub fn nanobook::portfolio::Portfolio::save_json(&self, &std::path::Path) -> core::io::error::Result<()>
+pub fn nanobook::portfolio::Portfolio::snapshot(&self, &[(nanobook::Symbol, i64)]) -> nanobook::portfolio::PortfolioSnapshot
+pub fn nanobook::portfolio::Portfolio::total_equity(&self, &[(nanobook::Symbol, i64)]) -> i64
+impl core::clone::Clone for nanobook::portfolio::Portfolio
+pub fn nanobook::portfolio::Portfolio::clone(&self) -> nanobook::portfolio::Portfolio
+impl core::fmt::Debug for nanobook::portfolio::Portfolio
+pub fn nanobook::portfolio::Portfolio::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for nanobook::portfolio::Portfolio
+pub fn nanobook::portfolio::Portfolio::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::portfolio::Portfolio
+pub fn nanobook::portfolio::Portfolio::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::portfolio::Portfolio
+impl core::marker::Send for nanobook::portfolio::Portfolio
+impl core::marker::Sync for nanobook::portfolio::Portfolio
+impl core::marker::Unpin for nanobook::portfolio::Portfolio
+impl core::marker::UnsafeUnpin for nanobook::portfolio::Portfolio
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::portfolio::Portfolio
+impl core::panic::unwind_safe::UnwindSafe for nanobook::portfolio::Portfolio
 pub struct nanobook::portfolio::PortfolioSnapshot
 pub nanobook::portfolio::PortfolioSnapshot::cash: i64
 pub nanobook::portfolio::PortfolioSnapshot::equity: i64
 pub nanobook::portfolio::PortfolioSnapshot::num_positions: usize
 pub nanobook::portfolio::PortfolioSnapshot::total_realized_pnl: i64
 pub nanobook::portfolio::PortfolioSnapshot::weights: alloc::vec::Vec<(nanobook::Symbol, f64)>
+impl core::clone::Clone for nanobook::portfolio::PortfolioSnapshot
+pub fn nanobook::portfolio::PortfolioSnapshot::clone(&self) -> nanobook::portfolio::PortfolioSnapshot
+impl core::fmt::Debug for nanobook::portfolio::PortfolioSnapshot
+pub fn nanobook::portfolio::PortfolioSnapshot::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for nanobook::portfolio::PortfolioSnapshot
+pub fn nanobook::portfolio::PortfolioSnapshot::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::portfolio::PortfolioSnapshot
+pub fn nanobook::portfolio::PortfolioSnapshot::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::portfolio::PortfolioSnapshot
+impl core::marker::Send for nanobook::portfolio::PortfolioSnapshot
+impl core::marker::Sync for nanobook::portfolio::PortfolioSnapshot
+impl core::marker::Unpin for nanobook::portfolio::PortfolioSnapshot
+impl core::marker::UnsafeUnpin for nanobook::portfolio::PortfolioSnapshot
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::portfolio::PortfolioSnapshot
+impl core::panic::unwind_safe::UnwindSafe for nanobook::portfolio::PortfolioSnapshot
 pub struct nanobook::portfolio::Position
 pub nanobook::portfolio::Position::avg_entry_price: i64
 pub nanobook::portfolio::Position::quantity: i64
@@ -250,43 +760,234 @@ pub nanobook::portfolio::Position::realized_pnl: i64
 pub nanobook::portfolio::Position::symbol: nanobook::Symbol
 pub nanobook::portfolio::Position::total_cost: i64
 impl nanobook::portfolio::position::Position
-pub fn nanobook::portfolio::position::Position::apply_fill(&mut self, qty: i64, price: i64)
+pub fn nanobook::portfolio::position::Position::apply_fill(&mut self, i64, i64)
 pub fn nanobook::portfolio::position::Position::is_flat(&self) -> bool
-pub fn nanobook::portfolio::position::Position::market_value(&self, price: i64) -> i64
-pub fn nanobook::portfolio::position::Position::new(symbol: nanobook::Symbol) -> Self
-pub fn nanobook::portfolio::position::Position::unrealized_pnl(&self, price: i64) -> i64
+pub fn nanobook::portfolio::position::Position::market_value(&self, i64) -> i64
+pub fn nanobook::portfolio::position::Position::new(nanobook::Symbol) -> Self
+pub fn nanobook::portfolio::position::Position::unrealized_pnl(&self, i64) -> i64
+impl core::clone::Clone for nanobook::portfolio::position::Position
+pub fn nanobook::portfolio::position::Position::clone(&self) -> nanobook::portfolio::position::Position
+impl core::fmt::Debug for nanobook::portfolio::position::Position
+pub fn nanobook::portfolio::position::Position::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for nanobook::portfolio::position::Position
+pub fn nanobook::portfolio::position::Position::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::portfolio::position::Position
+pub fn nanobook::portfolio::position::Position::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::portfolio::position::Position
+impl core::marker::Send for nanobook::portfolio::position::Position
+impl core::marker::Sync for nanobook::portfolio::position::Position
+impl core::marker::Unpin for nanobook::portfolio::position::Position
+impl core::marker::UnsafeUnpin for nanobook::portfolio::position::Position
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::portfolio::position::Position
+impl core::panic::unwind_safe::UnwindSafe for nanobook::portfolio::position::Position
 pub trait nanobook::portfolio::Strategy
-pub fn nanobook::portfolio::Strategy::compute_weights(&self, bar_index: usize, prices: &[(nanobook::Symbol, i64)], portfolio: &nanobook::portfolio::Portfolio) -> alloc::vec::Vec<(nanobook::Symbol, f64)>
+pub fn nanobook::portfolio::Strategy::compute_weights(&self, usize, &[(nanobook::Symbol, i64)], &nanobook::portfolio::Portfolio) -> alloc::vec::Vec<(nanobook::Symbol, f64)>
 impl nanobook::portfolio::strategy::Strategy for nanobook::portfolio::strategy::EqualWeight
-pub fn nanobook::portfolio::strategy::EqualWeight::compute_weights(&self, _bar_index: usize, prices: &[(nanobook::Symbol, i64)], _portfolio: &nanobook::portfolio::Portfolio) -> alloc::vec::Vec<(nanobook::Symbol, f64)>
-pub fn nanobook::portfolio::compute_metrics(returns: &[f64], periods_per_year: f64, risk_free: f64) -> core::option::Option<nanobook::portfolio::metrics::Metrics>
-pub fn nanobook::portfolio::run_backtest<S: nanobook::portfolio::strategy::Strategy>(strategy: &S, price_series: &[alloc::vec::Vec<(nanobook::Symbol, i64)>], initial_cash: i64, cost_model: nanobook::portfolio::cost_model::CostModel, periods_per_year: f64, risk_free: f64) -> nanobook::portfolio::strategy::BacktestResult
+pub fn nanobook::portfolio::strategy::EqualWeight::compute_weights(&self, usize, &[(nanobook::Symbol, i64)], &nanobook::portfolio::Portfolio) -> alloc::vec::Vec<(nanobook::Symbol, f64)>
+pub fn nanobook::portfolio::compute_metrics(&[f64], f64, f64) -> core::option::Option<nanobook::portfolio::metrics::Metrics>
+pub fn nanobook::portfolio::run_backtest<S: nanobook::portfolio::strategy::Strategy>(&S, &[alloc::vec::Vec<(nanobook::Symbol, i64)>], i64, nanobook::portfolio::cost_model::CostModel, f64, f64) -> nanobook::portfolio::strategy::BacktestResult
+pub mod nanobook::scenarios
+pub enum nanobook::scenarios::ModelVersion
+pub nanobook::scenarios::ModelVersion::Advanced
+pub nanobook::scenarios::ModelVersion::Simple
+impl nanobook::scenarios::ModelVersion
+pub fn nanobook::scenarios::ModelVersion::parse(&str) -> Self
+impl core::clone::Clone for nanobook::scenarios::ModelVersion
+pub fn nanobook::scenarios::ModelVersion::clone(&self) -> nanobook::scenarios::ModelVersion
+impl core::cmp::Eq for nanobook::scenarios::ModelVersion
+impl core::cmp::PartialEq for nanobook::scenarios::ModelVersion
+pub fn nanobook::scenarios::ModelVersion::eq(&self, &nanobook::scenarios::ModelVersion) -> bool
+impl core::fmt::Debug for nanobook::scenarios::ModelVersion
+pub fn nanobook::scenarios::ModelVersion::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for nanobook::scenarios::ModelVersion
+impl core::marker::StructuralPartialEq for nanobook::scenarios::ModelVersion
+impl core::marker::Freeze for nanobook::scenarios::ModelVersion
+impl core::marker::Send for nanobook::scenarios::ModelVersion
+impl core::marker::Sync for nanobook::scenarios::ModelVersion
+impl core::marker::Unpin for nanobook::scenarios::ModelVersion
+impl core::marker::UnsafeUnpin for nanobook::scenarios::ModelVersion
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::scenarios::ModelVersion
+impl core::panic::unwind_safe::UnwindSafe for nanobook::scenarios::ModelVersion
+pub enum nanobook::scenarios::PricePathMethod
+pub nanobook::scenarios::PricePathMethod::Linear
+pub nanobook::scenarios::PricePathMethod::TerminalOnly
+impl core::clone::Clone for nanobook::scenarios::PricePathMethod
+pub fn nanobook::scenarios::PricePathMethod::clone(&self) -> nanobook::scenarios::PricePathMethod
+impl core::cmp::Eq for nanobook::scenarios::PricePathMethod
+impl core::cmp::PartialEq for nanobook::scenarios::PricePathMethod
+pub fn nanobook::scenarios::PricePathMethod::eq(&self, &nanobook::scenarios::PricePathMethod) -> bool
+impl core::fmt::Debug for nanobook::scenarios::PricePathMethod
+pub fn nanobook::scenarios::PricePathMethod::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for nanobook::scenarios::PricePathMethod
+impl core::marker::StructuralPartialEq for nanobook::scenarios::PricePathMethod
+impl core::marker::Freeze for nanobook::scenarios::PricePathMethod
+impl core::marker::Send for nanobook::scenarios::PricePathMethod
+impl core::marker::Sync for nanobook::scenarios::PricePathMethod
+impl core::marker::Unpin for nanobook::scenarios::PricePathMethod
+impl core::marker::UnsafeUnpin for nanobook::scenarios::PricePathMethod
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::scenarios::PricePathMethod
+impl core::panic::unwind_safe::UnwindSafe for nanobook::scenarios::PricePathMethod
+pub struct nanobook::scenarios::MonteCarloResult
+pub nanobook::scenarios::MonteCarloResult::current_price: f64
+pub nanobook::scenarios::MonteCarloResult::horizon_years: f64
+pub nanobook::scenarios::MonteCarloResult::method: alloc::string::String
+pub nanobook::scenarios::MonteCarloResult::summary: std::collections::hash::map::HashMap<alloc::string::String, f64>
+pub nanobook::scenarios::MonteCarloResult::terminal_prices: alloc::vec::Vec<f64>
+pub nanobook::scenarios::MonteCarloResult::ticker: alloc::string::String
+impl nanobook::scenarios::MonteCarloResult
+pub fn nanobook::scenarios::MonteCarloResult::as_log_returns(&self) -> alloc::vec::Vec<f64>
+pub fn nanobook::scenarios::MonteCarloResult::implied_median_annual_return(&self) -> f64
+pub fn nanobook::scenarios::MonteCarloResult::mean_price(&self) -> f64
+pub fn nanobook::scenarios::MonteCarloResult::median_price(&self) -> f64
+pub fn nanobook::scenarios::MonteCarloResult::p10_price(&self) -> f64
+pub fn nanobook::scenarios::MonteCarloResult::p90_price(&self) -> f64
+pub fn nanobook::scenarios::MonteCarloResult::prob_above(&self, f64) -> f64
+pub fn nanobook::scenarios::MonteCarloResult::quantile(&self, f64) -> f64
+pub fn nanobook::scenarios::MonteCarloResult::to_price_paths(&self, usize, nanobook::scenarios::PricePathMethod) -> core::result::Result<alloc::vec::Vec<alloc::vec::Vec<f64>>, nanobook::scenarios::ScenarioError>
+impl core::clone::Clone for nanobook::scenarios::MonteCarloResult
+pub fn nanobook::scenarios::MonteCarloResult::clone(&self) -> nanobook::scenarios::MonteCarloResult
+impl core::fmt::Debug for nanobook::scenarios::MonteCarloResult
+pub fn nanobook::scenarios::MonteCarloResult::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for nanobook::scenarios::MonteCarloResult
+impl core::marker::Send for nanobook::scenarios::MonteCarloResult
+impl core::marker::Sync for nanobook::scenarios::MonteCarloResult
+impl core::marker::Unpin for nanobook::scenarios::MonteCarloResult
+impl core::marker::UnsafeUnpin for nanobook::scenarios::MonteCarloResult
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::scenarios::MonteCarloResult
+impl core::panic::unwind_safe::UnwindSafe for nanobook::scenarios::MonteCarloResult
+pub struct nanobook::scenarios::ScenarioError(_)
+impl core::clone::Clone for nanobook::scenarios::ScenarioError
+pub fn nanobook::scenarios::ScenarioError::clone(&self) -> nanobook::scenarios::ScenarioError
+impl core::cmp::PartialEq for nanobook::scenarios::ScenarioError
+pub fn nanobook::scenarios::ScenarioError::eq(&self, &nanobook::scenarios::ScenarioError) -> bool
+impl core::error::Error for nanobook::scenarios::ScenarioError
+impl core::fmt::Debug for nanobook::scenarios::ScenarioError
+pub fn nanobook::scenarios::ScenarioError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for nanobook::scenarios::ScenarioError
+pub fn nanobook::scenarios::ScenarioError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for nanobook::scenarios::ScenarioError
+impl core::marker::Freeze for nanobook::scenarios::ScenarioError
+impl core::marker::Send for nanobook::scenarios::ScenarioError
+impl core::marker::Sync for nanobook::scenarios::ScenarioError
+impl core::marker::Unpin for nanobook::scenarios::ScenarioError
+impl core::marker::UnsafeUnpin for nanobook::scenarios::ScenarioError
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::scenarios::ScenarioError
+impl core::panic::unwind_safe::UnwindSafe for nanobook::scenarios::ScenarioError
+pub struct nanobook::scenarios::ValuationParams
+pub nanobook::scenarios::ValuationParams::bear_skew_factor: f64
+pub nanobook::scenarios::ValuationParams::gp_growth_mean: f64
+pub nanobook::scenarios::ValuationParams::gp_growth_sd: f64
+pub nanobook::scenarios::ValuationParams::macro_shock_mean: f64
+pub nanobook::scenarios::ValuationParams::macro_shock_sd: f64
+pub nanobook::scenarios::ValuationParams::margin_boost_mean: f64
+pub nanobook::scenarios::ValuationParams::margin_boost_sd: f64
+pub nanobook::scenarios::ValuationParams::multiple_mean: f64
+pub nanobook::scenarios::ValuationParams::multiple_sd: f64
+impl core::clone::Clone for nanobook::scenarios::ValuationParams
+pub fn nanobook::scenarios::ValuationParams::clone(&self) -> nanobook::scenarios::ValuationParams
+impl core::default::Default for nanobook::scenarios::ValuationParams
+pub fn nanobook::scenarios::ValuationParams::default() -> Self
+impl core::fmt::Debug for nanobook::scenarios::ValuationParams
+pub fn nanobook::scenarios::ValuationParams::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for nanobook::scenarios::ValuationParams
+impl core::marker::Freeze for nanobook::scenarios::ValuationParams
+impl core::marker::Send for nanobook::scenarios::ValuationParams
+impl core::marker::Sync for nanobook::scenarios::ValuationParams
+impl core::marker::Unpin for nanobook::scenarios::ValuationParams
+impl core::marker::UnsafeUnpin for nanobook::scenarios::ValuationParams
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::scenarios::ValuationParams
+impl core::panic::unwind_safe::UnwindSafe for nanobook::scenarios::ValuationParams
+pub const nanobook::scenarios::PARALLEL_MC_MIN_PATHS: i64
+pub fn nanobook::scenarios::advanced_from_driver_batches(f64, f64, &[f64], &[f64], &[f64], &[f64], &[f64]) -> alloc::vec::Vec<f64>
+pub fn nanobook::scenarios::assemble_result(alloc::string::String, alloc::string::String, f64, f64, alloc::vec::Vec<f64>, i64, f64, core::option::Option<f64>, core::option::Option<f64>) -> nanobook::scenarios::MonteCarloResult
+pub fn nanobook::scenarios::build_summary(&str, &str, &[f64], i64, f64, f64, f64, f64, f64) -> std::collections::hash::map::HashMap<alloc::string::String, f64>
+pub fn nanobook::scenarios::monte_carlo_stock_valuation(alloc::string::String, f64, nanobook::scenarios::ModelVersion, i64, f64, u64, f64, f64, nanobook::scenarios::ValuationParams, f64, core::option::Option<f64>, core::option::Option<f64>) -> core::result::Result<nanobook::scenarios::MonteCarloResult, nanobook::scenarios::ScenarioError>
+pub fn nanobook::scenarios::nondeterministic_mc_seed() -> u64
+pub fn nanobook::scenarios::pure_mean(&[f64]) -> f64
+pub fn nanobook::scenarios::pure_median(&[f64]) -> f64
+pub fn nanobook::scenarios::pure_percentile(&[f64], f64) -> f64
+pub fn nanobook::scenarios::pure_prob_above(&[f64], f64) -> f64
+pub fn nanobook::scenarios::quantile_nearest_rank(&[f64], f64) -> f64
+pub fn nanobook::scenarios::simple_gbm_from_z(f64, &[f64], f64, f64, f64) -> alloc::vec::Vec<f64>
+pub fn nanobook::scenarios::validate_mc_inputs(f64, i64, f64, f64) -> core::result::Result<(), nanobook::scenarios::ScenarioError>
 pub mod nanobook::stats
-pub fn nanobook::stats::quintile_spread(scores: &[f64], returns: &[f64], n_quantiles: usize) -> f64
-pub fn nanobook::stats::spearman(x: &[f64], y: &[f64]) -> (f64, f64)
+pub fn nanobook::stats::deflated_sharpe(f64, usize, f64, f64) -> f64
+pub fn nanobook::stats::quintile_spread(&[f64], &[f64], usize) -> f64
+pub fn nanobook::stats::spearman(&[f64], &[f64]) -> (f64, f64)
 pub mod nanobook::stop
 pub enum nanobook::stop::StopStatus
 pub nanobook::stop::StopStatus::Cancelled
 pub nanobook::stop::StopStatus::Pending
 pub nanobook::stop::StopStatus::Triggered
+impl core::clone::Clone for nanobook::stop::StopStatus
+pub fn nanobook::stop::StopStatus::clone(&self) -> nanobook::stop::StopStatus
+impl core::cmp::Eq for nanobook::stop::StopStatus
+impl core::cmp::PartialEq for nanobook::stop::StopStatus
+pub fn nanobook::stop::StopStatus::eq(&self, &nanobook::stop::StopStatus) -> bool
+impl core::fmt::Debug for nanobook::stop::StopStatus
+pub fn nanobook::stop::StopStatus::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for nanobook::stop::StopStatus
+impl core::marker::StructuralPartialEq for nanobook::stop::StopStatus
+impl serde_core::ser::Serialize for nanobook::stop::StopStatus
+pub fn nanobook::stop::StopStatus::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::stop::StopStatus
+pub fn nanobook::stop::StopStatus::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::stop::StopStatus
+impl core::marker::Send for nanobook::stop::StopStatus
+impl core::marker::Sync for nanobook::stop::StopStatus
+impl core::marker::Unpin for nanobook::stop::StopStatus
+impl core::marker::UnsafeUnpin for nanobook::stop::StopStatus
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::stop::StopStatus
+impl core::panic::unwind_safe::UnwindSafe for nanobook::stop::StopStatus
 pub enum nanobook::stop::TrailMethod
 pub nanobook::stop::TrailMethod::Fixed(i64)
 pub nanobook::stop::TrailMethod::Percentage(f64)
 pub nanobook::stop::TrailMethod::SmaAbsChange
 pub nanobook::stop::TrailMethod::SmaAbsChange::multiplier: f64
 pub nanobook::stop::TrailMethod::SmaAbsChange::period: usize
+impl core::clone::Clone for nanobook::stop::TrailMethod
+pub fn nanobook::stop::TrailMethod::clone(&self) -> nanobook::stop::TrailMethod
+impl core::cmp::PartialEq for nanobook::stop::TrailMethod
+pub fn nanobook::stop::TrailMethod::eq(&self, &nanobook::stop::TrailMethod) -> bool
+impl core::fmt::Debug for nanobook::stop::TrailMethod
+pub fn nanobook::stop::TrailMethod::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for nanobook::stop::TrailMethod
+impl serde_core::ser::Serialize for nanobook::stop::TrailMethod
+pub fn nanobook::stop::TrailMethod::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::stop::TrailMethod
+pub fn nanobook::stop::TrailMethod::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::stop::TrailMethod
+impl core::marker::Send for nanobook::stop::TrailMethod
+impl core::marker::Sync for nanobook::stop::TrailMethod
+impl core::marker::Unpin for nanobook::stop::TrailMethod
+impl core::marker::UnsafeUnpin for nanobook::stop::TrailMethod
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::stop::TrailMethod
+impl core::panic::unwind_safe::UnwindSafe for nanobook::stop::TrailMethod
 pub struct nanobook::stop::StopBook
 impl nanobook::stop::StopBook
-pub fn nanobook::stop::StopBook::cancel(&mut self, order_id: nanobook::OrderId) -> bool
+pub fn nanobook::stop::StopBook::cancel(&mut self, nanobook::OrderId) -> bool
 pub fn nanobook::stop::StopBook::clear_history(&mut self)
-pub fn nanobook::stop::StopBook::collect_triggered(&mut self, trade_price: nanobook::Price) -> alloc::vec::Vec<nanobook::stop::StopOrder>
-pub fn nanobook::stop::StopBook::contains_pending(&self, order_id: nanobook::OrderId) -> bool
-pub fn nanobook::stop::StopBook::get(&self, order_id: nanobook::OrderId) -> core::option::Option<&nanobook::stop::StopOrder>
-pub fn nanobook::stop::StopBook::insert(&mut self, order: nanobook::stop::StopOrder)
+pub fn nanobook::stop::StopBook::collect_triggered(&mut self, nanobook::Price) -> alloc::vec::Vec<nanobook::stop::StopOrder>
+pub fn nanobook::stop::StopBook::contains_pending(&self, nanobook::OrderId) -> bool
+pub fn nanobook::stop::StopBook::get(&self, nanobook::OrderId) -> core::option::Option<&nanobook::stop::StopOrder>
+pub fn nanobook::stop::StopBook::insert(&mut self, nanobook::stop::StopOrder)
 pub fn nanobook::stop::StopBook::is_empty(&self) -> bool
 pub fn nanobook::stop::StopBook::new() -> Self
 pub fn nanobook::stop::StopBook::pending_count(&self) -> usize
-pub fn nanobook::stop::StopBook::update_trailing_stops(&mut self, trade_price: nanobook::Price)
+pub fn nanobook::stop::StopBook::update_trailing_stops(&mut self, nanobook::Price)
+impl core::clone::Clone for nanobook::stop::StopBook
+pub fn nanobook::stop::StopBook::clone(&self) -> nanobook::stop::StopBook
+impl core::default::Default for nanobook::stop::StopBook
+pub fn nanobook::stop::StopBook::default() -> nanobook::stop::StopBook
+impl core::fmt::Debug for nanobook::stop::StopBook
+pub fn nanobook::stop::StopBook::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for nanobook::stop::StopBook
+impl core::marker::Send for nanobook::stop::StopBook
+impl core::marker::Sync for nanobook::stop::StopBook
+impl core::marker::Unpin for nanobook::stop::StopBook
+impl core::marker::UnsafeUnpin for nanobook::stop::StopBook
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::stop::StopBook
+impl core::panic::unwind_safe::UnwindSafe for nanobook::stop::StopBook
 pub struct nanobook::stop::StopOrder
 pub nanobook::stop::StopOrder::id: nanobook::OrderId
 pub nanobook::stop::StopOrder::limit_price: core::option::Option<nanobook::Price>
@@ -298,9 +999,69 @@ pub nanobook::stop::StopOrder::time_in_force: nanobook::TimeInForce
 pub nanobook::stop::StopOrder::timestamp: nanobook::Timestamp
 pub nanobook::stop::StopOrder::trail_method: core::option::Option<nanobook::stop::TrailMethod>
 pub nanobook::stop::StopOrder::watermark: core::option::Option<nanobook::Price>
+impl core::clone::Clone for nanobook::stop::StopOrder
+pub fn nanobook::stop::StopOrder::clone(&self) -> nanobook::stop::StopOrder
+impl core::fmt::Debug for nanobook::stop::StopOrder
+pub fn nanobook::stop::StopOrder::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for nanobook::stop::StopOrder
+pub fn nanobook::stop::StopOrder::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::stop::StopOrder
+pub fn nanobook::stop::StopOrder::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::stop::StopOrder
+impl core::marker::Send for nanobook::stop::StopOrder
+impl core::marker::Sync for nanobook::stop::StopOrder
+impl core::marker::Unpin for nanobook::stop::StopOrder
+impl core::marker::UnsafeUnpin for nanobook::stop::StopOrder
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::stop::StopOrder
+impl core::panic::unwind_safe::UnwindSafe for nanobook::stop::StopOrder
+pub mod nanobook::volatility
+pub enum nanobook::volatility::RealizedVolMethod
+pub nanobook::volatility::RealizedVolMethod::CloseToClose
+pub nanobook::volatility::RealizedVolMethod::GarmanKlass
+pub nanobook::volatility::RealizedVolMethod::Parkinson
+pub nanobook::volatility::RealizedVolMethod::YangZhang
+impl nanobook::volatility::RealizedVolMethod
+pub fn nanobook::volatility::RealizedVolMethod::parse(&str) -> core::option::Option<Self>
+impl core::clone::Clone for nanobook::volatility::RealizedVolMethod
+pub fn nanobook::volatility::RealizedVolMethod::clone(&self) -> nanobook::volatility::RealizedVolMethod
+impl core::cmp::Eq for nanobook::volatility::RealizedVolMethod
+impl core::cmp::PartialEq for nanobook::volatility::RealizedVolMethod
+pub fn nanobook::volatility::RealizedVolMethod::eq(&self, &nanobook::volatility::RealizedVolMethod) -> bool
+impl core::fmt::Debug for nanobook::volatility::RealizedVolMethod
+pub fn nanobook::volatility::RealizedVolMethod::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for nanobook::volatility::RealizedVolMethod
+impl core::marker::StructuralPartialEq for nanobook::volatility::RealizedVolMethod
+impl core::marker::Freeze for nanobook::volatility::RealizedVolMethod
+impl core::marker::Send for nanobook::volatility::RealizedVolMethod
+impl core::marker::Sync for nanobook::volatility::RealizedVolMethod
+impl core::marker::Unpin for nanobook::volatility::RealizedVolMethod
+impl core::marker::UnsafeUnpin for nanobook::volatility::RealizedVolMethod
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::volatility::RealizedVolMethod
+impl core::panic::unwind_safe::UnwindSafe for nanobook::volatility::RealizedVolMethod
+pub fn nanobook::volatility::realized_vol(&[f64], &[f64], &[f64], &[f64], nanobook::volatility::RealizedVolMethod) -> f64
 pub enum nanobook::CancelError
 pub nanobook::CancelError::OrderNotActive
 pub nanobook::CancelError::OrderNotFound
+impl core::clone::Clone for nanobook::CancelError
+pub fn nanobook::CancelError::clone(&self) -> nanobook::CancelError
+impl core::cmp::Eq for nanobook::CancelError
+impl core::cmp::PartialEq for nanobook::CancelError
+pub fn nanobook::CancelError::eq(&self, &nanobook::CancelError) -> bool
+impl core::fmt::Debug for nanobook::CancelError
+pub fn nanobook::CancelError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for nanobook::CancelError
+impl core::marker::StructuralPartialEq for nanobook::CancelError
+impl serde_core::ser::Serialize for nanobook::CancelError
+pub fn nanobook::CancelError::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::CancelError
+pub fn nanobook::CancelError::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::CancelError
+impl core::marker::Send for nanobook::CancelError
+impl core::marker::Sync for nanobook::CancelError
+impl core::marker::Unpin for nanobook::CancelError
+impl core::marker::UnsafeUnpin for nanobook::CancelError
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::CancelError
+impl core::panic::unwind_safe::UnwindSafe for nanobook::CancelError
 pub enum nanobook::Event
 pub nanobook::Event::Cancel
 pub nanobook::Event::Cancel::order_id: nanobook::OrderId
@@ -339,18 +1100,75 @@ pub nanobook::Event::SubmitTrailingStopMarket::side: nanobook::Side
 pub nanobook::Event::SubmitTrailingStopMarket::stop_price: nanobook::Price
 pub nanobook::Event::SubmitTrailingStopMarket::trail_method: nanobook::stop::TrailMethod
 impl nanobook::Event
-pub fn nanobook::Event::cancel(order_id: nanobook::OrderId) -> Self
-pub fn nanobook::Event::modify(order_id: nanobook::OrderId, new_price: nanobook::Price, new_quantity: nanobook::Quantity) -> Self
-pub fn nanobook::Event::submit_limit(side: nanobook::Side, price: nanobook::Price, quantity: nanobook::Quantity, time_in_force: nanobook::TimeInForce) -> Self
-pub fn nanobook::Event::submit_market(side: nanobook::Side, quantity: nanobook::Quantity) -> Self
-pub fn nanobook::Event::submit_stop_limit(side: nanobook::Side, stop_price: nanobook::Price, limit_price: nanobook::Price, quantity: nanobook::Quantity, time_in_force: nanobook::TimeInForce) -> Self
-pub fn nanobook::Event::submit_stop_market(side: nanobook::Side, stop_price: nanobook::Price, quantity: nanobook::Quantity) -> Self
-pub fn nanobook::Event::submit_trailing_stop_limit(side: nanobook::Side, stop_price: nanobook::Price, limit_price: nanobook::Price, quantity: nanobook::Quantity, time_in_force: nanobook::TimeInForce, trail_method: nanobook::stop::TrailMethod) -> Self
-pub fn nanobook::Event::submit_trailing_stop_market(side: nanobook::Side, stop_price: nanobook::Price, quantity: nanobook::Quantity, trail_method: nanobook::stop::TrailMethod) -> Self
+pub fn nanobook::Event::cancel(nanobook::OrderId) -> Self
+pub fn nanobook::Event::modify(nanobook::OrderId, nanobook::Price, nanobook::Quantity) -> Self
+pub fn nanobook::Event::submit_limit(nanobook::Side, nanobook::Price, nanobook::Quantity, nanobook::TimeInForce) -> Self
+pub fn nanobook::Event::submit_market(nanobook::Side, nanobook::Quantity) -> Self
+pub fn nanobook::Event::submit_stop_limit(nanobook::Side, nanobook::Price, nanobook::Price, nanobook::Quantity, nanobook::TimeInForce) -> Self
+pub fn nanobook::Event::submit_stop_market(nanobook::Side, nanobook::Price, nanobook::Quantity) -> Self
+pub fn nanobook::Event::submit_trailing_stop_limit(nanobook::Side, nanobook::Price, nanobook::Price, nanobook::Quantity, nanobook::TimeInForce, nanobook::stop::TrailMethod) -> Self
+pub fn nanobook::Event::submit_trailing_stop_market(nanobook::Side, nanobook::Price, nanobook::Quantity, nanobook::stop::TrailMethod) -> Self
+impl core::clone::Clone for nanobook::Event
+pub fn nanobook::Event::clone(&self) -> nanobook::Event
+impl core::cmp::PartialEq for nanobook::Event
+pub fn nanobook::Event::eq(&self, &nanobook::Event) -> bool
+impl core::fmt::Debug for nanobook::Event
+pub fn nanobook::Event::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for nanobook::Event
+impl serde_core::ser::Serialize for nanobook::Event
+pub fn nanobook::Event::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::Event
+pub fn nanobook::Event::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::Event
+impl core::marker::Send for nanobook::Event
+impl core::marker::Sync for nanobook::Event
+impl core::marker::Unpin for nanobook::Event
+impl core::marker::UnsafeUnpin for nanobook::Event
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::Event
+impl core::panic::unwind_safe::UnwindSafe for nanobook::Event
+pub enum nanobook::FillPolicy
+pub nanobook::FillPolicy::NextBarOpen
+pub nanobook::FillPolicy::NextBarTypical
+pub nanobook::FillPolicy::SignalBarClose
+impl core::clone::Clone for nanobook::backtest_bridge::FillPolicy
+pub fn nanobook::backtest_bridge::FillPolicy::clone(&self) -> nanobook::backtest_bridge::FillPolicy
+impl core::cmp::PartialEq for nanobook::backtest_bridge::FillPolicy
+pub fn nanobook::backtest_bridge::FillPolicy::eq(&self, &nanobook::backtest_bridge::FillPolicy) -> bool
+impl core::fmt::Debug for nanobook::backtest_bridge::FillPolicy
+pub fn nanobook::backtest_bridge::FillPolicy::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for nanobook::backtest_bridge::FillPolicy
+impl core::marker::StructuralPartialEq for nanobook::backtest_bridge::FillPolicy
+impl core::marker::Freeze for nanobook::backtest_bridge::FillPolicy
+impl core::marker::Send for nanobook::backtest_bridge::FillPolicy
+impl core::marker::Sync for nanobook::backtest_bridge::FillPolicy
+impl core::marker::Unpin for nanobook::backtest_bridge::FillPolicy
+impl core::marker::UnsafeUnpin for nanobook::backtest_bridge::FillPolicy
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::backtest_bridge::FillPolicy
+impl core::panic::unwind_safe::UnwindSafe for nanobook::backtest_bridge::FillPolicy
 pub enum nanobook::ModifyError
 pub nanobook::ModifyError::InvalidQuantity
 pub nanobook::ModifyError::OrderNotActive
 pub nanobook::ModifyError::OrderNotFound
+impl core::clone::Clone for nanobook::ModifyError
+pub fn nanobook::ModifyError::clone(&self) -> nanobook::ModifyError
+impl core::cmp::Eq for nanobook::ModifyError
+impl core::cmp::PartialEq for nanobook::ModifyError
+pub fn nanobook::ModifyError::eq(&self, &nanobook::ModifyError) -> bool
+impl core::fmt::Debug for nanobook::ModifyError
+pub fn nanobook::ModifyError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for nanobook::ModifyError
+impl core::marker::StructuralPartialEq for nanobook::ModifyError
+impl serde_core::ser::Serialize for nanobook::ModifyError
+pub fn nanobook::ModifyError::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::ModifyError
+pub fn nanobook::ModifyError::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::ModifyError
+impl core::marker::Send for nanobook::ModifyError
+impl core::marker::Sync for nanobook::ModifyError
+impl core::marker::Unpin for nanobook::ModifyError
+impl core::marker::UnsafeUnpin for nanobook::ModifyError
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::ModifyError
+impl core::panic::unwind_safe::UnwindSafe for nanobook::ModifyError
 pub enum nanobook::OrderStatus
 pub nanobook::OrderStatus::Cancelled
 pub nanobook::OrderStatus::Filled
@@ -359,22 +1177,110 @@ pub nanobook::OrderStatus::PartiallyFilled
 impl nanobook::OrderStatus
 pub fn nanobook::OrderStatus::is_active(self) -> bool
 pub fn nanobook::OrderStatus::is_terminal(self) -> bool
+impl core::clone::Clone for nanobook::OrderStatus
+pub fn nanobook::OrderStatus::clone(&self) -> nanobook::OrderStatus
+impl core::cmp::Eq for nanobook::OrderStatus
+impl core::cmp::PartialEq for nanobook::OrderStatus
+pub fn nanobook::OrderStatus::eq(&self, &nanobook::OrderStatus) -> bool
+impl core::default::Default for nanobook::OrderStatus
+pub fn nanobook::OrderStatus::default() -> nanobook::OrderStatus
+impl core::fmt::Debug for nanobook::OrderStatus
+pub fn nanobook::OrderStatus::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for nanobook::OrderStatus
+pub fn nanobook::OrderStatus::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for nanobook::OrderStatus
+impl core::marker::StructuralPartialEq for nanobook::OrderStatus
+impl serde_core::ser::Serialize for nanobook::OrderStatus
+pub fn nanobook::OrderStatus::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::OrderStatus
+pub fn nanobook::OrderStatus::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::OrderStatus
+impl core::marker::Send for nanobook::OrderStatus
+impl core::marker::Sync for nanobook::OrderStatus
+impl core::marker::Unpin for nanobook::OrderStatus
+impl core::marker::UnsafeUnpin for nanobook::OrderStatus
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::OrderStatus
+impl core::panic::unwind_safe::UnwindSafe for nanobook::OrderStatus
 pub enum nanobook::Side
 pub nanobook::Side::Buy
 pub nanobook::Side::Sell
 impl nanobook::Side
 pub fn nanobook::Side::opposite(self) -> Self
+impl core::clone::Clone for nanobook::Side
+pub fn nanobook::Side::clone(&self) -> nanobook::Side
+impl core::cmp::Eq for nanobook::Side
+impl core::cmp::PartialEq for nanobook::Side
+pub fn nanobook::Side::eq(&self, &nanobook::Side) -> bool
+impl core::fmt::Debug for nanobook::Side
+pub fn nanobook::Side::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for nanobook::Side
-pub fn nanobook::Side::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn nanobook::Side::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for nanobook::Side
+pub fn nanobook::Side::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for nanobook::Side
+impl core::marker::StructuralPartialEq for nanobook::Side
+impl serde_core::ser::Serialize for nanobook::Side
+pub fn nanobook::Side::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::Side
+pub fn nanobook::Side::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::Side
+impl core::marker::Send for nanobook::Side
+impl core::marker::Sync for nanobook::Side
+impl core::marker::Unpin for nanobook::Side
+impl core::marker::UnsafeUnpin for nanobook::Side
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::Side
+impl core::panic::unwind_safe::UnwindSafe for nanobook::Side
 pub enum nanobook::StopStatus
 pub nanobook::StopStatus::Cancelled
 pub nanobook::StopStatus::Pending
 pub nanobook::StopStatus::Triggered
+impl core::clone::Clone for nanobook::stop::StopStatus
+pub fn nanobook::stop::StopStatus::clone(&self) -> nanobook::stop::StopStatus
+impl core::cmp::Eq for nanobook::stop::StopStatus
+impl core::cmp::PartialEq for nanobook::stop::StopStatus
+pub fn nanobook::stop::StopStatus::eq(&self, &nanobook::stop::StopStatus) -> bool
+impl core::fmt::Debug for nanobook::stop::StopStatus
+pub fn nanobook::stop::StopStatus::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for nanobook::stop::StopStatus
+impl core::marker::StructuralPartialEq for nanobook::stop::StopStatus
+impl serde_core::ser::Serialize for nanobook::stop::StopStatus
+pub fn nanobook::stop::StopStatus::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::stop::StopStatus
+pub fn nanobook::stop::StopStatus::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::stop::StopStatus
+impl core::marker::Send for nanobook::stop::StopStatus
+impl core::marker::Sync for nanobook::stop::StopStatus
+impl core::marker::Unpin for nanobook::stop::StopStatus
+impl core::marker::UnsafeUnpin for nanobook::stop::StopStatus
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::stop::StopStatus
+impl core::panic::unwind_safe::UnwindSafe for nanobook::stop::StopStatus
 pub enum nanobook::StpPolicy
 pub nanobook::StpPolicy::CancelNewest
 pub nanobook::StpPolicy::CancelOldest
 pub nanobook::StpPolicy::DecrementAndCancel
 pub nanobook::StpPolicy::Off
+impl core::clone::Clone for nanobook::StpPolicy
+pub fn nanobook::StpPolicy::clone(&self) -> nanobook::StpPolicy
+impl core::cmp::Eq for nanobook::StpPolicy
+impl core::cmp::PartialEq for nanobook::StpPolicy
+pub fn nanobook::StpPolicy::eq(&self, &nanobook::StpPolicy) -> bool
+impl core::default::Default for nanobook::StpPolicy
+pub fn nanobook::StpPolicy::default() -> nanobook::StpPolicy
+impl core::fmt::Debug for nanobook::StpPolicy
+pub fn nanobook::StpPolicy::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for nanobook::StpPolicy
+impl core::marker::StructuralPartialEq for nanobook::StpPolicy
+impl serde_core::ser::Serialize for nanobook::StpPolicy
+pub fn nanobook::StpPolicy::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::StpPolicy
+pub fn nanobook::StpPolicy::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::StpPolicy
+impl core::marker::Send for nanobook::StpPolicy
+impl core::marker::Sync for nanobook::StpPolicy
+impl core::marker::Unpin for nanobook::StpPolicy
+impl core::marker::UnsafeUnpin for nanobook::StpPolicy
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::StpPolicy
+impl core::panic::unwind_safe::UnwindSafe for nanobook::StpPolicy
 pub enum nanobook::TimeInForce
 pub nanobook::TimeInForce::FOK
 pub nanobook::TimeInForce::GTC
@@ -382,25 +1288,119 @@ pub nanobook::TimeInForce::IOC
 impl nanobook::TimeInForce
 pub fn nanobook::TimeInForce::allows_partial(self) -> bool
 pub fn nanobook::TimeInForce::can_rest(self) -> bool
+impl core::clone::Clone for nanobook::TimeInForce
+pub fn nanobook::TimeInForce::clone(&self) -> nanobook::TimeInForce
+impl core::cmp::Eq for nanobook::TimeInForce
+impl core::cmp::PartialEq for nanobook::TimeInForce
+pub fn nanobook::TimeInForce::eq(&self, &nanobook::TimeInForce) -> bool
+impl core::default::Default for nanobook::TimeInForce
+pub fn nanobook::TimeInForce::default() -> nanobook::TimeInForce
+impl core::fmt::Debug for nanobook::TimeInForce
+pub fn nanobook::TimeInForce::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for nanobook::TimeInForce
-pub fn nanobook::TimeInForce::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn nanobook::TimeInForce::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for nanobook::TimeInForce
+pub fn nanobook::TimeInForce::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for nanobook::TimeInForce
+impl core::marker::StructuralPartialEq for nanobook::TimeInForce
+impl serde_core::ser::Serialize for nanobook::TimeInForce
+pub fn nanobook::TimeInForce::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::TimeInForce
+pub fn nanobook::TimeInForce::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::TimeInForce
+impl core::marker::Send for nanobook::TimeInForce
+impl core::marker::Sync for nanobook::TimeInForce
+impl core::marker::Unpin for nanobook::TimeInForce
+impl core::marker::UnsafeUnpin for nanobook::TimeInForce
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::TimeInForce
+impl core::panic::unwind_safe::UnwindSafe for nanobook::TimeInForce
 pub enum nanobook::TrailMethod
 pub nanobook::TrailMethod::Fixed(i64)
 pub nanobook::TrailMethod::Percentage(f64)
 pub nanobook::TrailMethod::SmaAbsChange
 pub nanobook::TrailMethod::SmaAbsChange::multiplier: f64
 pub nanobook::TrailMethod::SmaAbsChange::period: usize
+impl core::clone::Clone for nanobook::stop::TrailMethod
+pub fn nanobook::stop::TrailMethod::clone(&self) -> nanobook::stop::TrailMethod
+impl core::cmp::PartialEq for nanobook::stop::TrailMethod
+pub fn nanobook::stop::TrailMethod::eq(&self, &nanobook::stop::TrailMethod) -> bool
+impl core::fmt::Debug for nanobook::stop::TrailMethod
+pub fn nanobook::stop::TrailMethod::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for nanobook::stop::TrailMethod
+impl serde_core::ser::Serialize for nanobook::stop::TrailMethod
+pub fn nanobook::stop::TrailMethod::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::stop::TrailMethod
+pub fn nanobook::stop::TrailMethod::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::stop::TrailMethod
+impl core::marker::Send for nanobook::stop::TrailMethod
+impl core::marker::Sync for nanobook::stop::TrailMethod
+impl core::marker::Unpin for nanobook::stop::TrailMethod
+impl core::marker::UnsafeUnpin for nanobook::stop::TrailMethod
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::stop::TrailMethod
+impl core::panic::unwind_safe::UnwindSafe for nanobook::stop::TrailMethod
 pub enum nanobook::ValidationError
 pub nanobook::ValidationError::NotionalOverflow
 pub nanobook::ValidationError::NotionalOverflow::price: i64
 pub nanobook::ValidationError::NotionalOverflow::quantity: u64
 pub nanobook::ValidationError::ZeroPrice
 pub nanobook::ValidationError::ZeroQuantity
+impl core::clone::Clone for nanobook::ValidationError
+pub fn nanobook::ValidationError::clone(&self) -> nanobook::ValidationError
+impl core::cmp::Eq for nanobook::ValidationError
+impl core::cmp::PartialEq for nanobook::ValidationError
+pub fn nanobook::ValidationError::eq(&self, &nanobook::ValidationError) -> bool
 impl core::error::Error for nanobook::ValidationError
+impl core::fmt::Debug for nanobook::ValidationError
+pub fn nanobook::ValidationError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for nanobook::ValidationError
-pub fn nanobook::ValidationError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn nanobook::ValidationError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for nanobook::ValidationError
+impl core::marker::StructuralPartialEq for nanobook::ValidationError
+impl serde_core::ser::Serialize for nanobook::ValidationError
+pub fn nanobook::ValidationError::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::ValidationError
+pub fn nanobook::ValidationError::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::ValidationError
+impl core::marker::Send for nanobook::ValidationError
+impl core::marker::Sync for nanobook::ValidationError
+impl core::marker::Unpin for nanobook::ValidationError
+impl core::marker::UnsafeUnpin for nanobook::ValidationError
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::ValidationError
+impl core::panic::unwind_safe::UnwindSafe for nanobook::ValidationError
 pub struct nanobook::ApplyResult
 pub nanobook::ApplyResult::trades: alloc::vec::Vec<nanobook::Trade>
+impl core::clone::Clone for nanobook::ApplyResult
+pub fn nanobook::ApplyResult::clone(&self) -> nanobook::ApplyResult
+impl core::fmt::Debug for nanobook::ApplyResult
+pub fn nanobook::ApplyResult::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for nanobook::ApplyResult
+pub fn nanobook::ApplyResult::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::ApplyResult
+pub fn nanobook::ApplyResult::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::ApplyResult
+impl core::marker::Send for nanobook::ApplyResult
+impl core::marker::Sync for nanobook::ApplyResult
+impl core::marker::Unpin for nanobook::ApplyResult
+impl core::marker::UnsafeUnpin for nanobook::ApplyResult
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::ApplyResult
+impl core::panic::unwind_safe::UnwindSafe for nanobook::ApplyResult
+pub struct nanobook::BarPrices
+pub nanobook::BarPrices::close: i64
+pub nanobook::BarPrices::high: i64
+pub nanobook::BarPrices::low: i64
+pub nanobook::BarPrices::open: i64
+impl core::clone::Clone for nanobook::backtest_bridge::BarPrices
+pub fn nanobook::backtest_bridge::BarPrices::clone(&self) -> nanobook::backtest_bridge::BarPrices
+impl core::fmt::Debug for nanobook::backtest_bridge::BarPrices
+pub fn nanobook::backtest_bridge::BarPrices::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for nanobook::backtest_bridge::BarPrices
+impl core::marker::Freeze for nanobook::backtest_bridge::BarPrices
+impl core::marker::Send for nanobook::backtest_bridge::BarPrices
+impl core::marker::Sync for nanobook::backtest_bridge::BarPrices
+impl core::marker::Unpin for nanobook::backtest_bridge::BarPrices
+impl core::marker::UnsafeUnpin for nanobook::backtest_bridge::BarPrices
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::backtest_bridge::BarPrices
+impl core::panic::unwind_safe::UnwindSafe for nanobook::backtest_bridge::BarPrices
 pub struct nanobook::BookSnapshot
 pub nanobook::BookSnapshot::asks: alloc::vec::Vec<nanobook::LevelSnapshot>
 pub nanobook::BookSnapshot::bids: alloc::vec::Vec<nanobook::LevelSnapshot>
@@ -414,78 +1414,148 @@ pub fn nanobook::BookSnapshot::spread(&self) -> core::option::Option<i64>
 pub fn nanobook::BookSnapshot::total_ask_quantity(&self) -> nanobook::Quantity
 pub fn nanobook::BookSnapshot::total_bid_quantity(&self) -> nanobook::Quantity
 pub fn nanobook::BookSnapshot::weighted_mid(&self) -> core::option::Option<f64>
+impl core::clone::Clone for nanobook::BookSnapshot
+pub fn nanobook::BookSnapshot::clone(&self) -> nanobook::BookSnapshot
+impl core::default::Default for nanobook::BookSnapshot
+pub fn nanobook::BookSnapshot::default() -> nanobook::BookSnapshot
+impl core::fmt::Debug for nanobook::BookSnapshot
+pub fn nanobook::BookSnapshot::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for nanobook::BookSnapshot
+pub fn nanobook::BookSnapshot::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::BookSnapshot
+pub fn nanobook::BookSnapshot::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::BookSnapshot
+impl core::marker::Send for nanobook::BookSnapshot
+impl core::marker::Sync for nanobook::BookSnapshot
+impl core::marker::Unpin for nanobook::BookSnapshot
+impl core::marker::UnsafeUnpin for nanobook::BookSnapshot
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::BookSnapshot
+impl core::panic::unwind_safe::UnwindSafe for nanobook::BookSnapshot
 pub struct nanobook::CancelResult
 pub nanobook::CancelResult::cancelled_quantity: nanobook::Quantity
 pub nanobook::CancelResult::error: core::option::Option<nanobook::CancelError>
 pub nanobook::CancelResult::success: bool
 impl nanobook::CancelResult
-pub fn nanobook::CancelResult::failure(error: nanobook::CancelError) -> Self
-pub fn nanobook::CancelResult::success(cancelled_quantity: nanobook::Quantity) -> Self
+pub fn nanobook::CancelResult::failure(nanobook::CancelError) -> Self
+pub fn nanobook::CancelResult::success(nanobook::Quantity) -> Self
+impl core::clone::Clone for nanobook::CancelResult
+pub fn nanobook::CancelResult::clone(&self) -> nanobook::CancelResult
+impl core::fmt::Debug for nanobook::CancelResult
+pub fn nanobook::CancelResult::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for nanobook::CancelResult
+pub fn nanobook::CancelResult::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::CancelResult
+pub fn nanobook::CancelResult::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::CancelResult
+impl core::marker::Send for nanobook::CancelResult
+impl core::marker::Sync for nanobook::CancelResult
+impl core::marker::Unpin for nanobook::CancelResult
+impl core::marker::UnsafeUnpin for nanobook::CancelResult
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::CancelResult
+impl core::panic::unwind_safe::UnwindSafe for nanobook::CancelResult
 pub struct nanobook::Exchange
 impl nanobook::Exchange
-pub fn nanobook::Exchange::apply(&mut self, event: &nanobook::Event) -> nanobook::ApplyResult
-pub fn nanobook::Exchange::apply_all(&mut self, events: &[nanobook::Event]) -> alloc::vec::Vec<nanobook::Trade>
+pub fn nanobook::Exchange::apply(&mut self, &nanobook::Event) -> nanobook::ApplyResult
+pub fn nanobook::Exchange::apply_all(&mut self, &[nanobook::Event]) -> alloc::vec::Vec<nanobook::Trade>
 pub fn nanobook::Exchange::clear_events(&mut self)
 pub fn nanobook::Exchange::events(&self) -> &[nanobook::Event]
-pub fn nanobook::Exchange::replay(events: &[nanobook::Event]) -> Self
+pub fn nanobook::Exchange::replay(&[nanobook::Event]) -> Self
 impl nanobook::Exchange
 pub fn nanobook::Exchange::best_ask(&self) -> core::option::Option<nanobook::Price>
 pub fn nanobook::Exchange::best_bid(&self) -> core::option::Option<nanobook::Price>
 pub fn nanobook::Exchange::best_bid_ask(&self) -> (core::option::Option<nanobook::Price>, core::option::Option<nanobook::Price>)
 pub fn nanobook::Exchange::book(&self) -> &nanobook::OrderBook
 pub fn nanobook::Exchange::book_mut(&mut self) -> &mut nanobook::OrderBook
-pub fn nanobook::Exchange::cancel(&mut self, order_id: nanobook::OrderId) -> nanobook::CancelResult
+pub fn nanobook::Exchange::cancel(&mut self, nanobook::OrderId) -> nanobook::CancelResult
 pub fn nanobook::Exchange::clear_order_history(&mut self) -> usize
 pub fn nanobook::Exchange::clear_trades(&mut self)
 pub fn nanobook::Exchange::compact(&mut self)
-pub fn nanobook::Exchange::depth(&self, levels: usize) -> nanobook::BookSnapshot
+pub fn nanobook::Exchange::depth(&self, usize) -> nanobook::BookSnapshot
 pub fn nanobook::Exchange::full_book(&self) -> nanobook::BookSnapshot
-pub fn nanobook::Exchange::get_order(&self, order_id: nanobook::OrderId) -> core::option::Option<&nanobook::Order>
-pub fn nanobook::Exchange::get_stop_order(&self, order_id: nanobook::OrderId) -> core::option::Option<&nanobook::stop::StopOrder>
+pub fn nanobook::Exchange::get_order(&self, nanobook::OrderId) -> core::option::Option<&nanobook::Order>
+pub fn nanobook::Exchange::get_stop_order(&self, nanobook::OrderId) -> core::option::Option<&nanobook::stop::StopOrder>
 pub fn nanobook::Exchange::last_trade_price(&self) -> core::option::Option<nanobook::Price>
-pub fn nanobook::Exchange::modify(&mut self, order_id: nanobook::OrderId, new_price: nanobook::Price, new_quantity: nanobook::Quantity) -> nanobook::ModifyResult
+pub fn nanobook::Exchange::modify(&mut self, nanobook::OrderId, nanobook::Price, nanobook::Quantity) -> nanobook::ModifyResult
 pub fn nanobook::Exchange::new() -> Self
 pub fn nanobook::Exchange::pending_stop_count(&self) -> usize
+pub fn nanobook::Exchange::set_stp_policy(&mut self, nanobook::StpPolicy)
 pub fn nanobook::Exchange::spread(&self) -> core::option::Option<i64>
 pub fn nanobook::Exchange::stop_book(&self) -> &nanobook::stop::StopBook
 pub fn nanobook::Exchange::stp_policy(&self) -> nanobook::StpPolicy
-pub fn nanobook::Exchange::submit_limit(&mut self, side: nanobook::Side, price: nanobook::Price, quantity: nanobook::Quantity, tif: nanobook::TimeInForce) -> nanobook::SubmitResult
-pub fn nanobook::Exchange::submit_limit_with_owner(&mut self, side: nanobook::Side, price: nanobook::Price, quantity: nanobook::Quantity, tif: nanobook::TimeInForce, owner: nanobook::OrderOwner) -> nanobook::SubmitResult
-pub fn nanobook::Exchange::submit_market(&mut self, side: nanobook::Side, quantity: nanobook::Quantity) -> nanobook::SubmitResult
-pub fn nanobook::Exchange::submit_stop_limit(&mut self, side: nanobook::Side, stop_price: nanobook::Price, limit_price: nanobook::Price, quantity: nanobook::Quantity, tif: nanobook::TimeInForce) -> nanobook::StopSubmitResult
-pub fn nanobook::Exchange::submit_stop_market(&mut self, side: nanobook::Side, stop_price: nanobook::Price, quantity: nanobook::Quantity) -> nanobook::StopSubmitResult
-pub fn nanobook::Exchange::submit_trailing_stop_limit(&mut self, side: nanobook::Side, initial_stop_price: nanobook::Price, limit_price: nanobook::Price, quantity: nanobook::Quantity, tif: nanobook::TimeInForce, trail_method: nanobook::stop::TrailMethod) -> nanobook::StopSubmitResult
-pub fn nanobook::Exchange::submit_trailing_stop_market(&mut self, side: nanobook::Side, initial_stop_price: nanobook::Price, quantity: nanobook::Quantity, trail_method: nanobook::stop::TrailMethod) -> nanobook::StopSubmitResult
+pub fn nanobook::Exchange::submit_limit(&mut self, nanobook::Side, nanobook::Price, nanobook::Quantity, nanobook::TimeInForce) -> nanobook::SubmitResult
+pub fn nanobook::Exchange::submit_limit_with_owner(&mut self, nanobook::Side, nanobook::Price, nanobook::Quantity, nanobook::TimeInForce, nanobook::OrderOwner) -> nanobook::SubmitResult
+pub fn nanobook::Exchange::submit_market(&mut self, nanobook::Side, nanobook::Quantity) -> nanobook::SubmitResult
+pub fn nanobook::Exchange::submit_stop_limit(&mut self, nanobook::Side, nanobook::Price, nanobook::Price, nanobook::Quantity, nanobook::TimeInForce) -> nanobook::StopSubmitResult
+pub fn nanobook::Exchange::submit_stop_market(&mut self, nanobook::Side, nanobook::Price, nanobook::Quantity) -> nanobook::StopSubmitResult
+pub fn nanobook::Exchange::submit_trailing_stop_limit(&mut self, nanobook::Side, nanobook::Price, nanobook::Price, nanobook::Quantity, nanobook::TimeInForce, nanobook::stop::TrailMethod) -> nanobook::StopSubmitResult
+pub fn nanobook::Exchange::submit_trailing_stop_market(&mut self, nanobook::Side, nanobook::Price, nanobook::Quantity, nanobook::stop::TrailMethod) -> nanobook::StopSubmitResult
 pub fn nanobook::Exchange::trades(&self) -> &[nanobook::Trade]
-pub fn nanobook::Exchange::try_submit_limit(&mut self, side: nanobook::Side, price: nanobook::Price, quantity: nanobook::Quantity, tif: nanobook::TimeInForce) -> core::result::Result<nanobook::SubmitResult, nanobook::ValidationError>
-pub fn nanobook::Exchange::try_submit_market(&mut self, side: nanobook::Side, quantity: nanobook::Quantity) -> core::result::Result<nanobook::SubmitResult, nanobook::ValidationError>
-pub fn nanobook::Exchange::with_stp_policy(self, policy: nanobook::StpPolicy) -> Self
+pub fn nanobook::Exchange::try_submit_limit(&mut self, nanobook::Side, nanobook::Price, nanobook::Quantity, nanobook::TimeInForce) -> core::result::Result<nanobook::SubmitResult, nanobook::ValidationError>
+pub fn nanobook::Exchange::try_submit_market(&mut self, nanobook::Side, nanobook::Quantity) -> core::result::Result<nanobook::SubmitResult, nanobook::ValidationError>
+pub fn nanobook::Exchange::with_stp_policy(self, nanobook::StpPolicy) -> Self
 impl nanobook::Exchange
-pub fn nanobook::Exchange::load(path: &std::path::Path) -> std::io::error::Result<Self>
-pub fn nanobook::Exchange::save(&self, path: &std::path::Path) -> std::io::error::Result<()>
+pub fn nanobook::Exchange::load(&std::path::Path) -> core::io::error::Result<Self>
+pub fn nanobook::Exchange::save(&self, &std::path::Path) -> core::io::error::Result<()>
+impl core::clone::Clone for nanobook::Exchange
+pub fn nanobook::Exchange::clone(&self) -> nanobook::Exchange
 impl core::default::Default for nanobook::Exchange
 pub fn nanobook::Exchange::default() -> Self
+impl core::fmt::Debug for nanobook::Exchange
+pub fn nanobook::Exchange::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for nanobook::Exchange
+impl core::marker::Send for nanobook::Exchange
+impl core::marker::Sync for nanobook::Exchange
+impl core::marker::Unpin for nanobook::Exchange
+impl core::marker::UnsafeUnpin for nanobook::Exchange
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::Exchange
+impl core::panic::unwind_safe::UnwindSafe for nanobook::Exchange
 pub struct nanobook::Level
 impl nanobook::Level
 pub fn nanobook::Level::compact(&mut self)
-pub fn nanobook::Level::decrease_quantity(&mut self, amount: nanobook::Quantity)
+pub fn nanobook::Level::decrease_quantity(&mut self, nanobook::Quantity)
 pub fn nanobook::Level::front(&mut self) -> core::option::Option<nanobook::OrderId>
 pub fn nanobook::Level::is_empty(&self) -> bool
 pub fn nanobook::Level::iter(&self) -> impl core::iter::traits::iterator::Iterator<Item = nanobook::OrderId> + '_
-pub fn nanobook::Level::mark_tombstone(&mut self, index: usize, quantity: nanobook::Quantity)
-pub fn nanobook::Level::new(price: nanobook::Price) -> Self
+pub fn nanobook::Level::mark_tombstone(&mut self, usize, nanobook::Quantity)
+pub fn nanobook::Level::new(nanobook::Price) -> Self
 pub fn nanobook::Level::order_count(&self) -> usize
-pub fn nanobook::Level::pop_front(&mut self, quantity: nanobook::Quantity) -> core::option::Option<nanobook::OrderId>
+pub fn nanobook::Level::pop_front(&mut self, nanobook::Quantity) -> core::option::Option<nanobook::OrderId>
 pub fn nanobook::Level::price(&self) -> nanobook::Price
-pub fn nanobook::Level::push_back(&mut self, order_id: nanobook::OrderId, quantity: nanobook::Quantity)
+pub fn nanobook::Level::push_back(&mut self, nanobook::OrderId, nanobook::Quantity)
 pub fn nanobook::Level::raw_len(&self) -> usize
-pub fn nanobook::Level::remove(&mut self, order_id: nanobook::OrderId, quantity: nanobook::Quantity) -> bool
+pub fn nanobook::Level::remove(&mut self, nanobook::OrderId, nanobook::Quantity) -> bool
 pub fn nanobook::Level::tombstone_count(&self) -> usize
 pub fn nanobook::Level::total_quantity(&self) -> nanobook::Quantity
+impl core::clone::Clone for nanobook::Level
+pub fn nanobook::Level::clone(&self) -> nanobook::Level
+impl core::fmt::Debug for nanobook::Level
+pub fn nanobook::Level::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for nanobook::Level
+impl core::marker::Send for nanobook::Level
+impl core::marker::Sync for nanobook::Level
+impl core::marker::Unpin for nanobook::Level
+impl core::marker::UnsafeUnpin for nanobook::Level
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::Level
+impl core::panic::unwind_safe::UnwindSafe for nanobook::Level
 pub struct nanobook::LevelSnapshot
 pub nanobook::LevelSnapshot::order_count: usize
 pub nanobook::LevelSnapshot::price: nanobook::Price
 pub nanobook::LevelSnapshot::quantity: nanobook::Quantity
+impl core::clone::Clone for nanobook::LevelSnapshot
+pub fn nanobook::LevelSnapshot::clone(&self) -> nanobook::LevelSnapshot
+impl core::fmt::Debug for nanobook::LevelSnapshot
+pub fn nanobook::LevelSnapshot::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for nanobook::LevelSnapshot
+pub fn nanobook::LevelSnapshot::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::LevelSnapshot
+pub fn nanobook::LevelSnapshot::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::LevelSnapshot
+impl core::marker::Send for nanobook::LevelSnapshot
+impl core::marker::Sync for nanobook::LevelSnapshot
+impl core::marker::Unpin for nanobook::LevelSnapshot
+impl core::marker::UnsafeUnpin for nanobook::LevelSnapshot
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::LevelSnapshot
+impl core::panic::unwind_safe::UnwindSafe for nanobook::LevelSnapshot
 pub struct nanobook::MatchResult
 pub nanobook::MatchResult::remaining_quantity: nanobook::Quantity
 pub nanobook::MatchResult::stp_cancelled: bool
@@ -494,6 +1564,23 @@ impl nanobook::MatchResult
 pub fn nanobook::MatchResult::filled_quantity(&self) -> nanobook::Quantity
 pub fn nanobook::MatchResult::is_empty(&self) -> bool
 pub fn nanobook::MatchResult::is_fully_filled(&self) -> bool
+impl core::clone::Clone for nanobook::MatchResult
+pub fn nanobook::MatchResult::clone(&self) -> nanobook::MatchResult
+impl core::default::Default for nanobook::MatchResult
+pub fn nanobook::MatchResult::default() -> nanobook::MatchResult
+impl core::fmt::Debug for nanobook::MatchResult
+pub fn nanobook::MatchResult::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for nanobook::MatchResult
+pub fn nanobook::MatchResult::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::MatchResult
+pub fn nanobook::MatchResult::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::MatchResult
+impl core::marker::Send for nanobook::MatchResult
+impl core::marker::Sync for nanobook::MatchResult
+impl core::marker::Unpin for nanobook::MatchResult
+impl core::marker::UnsafeUnpin for nanobook::MatchResult
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::MatchResult
+impl core::panic::unwind_safe::UnwindSafe for nanobook::MatchResult
 pub struct nanobook::ModifyResult
 pub nanobook::ModifyResult::cancelled_quantity: nanobook::Quantity
 pub nanobook::ModifyResult::error: core::option::Option<nanobook::ModifyError>
@@ -502,18 +1589,46 @@ pub nanobook::ModifyResult::old_order_id: nanobook::OrderId
 pub nanobook::ModifyResult::success: bool
 pub nanobook::ModifyResult::trades: alloc::vec::Vec<nanobook::Trade>
 impl nanobook::ModifyResult
-pub fn nanobook::ModifyResult::failure(old_order_id: nanobook::OrderId, error: nanobook::ModifyError) -> Self
-pub fn nanobook::ModifyResult::success(old_order_id: nanobook::OrderId, new_order_id: nanobook::OrderId, cancelled_quantity: nanobook::Quantity, trades: alloc::vec::Vec<nanobook::Trade>) -> Self
+pub fn nanobook::ModifyResult::failure(nanobook::OrderId, nanobook::ModifyError) -> Self
+pub fn nanobook::ModifyResult::success(nanobook::OrderId, nanobook::OrderId, nanobook::Quantity, alloc::vec::Vec<nanobook::Trade>) -> Self
+impl core::clone::Clone for nanobook::ModifyResult
+pub fn nanobook::ModifyResult::clone(&self) -> nanobook::ModifyResult
+impl core::fmt::Debug for nanobook::ModifyResult
+pub fn nanobook::ModifyResult::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for nanobook::ModifyResult
+pub fn nanobook::ModifyResult::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::ModifyResult
+pub fn nanobook::ModifyResult::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::ModifyResult
+impl core::marker::Send for nanobook::ModifyResult
+impl core::marker::Sync for nanobook::ModifyResult
+impl core::marker::Unpin for nanobook::ModifyResult
+impl core::marker::UnsafeUnpin for nanobook::ModifyResult
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::ModifyResult
+impl core::panic::unwind_safe::UnwindSafe for nanobook::ModifyResult
 pub struct nanobook::MultiExchange
 impl nanobook::multi_exchange::MultiExchange
 pub fn nanobook::multi_exchange::MultiExchange::best_prices(&self) -> alloc::vec::Vec<(nanobook::Symbol, core::option::Option<nanobook::Price>, core::option::Option<nanobook::Price>)>
-pub fn nanobook::multi_exchange::MultiExchange::get(&self, symbol: &nanobook::Symbol) -> core::option::Option<&nanobook::Exchange>
-pub fn nanobook::multi_exchange::MultiExchange::get_mut(&mut self, symbol: &nanobook::Symbol) -> core::option::Option<&mut nanobook::Exchange>
-pub fn nanobook::multi_exchange::MultiExchange::get_or_create(&mut self, symbol: &nanobook::Symbol) -> &mut nanobook::Exchange
+pub fn nanobook::multi_exchange::MultiExchange::get(&self, &nanobook::Symbol) -> core::option::Option<&nanobook::Exchange>
+pub fn nanobook::multi_exchange::MultiExchange::get_mut(&mut self, &nanobook::Symbol) -> core::option::Option<&mut nanobook::Exchange>
+pub fn nanobook::multi_exchange::MultiExchange::get_or_create(&mut self, &nanobook::Symbol) -> &mut nanobook::Exchange
 pub fn nanobook::multi_exchange::MultiExchange::is_empty(&self) -> bool
 pub fn nanobook::multi_exchange::MultiExchange::len(&self) -> usize
 pub fn nanobook::multi_exchange::MultiExchange::new() -> Self
 pub fn nanobook::multi_exchange::MultiExchange::symbols(&self) -> impl core::iter::traits::iterator::Iterator<Item = &nanobook::Symbol>
+impl core::clone::Clone for nanobook::multi_exchange::MultiExchange
+pub fn nanobook::multi_exchange::MultiExchange::clone(&self) -> nanobook::multi_exchange::MultiExchange
+impl core::default::Default for nanobook::multi_exchange::MultiExchange
+pub fn nanobook::multi_exchange::MultiExchange::default() -> nanobook::multi_exchange::MultiExchange
+impl core::fmt::Debug for nanobook::multi_exchange::MultiExchange
+pub fn nanobook::multi_exchange::MultiExchange::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for nanobook::multi_exchange::MultiExchange
+impl core::marker::Send for nanobook::multi_exchange::MultiExchange
+impl core::marker::Sync for nanobook::multi_exchange::MultiExchange
+impl core::marker::Unpin for nanobook::multi_exchange::MultiExchange
+impl core::marker::UnsafeUnpin for nanobook::multi_exchange::MultiExchange
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::multi_exchange::MultiExchange
+impl core::panic::unwind_safe::UnwindSafe for nanobook::multi_exchange::MultiExchange
 pub struct nanobook::Order
 pub nanobook::Order::filled_quantity: nanobook::Quantity
 pub nanobook::Order::id: nanobook::OrderId
@@ -527,14 +1642,33 @@ pub nanobook::Order::time_in_force: nanobook::TimeInForce
 pub nanobook::Order::timestamp: nanobook::Timestamp
 impl nanobook::Order
 pub fn nanobook::Order::cancel(&mut self) -> nanobook::Quantity
-pub fn nanobook::Order::fill(&mut self, quantity: nanobook::Quantity)
+pub fn nanobook::Order::fill(&mut self, nanobook::Quantity)
 pub fn nanobook::Order::is_active(&self) -> bool
-pub fn nanobook::Order::new(id: nanobook::OrderId, side: nanobook::Side, price: nanobook::Price, quantity: nanobook::Quantity, timestamp: nanobook::Timestamp, time_in_force: nanobook::TimeInForce) -> Self
-pub fn nanobook::Order::with_owner(self, owner: nanobook::OrderOwner) -> Self
+pub fn nanobook::Order::new(nanobook::OrderId, nanobook::Side, nanobook::Price, nanobook::Quantity, nanobook::Timestamp, nanobook::TimeInForce) -> Self
+pub fn nanobook::Order::with_owner(self, nanobook::OrderOwner) -> Self
+impl core::clone::Clone for nanobook::Order
+pub fn nanobook::Order::clone(&self) -> nanobook::Order
+impl core::cmp::Eq for nanobook::Order
+impl core::cmp::PartialEq for nanobook::Order
+pub fn nanobook::Order::eq(&self, &nanobook::Order) -> bool
+impl core::fmt::Debug for nanobook::Order
+pub fn nanobook::Order::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for nanobook::Order
+impl serde_core::ser::Serialize for nanobook::Order
+pub fn nanobook::Order::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::Order
+pub fn nanobook::Order::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::Order
+impl core::marker::Send for nanobook::Order
+impl core::marker::Sync for nanobook::Order
+impl core::marker::Unpin for nanobook::Order
+impl core::marker::UnsafeUnpin for nanobook::Order
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::Order
+impl core::panic::unwind_safe::UnwindSafe for nanobook::Order
 pub struct nanobook::OrderBook
 impl nanobook::OrderBook
 pub fn nanobook::OrderBook::active_order_count(&self) -> usize
-pub fn nanobook::OrderBook::add_order(&mut self, order: nanobook::Order)
+pub fn nanobook::OrderBook::add_order(&mut self, nanobook::Order)
 pub fn nanobook::OrderBook::asks(&self) -> &nanobook::PriceLevels
 pub fn nanobook::OrderBook::asks_mut(&mut self) -> &mut nanobook::PriceLevels
 pub fn nanobook::OrderBook::best_ask(&self) -> core::option::Option<nanobook::Price>
@@ -542,79 +1676,192 @@ pub fn nanobook::OrderBook::best_bid(&self) -> core::option::Option<nanobook::Pr
 pub fn nanobook::OrderBook::best_bid_ask(&self) -> (core::option::Option<nanobook::Price>, core::option::Option<nanobook::Price>)
 pub fn nanobook::OrderBook::bids(&self) -> &nanobook::PriceLevels
 pub fn nanobook::OrderBook::bids_mut(&mut self) -> &mut nanobook::PriceLevels
-pub fn nanobook::OrderBook::cancel_order(&mut self, order_id: nanobook::OrderId) -> core::option::Option<nanobook::Quantity>
+pub fn nanobook::OrderBook::cancel_order(&mut self, nanobook::OrderId) -> core::option::Option<nanobook::Quantity>
 pub fn nanobook::OrderBook::clear_history(&mut self) -> usize
 pub fn nanobook::OrderBook::compact(&mut self)
-pub fn nanobook::OrderBook::contains_order(&self, order_id: nanobook::OrderId) -> bool
-pub fn nanobook::OrderBook::create_order(&mut self, side: nanobook::Side, price: nanobook::Price, quantity: nanobook::Quantity, time_in_force: nanobook::TimeInForce) -> nanobook::Order
-pub fn nanobook::OrderBook::get_order(&self, order_id: nanobook::OrderId) -> core::option::Option<&nanobook::Order>
-pub fn nanobook::OrderBook::get_order_mut(&mut self, order_id: nanobook::OrderId) -> core::option::Option<&mut nanobook::Order>
+pub fn nanobook::OrderBook::contains_order(&self, nanobook::OrderId) -> bool
+pub fn nanobook::OrderBook::create_order(&mut self, nanobook::Side, nanobook::Price, nanobook::Quantity, nanobook::TimeInForce) -> nanobook::Order
+pub fn nanobook::OrderBook::get_order(&self, nanobook::OrderId) -> core::option::Option<&nanobook::Order>
+pub fn nanobook::OrderBook::get_order_mut(&mut self, nanobook::OrderId) -> core::option::Option<&mut nanobook::Order>
 pub fn nanobook::OrderBook::is_crossed(&self) -> bool
 pub fn nanobook::OrderBook::new() -> Self
 pub fn nanobook::OrderBook::next_order_id(&mut self) -> nanobook::OrderId
 pub fn nanobook::OrderBook::next_timestamp(&mut self) -> nanobook::Timestamp
 pub fn nanobook::OrderBook::next_trade_id(&mut self) -> nanobook::TradeId
-pub fn nanobook::OrderBook::opposite_side(&self, side: nanobook::Side) -> &nanobook::PriceLevels
-pub fn nanobook::OrderBook::opposite_side_mut(&mut self, side: nanobook::Side) -> &mut nanobook::PriceLevels
+pub fn nanobook::OrderBook::opposite_side(&self, nanobook::Side) -> &nanobook::PriceLevels
+pub fn nanobook::OrderBook::opposite_side_mut(&mut self, nanobook::Side) -> &mut nanobook::PriceLevels
 pub fn nanobook::OrderBook::order_count(&self) -> usize
 pub fn nanobook::OrderBook::peek_next_order_id(&self) -> nanobook::OrderId
-pub fn nanobook::OrderBook::side(&self, side: nanobook::Side) -> &nanobook::PriceLevels
-pub fn nanobook::OrderBook::side_mut(&mut self, side: nanobook::Side) -> &mut nanobook::PriceLevels
+pub fn nanobook::OrderBook::side(&self, nanobook::Side) -> &nanobook::PriceLevels
+pub fn nanobook::OrderBook::side_mut(&mut self, nanobook::Side) -> &mut nanobook::PriceLevels
 pub fn nanobook::OrderBook::spread(&self) -> core::option::Option<i64>
 impl nanobook::OrderBook
-pub fn nanobook::OrderBook::available_to_fill(&self, side: nanobook::Side, price: nanobook::Price) -> nanobook::Quantity
-pub fn nanobook::OrderBook::can_fully_fill(&self, side: nanobook::Side, price: nanobook::Price, quantity: nanobook::Quantity) -> bool
-pub fn nanobook::OrderBook::match_order(&mut self, incoming: &mut nanobook::Order) -> nanobook::MatchResult
-pub fn nanobook::OrderBook::match_order_with_policy(&mut self, incoming: &mut nanobook::Order, policy: nanobook::StpPolicy) -> nanobook::MatchResult
+pub fn nanobook::OrderBook::available_to_fill(&self, nanobook::Side, nanobook::Price) -> nanobook::Quantity
+pub fn nanobook::OrderBook::can_fully_fill(&self, nanobook::Side, nanobook::Price, nanobook::Quantity) -> bool
+pub fn nanobook::OrderBook::match_order(&mut self, &mut nanobook::Order) -> nanobook::MatchResult
+pub fn nanobook::OrderBook::match_order_with_policy(&mut self, &mut nanobook::Order, nanobook::StpPolicy) -> nanobook::MatchResult
 impl nanobook::OrderBook
 pub fn nanobook::OrderBook::full_snapshot(&self) -> nanobook::BookSnapshot
-pub fn nanobook::OrderBook::snapshot(&self, depth: usize) -> nanobook::BookSnapshot
+pub fn nanobook::OrderBook::snapshot(&self, usize) -> nanobook::BookSnapshot
+impl core::clone::Clone for nanobook::OrderBook
+pub fn nanobook::OrderBook::clone(&self) -> nanobook::OrderBook
 impl core::default::Default for nanobook::OrderBook
 pub fn nanobook::OrderBook::default() -> Self
+impl core::fmt::Debug for nanobook::OrderBook
+pub fn nanobook::OrderBook::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for nanobook::OrderBook
+impl core::marker::Send for nanobook::OrderBook
+impl core::marker::Sync for nanobook::OrderBook
+impl core::marker::Unpin for nanobook::OrderBook
+impl core::marker::UnsafeUnpin for nanobook::OrderBook
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::OrderBook
+impl core::panic::unwind_safe::UnwindSafe for nanobook::OrderBook
 pub struct nanobook::OrderId(pub u64)
+impl core::clone::Clone for nanobook::OrderId
+pub fn nanobook::OrderId::clone(&self) -> nanobook::OrderId
+impl core::cmp::Eq for nanobook::OrderId
+impl core::cmp::PartialEq for nanobook::OrderId
+pub fn nanobook::OrderId::eq(&self, &nanobook::OrderId) -> bool
+impl core::default::Default for nanobook::OrderId
+pub fn nanobook::OrderId::default() -> nanobook::OrderId
+impl core::fmt::Debug for nanobook::OrderId
+pub fn nanobook::OrderId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for nanobook::OrderId
-pub fn nanobook::OrderId::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn nanobook::OrderId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for nanobook::OrderId
+pub fn nanobook::OrderId::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for nanobook::OrderId
+impl core::marker::StructuralPartialEq for nanobook::OrderId
+impl serde_core::ser::Serialize for nanobook::OrderId
+pub fn nanobook::OrderId::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::OrderId
+pub fn nanobook::OrderId::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::OrderId
+impl core::marker::Send for nanobook::OrderId
+impl core::marker::Sync for nanobook::OrderId
+impl core::marker::Unpin for nanobook::OrderId
+impl core::marker::UnsafeUnpin for nanobook::OrderId
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::OrderId
+impl core::panic::unwind_safe::UnwindSafe for nanobook::OrderId
 pub struct nanobook::OrderOwner(pub u32)
+impl core::clone::Clone for nanobook::OrderOwner
+pub fn nanobook::OrderOwner::clone(&self) -> nanobook::OrderOwner
+impl core::cmp::Eq for nanobook::OrderOwner
+impl core::cmp::Ord for nanobook::OrderOwner
+pub fn nanobook::OrderOwner::cmp(&self, &nanobook::OrderOwner) -> core::cmp::Ordering
+impl core::cmp::PartialEq for nanobook::OrderOwner
+pub fn nanobook::OrderOwner::eq(&self, &nanobook::OrderOwner) -> bool
+impl core::cmp::PartialOrd for nanobook::OrderOwner
+pub fn nanobook::OrderOwner::partial_cmp(&self, &nanobook::OrderOwner) -> core::option::Option<core::cmp::Ordering>
+impl core::fmt::Debug for nanobook::OrderOwner
+pub fn nanobook::OrderOwner::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for nanobook::OrderOwner
+pub fn nanobook::OrderOwner::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for nanobook::OrderOwner
+impl core::marker::StructuralPartialEq for nanobook::OrderOwner
+impl serde_core::ser::Serialize for nanobook::OrderOwner
+pub fn nanobook::OrderOwner::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::OrderOwner
+pub fn nanobook::OrderOwner::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::OrderOwner
+impl core::marker::Send for nanobook::OrderOwner
+impl core::marker::Sync for nanobook::OrderOwner
+impl core::marker::Unpin for nanobook::OrderOwner
+impl core::marker::UnsafeUnpin for nanobook::OrderOwner
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::OrderOwner
+impl core::panic::unwind_safe::UnwindSafe for nanobook::OrderOwner
 pub struct nanobook::Price(pub i64)
 impl nanobook::Price
 pub const nanobook::Price::MAX: nanobook::Price
 pub const nanobook::Price::MIN: nanobook::Price
 pub const nanobook::Price::ZERO: nanobook::Price
+impl core::clone::Clone for nanobook::Price
+pub fn nanobook::Price::clone(&self) -> nanobook::Price
+impl core::cmp::Eq for nanobook::Price
+impl core::cmp::Ord for nanobook::Price
+pub fn nanobook::Price::cmp(&self, &nanobook::Price) -> core::cmp::Ordering
+impl core::cmp::PartialEq for nanobook::Price
+pub fn nanobook::Price::eq(&self, &nanobook::Price) -> bool
+impl core::cmp::PartialOrd for nanobook::Price
+pub fn nanobook::Price::partial_cmp(&self, &nanobook::Price) -> core::option::Option<core::cmp::Ordering>
+impl core::default::Default for nanobook::Price
+pub fn nanobook::Price::default() -> nanobook::Price
+impl core::fmt::Debug for nanobook::Price
+pub fn nanobook::Price::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for nanobook::Price
-pub fn nanobook::Price::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn nanobook::Price::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for nanobook::Price
+pub fn nanobook::Price::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for nanobook::Price
+impl core::marker::StructuralPartialEq for nanobook::Price
+impl serde_core::ser::Serialize for nanobook::Price
+pub fn nanobook::Price::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::Price
+pub fn nanobook::Price::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::Price
+impl core::marker::Send for nanobook::Price
+impl core::marker::Sync for nanobook::Price
+impl core::marker::Unpin for nanobook::Price
+impl core::marker::UnsafeUnpin for nanobook::Price
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::Price
+impl core::panic::unwind_safe::UnwindSafe for nanobook::Price
 pub struct nanobook::PriceLevels
 impl nanobook::PriceLevels
 pub fn nanobook::PriceLevels::best_level(&self) -> core::option::Option<&nanobook::Level>
 pub fn nanobook::PriceLevels::best_level_mut(&mut self) -> core::option::Option<&mut nanobook::Level>
 pub fn nanobook::PriceLevels::best_price(&self) -> core::option::Option<nanobook::Price>
 pub fn nanobook::PriceLevels::compact(&mut self)
-pub fn nanobook::PriceLevels::get_level(&self, price: nanobook::Price) -> core::option::Option<&nanobook::Level>
-pub fn nanobook::PriceLevels::get_level_mut(&mut self, price: nanobook::Price) -> core::option::Option<&mut nanobook::Level>
-pub fn nanobook::PriceLevels::get_or_create_level(&mut self, price: nanobook::Price) -> &mut nanobook::Level
-pub fn nanobook::PriceLevels::insert_order(&mut self, price: nanobook::Price, order_id: nanobook::OrderId, quantity: nanobook::Quantity) -> usize
+pub fn nanobook::PriceLevels::get_level(&self, nanobook::Price) -> core::option::Option<&nanobook::Level>
+pub fn nanobook::PriceLevels::get_level_mut(&mut self, nanobook::Price) -> core::option::Option<&mut nanobook::Level>
+pub fn nanobook::PriceLevels::get_or_create_level(&mut self, nanobook::Price) -> &mut nanobook::Level
+pub fn nanobook::PriceLevels::insert_order(&mut self, nanobook::Price, nanobook::OrderId, nanobook::Quantity) -> usize
 pub fn nanobook::PriceLevels::is_empty(&self) -> bool
 pub fn nanobook::PriceLevels::iter_best_to_worst(&self) -> impl core::iter::traits::iterator::Iterator<Item = (&nanobook::Price, &nanobook::Level)>
 pub fn nanobook::PriceLevels::level_count(&self) -> usize
-pub fn nanobook::PriceLevels::mark_tombstone(&mut self, price: nanobook::Price, index: usize, quantity: nanobook::Quantity)
-pub fn nanobook::PriceLevels::new(side: nanobook::Side) -> Self
+pub fn nanobook::PriceLevels::mark_tombstone(&mut self, nanobook::Price, usize, nanobook::Quantity)
+pub fn nanobook::PriceLevels::new(nanobook::Side) -> Self
 pub fn nanobook::PriceLevels::pop_best_level(&mut self) -> core::option::Option<nanobook::Level>
-pub fn nanobook::PriceLevels::quantity_at_or_better(&self, price: nanobook::Price) -> nanobook::Quantity
-pub fn nanobook::PriceLevels::remove_level(&mut self, price: nanobook::Price)
-pub fn nanobook::PriceLevels::remove_order(&mut self, price: nanobook::Price, order_id: nanobook::OrderId, quantity: nanobook::Quantity) -> bool
+pub fn nanobook::PriceLevels::quantity_at_or_better(&self, nanobook::Price) -> nanobook::Quantity
+pub fn nanobook::PriceLevels::remove_level(&mut self, nanobook::Price)
+pub fn nanobook::PriceLevels::remove_order(&mut self, nanobook::Price, nanobook::OrderId, nanobook::Quantity) -> bool
 pub fn nanobook::PriceLevels::side(&self) -> nanobook::Side
 pub fn nanobook::PriceLevels::total_quantity(&self) -> nanobook::Quantity
+impl core::clone::Clone for nanobook::PriceLevels
+pub fn nanobook::PriceLevels::clone(&self) -> nanobook::PriceLevels
+impl core::fmt::Debug for nanobook::PriceLevels
+pub fn nanobook::PriceLevels::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for nanobook::PriceLevels
+impl core::marker::Send for nanobook::PriceLevels
+impl core::marker::Sync for nanobook::PriceLevels
+impl core::marker::Unpin for nanobook::PriceLevels
+impl core::marker::UnsafeUnpin for nanobook::PriceLevels
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::PriceLevels
+impl core::panic::unwind_safe::UnwindSafe for nanobook::PriceLevels
 pub struct nanobook::StopBook
 impl nanobook::stop::StopBook
-pub fn nanobook::stop::StopBook::cancel(&mut self, order_id: nanobook::OrderId) -> bool
+pub fn nanobook::stop::StopBook::cancel(&mut self, nanobook::OrderId) -> bool
 pub fn nanobook::stop::StopBook::clear_history(&mut self)
-pub fn nanobook::stop::StopBook::collect_triggered(&mut self, trade_price: nanobook::Price) -> alloc::vec::Vec<nanobook::stop::StopOrder>
-pub fn nanobook::stop::StopBook::contains_pending(&self, order_id: nanobook::OrderId) -> bool
-pub fn nanobook::stop::StopBook::get(&self, order_id: nanobook::OrderId) -> core::option::Option<&nanobook::stop::StopOrder>
-pub fn nanobook::stop::StopBook::insert(&mut self, order: nanobook::stop::StopOrder)
+pub fn nanobook::stop::StopBook::collect_triggered(&mut self, nanobook::Price) -> alloc::vec::Vec<nanobook::stop::StopOrder>
+pub fn nanobook::stop::StopBook::contains_pending(&self, nanobook::OrderId) -> bool
+pub fn nanobook::stop::StopBook::get(&self, nanobook::OrderId) -> core::option::Option<&nanobook::stop::StopOrder>
+pub fn nanobook::stop::StopBook::insert(&mut self, nanobook::stop::StopOrder)
 pub fn nanobook::stop::StopBook::is_empty(&self) -> bool
 pub fn nanobook::stop::StopBook::new() -> Self
 pub fn nanobook::stop::StopBook::pending_count(&self) -> usize
-pub fn nanobook::stop::StopBook::update_trailing_stops(&mut self, trade_price: nanobook::Price)
+pub fn nanobook::stop::StopBook::update_trailing_stops(&mut self, nanobook::Price)
+impl core::clone::Clone for nanobook::stop::StopBook
+pub fn nanobook::stop::StopBook::clone(&self) -> nanobook::stop::StopBook
+impl core::default::Default for nanobook::stop::StopBook
+pub fn nanobook::stop::StopBook::default() -> nanobook::stop::StopBook
+impl core::fmt::Debug for nanobook::stop::StopBook
+pub fn nanobook::stop::StopBook::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for nanobook::stop::StopBook
+impl core::marker::Send for nanobook::stop::StopBook
+impl core::marker::Sync for nanobook::stop::StopBook
+impl core::marker::Unpin for nanobook::stop::StopBook
+impl core::marker::UnsafeUnpin for nanobook::stop::StopBook
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::stop::StopBook
+impl core::panic::unwind_safe::UnwindSafe for nanobook::stop::StopBook
 pub struct nanobook::StopOrder
 pub nanobook::StopOrder::id: nanobook::OrderId
 pub nanobook::StopOrder::limit_price: core::option::Option<nanobook::Price>
@@ -626,9 +1873,39 @@ pub nanobook::StopOrder::time_in_force: nanobook::TimeInForce
 pub nanobook::StopOrder::timestamp: nanobook::Timestamp
 pub nanobook::StopOrder::trail_method: core::option::Option<nanobook::stop::TrailMethod>
 pub nanobook::StopOrder::watermark: core::option::Option<nanobook::Price>
+impl core::clone::Clone for nanobook::stop::StopOrder
+pub fn nanobook::stop::StopOrder::clone(&self) -> nanobook::stop::StopOrder
+impl core::fmt::Debug for nanobook::stop::StopOrder
+pub fn nanobook::stop::StopOrder::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for nanobook::stop::StopOrder
+pub fn nanobook::stop::StopOrder::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::stop::StopOrder
+pub fn nanobook::stop::StopOrder::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::stop::StopOrder
+impl core::marker::Send for nanobook::stop::StopOrder
+impl core::marker::Sync for nanobook::stop::StopOrder
+impl core::marker::Unpin for nanobook::stop::StopOrder
+impl core::marker::UnsafeUnpin for nanobook::stop::StopOrder
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::stop::StopOrder
+impl core::panic::unwind_safe::UnwindSafe for nanobook::stop::StopOrder
 pub struct nanobook::StopSubmitResult
 pub nanobook::StopSubmitResult::order_id: nanobook::OrderId
 pub nanobook::StopSubmitResult::status: nanobook::stop::StopStatus
+impl core::clone::Clone for nanobook::StopSubmitResult
+pub fn nanobook::StopSubmitResult::clone(&self) -> nanobook::StopSubmitResult
+impl core::fmt::Debug for nanobook::StopSubmitResult
+pub fn nanobook::StopSubmitResult::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for nanobook::StopSubmitResult
+pub fn nanobook::StopSubmitResult::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::StopSubmitResult
+pub fn nanobook::StopSubmitResult::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::StopSubmitResult
+impl core::marker::Send for nanobook::StopSubmitResult
+impl core::marker::Sync for nanobook::StopSubmitResult
+impl core::marker::Unpin for nanobook::StopSubmitResult
+impl core::marker::UnsafeUnpin for nanobook::StopSubmitResult
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::StopSubmitResult
+impl core::panic::unwind_safe::UnwindSafe for nanobook::StopSubmitResult
 pub struct nanobook::SubmitResult
 pub nanobook::SubmitResult::cancelled_quantity: nanobook::Quantity
 pub nanobook::SubmitResult::filled_quantity: nanobook::Quantity
@@ -640,22 +1917,57 @@ impl nanobook::SubmitResult
 pub fn nanobook::SubmitResult::has_trades(&self) -> bool
 pub fn nanobook::SubmitResult::is_fully_filled(&self) -> bool
 pub fn nanobook::SubmitResult::is_resting(&self) -> bool
+impl core::clone::Clone for nanobook::SubmitResult
+pub fn nanobook::SubmitResult::clone(&self) -> nanobook::SubmitResult
+impl core::fmt::Debug for nanobook::SubmitResult
+pub fn nanobook::SubmitResult::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for nanobook::SubmitResult
+pub fn nanobook::SubmitResult::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::SubmitResult
+pub fn nanobook::SubmitResult::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::SubmitResult
+impl core::marker::Send for nanobook::SubmitResult
+impl core::marker::Sync for nanobook::SubmitResult
+impl core::marker::Unpin for nanobook::SubmitResult
+impl core::marker::UnsafeUnpin for nanobook::SubmitResult
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::SubmitResult
+impl core::panic::unwind_safe::UnwindSafe for nanobook::SubmitResult
 pub struct nanobook::Symbol
 impl nanobook::Symbol
 pub fn nanobook::Symbol::as_str(&self) -> &str
-pub fn nanobook::Symbol::from_str_truncated(s: &str) -> Self
-pub fn nanobook::Symbol::new(s: &str) -> Self
-pub fn nanobook::Symbol::try_new(s: &str) -> core::option::Option<Self>
+pub fn nanobook::Symbol::from_str_truncated(&str) -> Self
+pub fn nanobook::Symbol::new(&str) -> Self
+pub fn nanobook::Symbol::try_new(&str) -> core::option::Option<Self>
+impl core::clone::Clone for nanobook::Symbol
+pub fn nanobook::Symbol::clone(&self) -> nanobook::Symbol
+impl core::cmp::Eq for nanobook::Symbol
+impl core::cmp::Ord for nanobook::Symbol
+pub fn nanobook::Symbol::cmp(&self, &nanobook::Symbol) -> core::cmp::Ordering
+impl core::cmp::PartialEq for nanobook::Symbol
+pub fn nanobook::Symbol::eq(&self, &nanobook::Symbol) -> bool
+impl core::cmp::PartialOrd for nanobook::Symbol
+pub fn nanobook::Symbol::partial_cmp(&self, &nanobook::Symbol) -> core::option::Option<core::cmp::Ordering>
 impl core::convert::AsRef<str> for nanobook::Symbol
 pub fn nanobook::Symbol::as_ref(&self) -> &str
 impl core::fmt::Debug for nanobook::Symbol
-pub fn nanobook::Symbol::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn nanobook::Symbol::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for nanobook::Symbol
-pub fn nanobook::Symbol::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn nanobook::Symbol::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for nanobook::Symbol
+pub fn nanobook::Symbol::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for nanobook::Symbol
+impl core::marker::StructuralPartialEq for nanobook::Symbol
 impl serde_core::ser::Serialize for nanobook::Symbol
-pub fn nanobook::Symbol::serialize<S: serde_core::ser::Serializer>(&self, serializer: S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+pub fn nanobook::Symbol::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl<'de> serde_core::de::Deserialize<'de> for nanobook::Symbol
-pub fn nanobook::Symbol::deserialize<D: serde_core::de::Deserializer<'de>>(deserializer: D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
+pub fn nanobook::Symbol::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
+impl core::marker::Freeze for nanobook::Symbol
+impl core::marker::Send for nanobook::Symbol
+impl core::marker::Sync for nanobook::Symbol
+impl core::marker::Unpin for nanobook::Symbol
+impl core::marker::UnsafeUnpin for nanobook::Symbol
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::Symbol
+impl core::panic::unwind_safe::UnwindSafe for nanobook::Symbol
 pub struct nanobook::Trade
 pub nanobook::Trade::aggressor_order_id: nanobook::OrderId
 pub nanobook::Trade::aggressor_side: nanobook::Side
@@ -665,14 +1977,57 @@ pub nanobook::Trade::price: nanobook::Price
 pub nanobook::Trade::quantity: nanobook::Quantity
 pub nanobook::Trade::timestamp: nanobook::Timestamp
 impl nanobook::Trade
-pub fn nanobook::Trade::new(id: nanobook::TradeId, price: nanobook::Price, quantity: nanobook::Quantity, aggressor_order_id: nanobook::OrderId, passive_order_id: nanobook::OrderId, aggressor_side: nanobook::Side, timestamp: nanobook::Timestamp) -> Self
+pub fn nanobook::Trade::new(nanobook::TradeId, nanobook::Price, nanobook::Quantity, nanobook::OrderId, nanobook::OrderId, nanobook::Side, nanobook::Timestamp) -> Self
 pub fn nanobook::Trade::notional(&self) -> core::result::Result<i64, nanobook::ValidationError>
 pub fn nanobook::Trade::passive_side(&self) -> nanobook::Side
-pub fn nanobook::Trade::vwap(trades: &[nanobook::Trade]) -> core::option::Option<nanobook::Price>
+pub fn nanobook::Trade::vwap(&[nanobook::Trade]) -> core::option::Option<nanobook::Price>
+impl core::clone::Clone for nanobook::Trade
+pub fn nanobook::Trade::clone(&self) -> nanobook::Trade
+impl core::cmp::Eq for nanobook::Trade
+impl core::cmp::PartialEq for nanobook::Trade
+pub fn nanobook::Trade::eq(&self, &nanobook::Trade) -> bool
+impl core::fmt::Debug for nanobook::Trade
+pub fn nanobook::Trade::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for nanobook::Trade
-pub fn nanobook::Trade::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn nanobook::Trade::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for nanobook::Trade
+impl serde_core::ser::Serialize for nanobook::Trade
+pub fn nanobook::Trade::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::Trade
+pub fn nanobook::Trade::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::Trade
+impl core::marker::Send for nanobook::Trade
+impl core::marker::Sync for nanobook::Trade
+impl core::marker::Unpin for nanobook::Trade
+impl core::marker::UnsafeUnpin for nanobook::Trade
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::Trade
+impl core::panic::unwind_safe::UnwindSafe for nanobook::Trade
 pub struct nanobook::TradeId(pub u64)
+impl core::clone::Clone for nanobook::TradeId
+pub fn nanobook::TradeId::clone(&self) -> nanobook::TradeId
+impl core::cmp::Eq for nanobook::TradeId
+impl core::cmp::PartialEq for nanobook::TradeId
+pub fn nanobook::TradeId::eq(&self, &nanobook::TradeId) -> bool
+impl core::default::Default for nanobook::TradeId
+pub fn nanobook::TradeId::default() -> nanobook::TradeId
+impl core::fmt::Debug for nanobook::TradeId
+pub fn nanobook::TradeId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for nanobook::TradeId
-pub fn nanobook::TradeId::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn nanobook::TradeId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for nanobook::TradeId
+pub fn nanobook::TradeId::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for nanobook::TradeId
+impl core::marker::StructuralPartialEq for nanobook::TradeId
+impl serde_core::ser::Serialize for nanobook::TradeId
+pub fn nanobook::TradeId::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::TradeId
+pub fn nanobook::TradeId::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::TradeId
+impl core::marker::Send for nanobook::TradeId
+impl core::marker::Sync for nanobook::TradeId
+impl core::marker::Unpin for nanobook::TradeId
+impl core::marker::UnsafeUnpin for nanobook::TradeId
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::TradeId
+impl core::panic::unwind_safe::UnwindSafe for nanobook::TradeId
 pub type nanobook::Quantity = u64
 pub type nanobook::Timestamp = u64

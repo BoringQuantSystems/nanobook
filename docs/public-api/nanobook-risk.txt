@@ -1,6 +1,6 @@
 pub mod nanobook_risk
 pub mod nanobook_risk::checks
-pub fn nanobook_risk::checks::check_batch(config: &nanobook_risk::config::RiskConfig, orders: &[(nanobook::types::Symbol, nanobook_broker::types::BrokerSide, u64, i64)], account: &nanobook_broker::types::Account, current_positions: &[(nanobook::types::Symbol, i64)], target_weights: &[(nanobook::types::Symbol, f64)]) -> nanobook_risk::report::RiskReport
+pub fn nanobook_risk::checks::check_batch(&nanobook_risk::config::RiskConfig, &[(nanobook::types::Symbol, nanobook_broker::types::BrokerSide, u64, i64)], &nanobook_broker::types::Account, &[(nanobook::types::Symbol, i64)], &[(nanobook::types::Symbol, f64)]) -> nanobook_risk::report::RiskReport
 pub mod nanobook_risk::config
 pub struct nanobook_risk::config::RiskConfig
 pub nanobook_risk::config::RiskConfig::allow_short: bool
@@ -14,47 +14,165 @@ pub nanobook_risk::config::RiskConfig::max_trade_usd: f64
 pub nanobook_risk::config::RiskConfig::min_trade_usd: f64
 impl nanobook_risk::config::RiskConfig
 pub fn nanobook_risk::config::RiskConfig::validate(&self) -> core::result::Result<(), alloc::string::String>
+impl core::clone::Clone for nanobook_risk::config::RiskConfig
+pub fn nanobook_risk::config::RiskConfig::clone(&self) -> nanobook_risk::config::RiskConfig
 impl core::default::Default for nanobook_risk::config::RiskConfig
 pub fn nanobook_risk::config::RiskConfig::default() -> Self
+impl core::fmt::Debug for nanobook_risk::config::RiskConfig
+pub fn nanobook_risk::config::RiskConfig::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'de> serde_core::de::Deserialize<'de> for nanobook_risk::config::RiskConfig
+pub fn nanobook_risk::config::RiskConfig::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook_risk::config::RiskConfig
+impl core::marker::Send for nanobook_risk::config::RiskConfig
+impl core::marker::Sync for nanobook_risk::config::RiskConfig
+impl core::marker::Unpin for nanobook_risk::config::RiskConfig
+impl core::marker::UnsafeUnpin for nanobook_risk::config::RiskConfig
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook_risk::config::RiskConfig
+impl core::panic::unwind_safe::UnwindSafe for nanobook_risk::config::RiskConfig
 pub mod nanobook_risk::error
 pub enum nanobook_risk::error::RiskError
 pub nanobook_risk::error::RiskError::InvalidConfig(alloc::string::String)
+impl core::clone::Clone for nanobook_risk::error::RiskError
+pub fn nanobook_risk::error::RiskError::clone(&self) -> nanobook_risk::error::RiskError
+impl core::cmp::Eq for nanobook_risk::error::RiskError
+impl core::cmp::PartialEq for nanobook_risk::error::RiskError
+pub fn nanobook_risk::error::RiskError::eq(&self, &nanobook_risk::error::RiskError) -> bool
 impl core::error::Error for nanobook_risk::error::RiskError
+impl core::fmt::Debug for nanobook_risk::error::RiskError
+pub fn nanobook_risk::error::RiskError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for nanobook_risk::error::RiskError
-pub fn nanobook_risk::error::RiskError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn nanobook_risk::error::RiskError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for nanobook_risk::error::RiskError
+impl core::marker::Freeze for nanobook_risk::error::RiskError
+impl core::marker::Send for nanobook_risk::error::RiskError
+impl core::marker::Sync for nanobook_risk::error::RiskError
+impl core::marker::Unpin for nanobook_risk::error::RiskError
+impl core::marker::UnsafeUnpin for nanobook_risk::error::RiskError
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook_risk::error::RiskError
+impl core::panic::unwind_safe::UnwindSafe for nanobook_risk::error::RiskError
 pub mod nanobook_risk::report
 pub enum nanobook_risk::report::RiskStatus
 pub nanobook_risk::report::RiskStatus::Fail
 pub nanobook_risk::report::RiskStatus::Pass
 pub nanobook_risk::report::RiskStatus::Warn
+impl core::clone::Clone for nanobook_risk::report::RiskStatus
+pub fn nanobook_risk::report::RiskStatus::clone(&self) -> nanobook_risk::report::RiskStatus
+impl core::cmp::Eq for nanobook_risk::report::RiskStatus
+impl core::cmp::PartialEq for nanobook_risk::report::RiskStatus
+pub fn nanobook_risk::report::RiskStatus::eq(&self, &nanobook_risk::report::RiskStatus) -> bool
+impl core::fmt::Debug for nanobook_risk::report::RiskStatus
+pub fn nanobook_risk::report::RiskStatus::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for nanobook_risk::report::RiskStatus
-pub fn nanobook_risk::report::RiskStatus::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn nanobook_risk::report::RiskStatus::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for nanobook_risk::report::RiskStatus
+impl core::marker::StructuralPartialEq for nanobook_risk::report::RiskStatus
+impl serde_core::ser::Serialize for nanobook_risk::report::RiskStatus
+pub fn nanobook_risk::report::RiskStatus::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl core::marker::Freeze for nanobook_risk::report::RiskStatus
+impl core::marker::Send for nanobook_risk::report::RiskStatus
+impl core::marker::Sync for nanobook_risk::report::RiskStatus
+impl core::marker::Unpin for nanobook_risk::report::RiskStatus
+impl core::marker::UnsafeUnpin for nanobook_risk::report::RiskStatus
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook_risk::report::RiskStatus
+impl core::panic::unwind_safe::UnwindSafe for nanobook_risk::report::RiskStatus
 pub struct nanobook_risk::report::RiskCheck
 pub nanobook_risk::report::RiskCheck::detail: alloc::string::String
 pub nanobook_risk::report::RiskCheck::name: &'static str
 pub nanobook_risk::report::RiskCheck::status: nanobook_risk::report::RiskStatus
+impl core::clone::Clone for nanobook_risk::report::RiskCheck
+pub fn nanobook_risk::report::RiskCheck::clone(&self) -> nanobook_risk::report::RiskCheck
+impl core::fmt::Debug for nanobook_risk::report::RiskCheck
+pub fn nanobook_risk::report::RiskCheck::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for nanobook_risk::report::RiskCheck
+pub fn nanobook_risk::report::RiskCheck::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl core::marker::Freeze for nanobook_risk::report::RiskCheck
+impl core::marker::Send for nanobook_risk::report::RiskCheck
+impl core::marker::Sync for nanobook_risk::report::RiskCheck
+impl core::marker::Unpin for nanobook_risk::report::RiskCheck
+impl core::marker::UnsafeUnpin for nanobook_risk::report::RiskCheck
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook_risk::report::RiskCheck
+impl core::panic::unwind_safe::UnwindSafe for nanobook_risk::report::RiskCheck
 pub struct nanobook_risk::report::RiskReport
 pub nanobook_risk::report::RiskReport::checks: alloc::vec::Vec<nanobook_risk::report::RiskCheck>
 impl nanobook_risk::report::RiskReport
 pub fn nanobook_risk::report::RiskReport::has_failures(&self) -> bool
 pub fn nanobook_risk::report::RiskReport::has_warnings(&self) -> bool
+impl core::clone::Clone for nanobook_risk::report::RiskReport
+pub fn nanobook_risk::report::RiskReport::clone(&self) -> nanobook_risk::report::RiskReport
+impl core::fmt::Debug for nanobook_risk::report::RiskReport
+pub fn nanobook_risk::report::RiskReport::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for nanobook_risk::report::RiskReport
-pub fn nanobook_risk::report::RiskReport::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn nanobook_risk::report::RiskReport::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for nanobook_risk::report::RiskReport
+pub fn nanobook_risk::report::RiskReport::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl core::marker::Freeze for nanobook_risk::report::RiskReport
+impl core::marker::Send for nanobook_risk::report::RiskReport
+impl core::marker::Sync for nanobook_risk::report::RiskReport
+impl core::marker::Unpin for nanobook_risk::report::RiskReport
+impl core::marker::UnsafeUnpin for nanobook_risk::report::RiskReport
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook_risk::report::RiskReport
+impl core::panic::unwind_safe::UnwindSafe for nanobook_risk::report::RiskReport
 pub enum nanobook_risk::RiskError
 pub nanobook_risk::RiskError::InvalidConfig(alloc::string::String)
+impl core::clone::Clone for nanobook_risk::error::RiskError
+pub fn nanobook_risk::error::RiskError::clone(&self) -> nanobook_risk::error::RiskError
+impl core::cmp::Eq for nanobook_risk::error::RiskError
+impl core::cmp::PartialEq for nanobook_risk::error::RiskError
+pub fn nanobook_risk::error::RiskError::eq(&self, &nanobook_risk::error::RiskError) -> bool
 impl core::error::Error for nanobook_risk::error::RiskError
+impl core::fmt::Debug for nanobook_risk::error::RiskError
+pub fn nanobook_risk::error::RiskError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for nanobook_risk::error::RiskError
-pub fn nanobook_risk::error::RiskError::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn nanobook_risk::error::RiskError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for nanobook_risk::error::RiskError
+impl core::marker::Freeze for nanobook_risk::error::RiskError
+impl core::marker::Send for nanobook_risk::error::RiskError
+impl core::marker::Sync for nanobook_risk::error::RiskError
+impl core::marker::Unpin for nanobook_risk::error::RiskError
+impl core::marker::UnsafeUnpin for nanobook_risk::error::RiskError
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook_risk::error::RiskError
+impl core::panic::unwind_safe::UnwindSafe for nanobook_risk::error::RiskError
 pub enum nanobook_risk::RiskStatus
 pub nanobook_risk::RiskStatus::Fail
 pub nanobook_risk::RiskStatus::Pass
 pub nanobook_risk::RiskStatus::Warn
+impl core::clone::Clone for nanobook_risk::report::RiskStatus
+pub fn nanobook_risk::report::RiskStatus::clone(&self) -> nanobook_risk::report::RiskStatus
+impl core::cmp::Eq for nanobook_risk::report::RiskStatus
+impl core::cmp::PartialEq for nanobook_risk::report::RiskStatus
+pub fn nanobook_risk::report::RiskStatus::eq(&self, &nanobook_risk::report::RiskStatus) -> bool
+impl core::fmt::Debug for nanobook_risk::report::RiskStatus
+pub fn nanobook_risk::report::RiskStatus::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for nanobook_risk::report::RiskStatus
-pub fn nanobook_risk::report::RiskStatus::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn nanobook_risk::report::RiskStatus::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for nanobook_risk::report::RiskStatus
+impl core::marker::StructuralPartialEq for nanobook_risk::report::RiskStatus
+impl serde_core::ser::Serialize for nanobook_risk::report::RiskStatus
+pub fn nanobook_risk::report::RiskStatus::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl core::marker::Freeze for nanobook_risk::report::RiskStatus
+impl core::marker::Send for nanobook_risk::report::RiskStatus
+impl core::marker::Sync for nanobook_risk::report::RiskStatus
+impl core::marker::Unpin for nanobook_risk::report::RiskStatus
+impl core::marker::UnsafeUnpin for nanobook_risk::report::RiskStatus
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook_risk::report::RiskStatus
+impl core::panic::unwind_safe::UnwindSafe for nanobook_risk::report::RiskStatus
 pub struct nanobook_risk::RiskCheck
 pub nanobook_risk::RiskCheck::detail: alloc::string::String
 pub nanobook_risk::RiskCheck::name: &'static str
 pub nanobook_risk::RiskCheck::status: nanobook_risk::report::RiskStatus
+impl core::clone::Clone for nanobook_risk::report::RiskCheck
+pub fn nanobook_risk::report::RiskCheck::clone(&self) -> nanobook_risk::report::RiskCheck
+impl core::fmt::Debug for nanobook_risk::report::RiskCheck
+pub fn nanobook_risk::report::RiskCheck::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for nanobook_risk::report::RiskCheck
+pub fn nanobook_risk::report::RiskCheck::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl core::marker::Freeze for nanobook_risk::report::RiskCheck
+impl core::marker::Send for nanobook_risk::report::RiskCheck
+impl core::marker::Sync for nanobook_risk::report::RiskCheck
+impl core::marker::Unpin for nanobook_risk::report::RiskCheck
+impl core::marker::UnsafeUnpin for nanobook_risk::report::RiskCheck
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook_risk::report::RiskCheck
+impl core::panic::unwind_safe::UnwindSafe for nanobook_risk::report::RiskCheck
 pub struct nanobook_risk::RiskConfig
 pub nanobook_risk::RiskConfig::allow_short: bool
 pub nanobook_risk::RiskConfig::max_batch_value_cents: i64
@@ -67,18 +185,55 @@ pub nanobook_risk::RiskConfig::max_trade_usd: f64
 pub nanobook_risk::RiskConfig::min_trade_usd: f64
 impl nanobook_risk::config::RiskConfig
 pub fn nanobook_risk::config::RiskConfig::validate(&self) -> core::result::Result<(), alloc::string::String>
+impl core::clone::Clone for nanobook_risk::config::RiskConfig
+pub fn nanobook_risk::config::RiskConfig::clone(&self) -> nanobook_risk::config::RiskConfig
 impl core::default::Default for nanobook_risk::config::RiskConfig
 pub fn nanobook_risk::config::RiskConfig::default() -> Self
+impl core::fmt::Debug for nanobook_risk::config::RiskConfig
+pub fn nanobook_risk::config::RiskConfig::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'de> serde_core::de::Deserialize<'de> for nanobook_risk::config::RiskConfig
+pub fn nanobook_risk::config::RiskConfig::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook_risk::config::RiskConfig
+impl core::marker::Send for nanobook_risk::config::RiskConfig
+impl core::marker::Sync for nanobook_risk::config::RiskConfig
+impl core::marker::Unpin for nanobook_risk::config::RiskConfig
+impl core::marker::UnsafeUnpin for nanobook_risk::config::RiskConfig
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook_risk::config::RiskConfig
+impl core::panic::unwind_safe::UnwindSafe for nanobook_risk::config::RiskConfig
 pub struct nanobook_risk::RiskEngine
 impl nanobook_risk::RiskEngine
-pub fn nanobook_risk::RiskEngine::check_batch(&self, orders: &[(nanobook::types::Symbol, nanobook_broker::types::BrokerSide, u64, i64)], account: &nanobook_broker::types::Account, current_positions: &[(nanobook::types::Symbol, i64)], target_weights: &[(nanobook::types::Symbol, f64)]) -> nanobook_risk::report::RiskReport
-pub fn nanobook_risk::RiskEngine::check_order(&self, symbol: &nanobook::types::Symbol, side: nanobook_broker::types::BrokerSide, quantity: u64, price_cents: i64, account: &nanobook_broker::types::Account, current_positions: &[(nanobook::types::Symbol, i64)]) -> nanobook_risk::report::RiskReport
+pub fn nanobook_risk::RiskEngine::check_batch(&self, &[(nanobook::types::Symbol, nanobook_broker::types::BrokerSide, u64, i64)], &nanobook_broker::types::Account, &[(nanobook::types::Symbol, i64)], &[(nanobook::types::Symbol, f64)]) -> nanobook_risk::report::RiskReport
+pub fn nanobook_risk::RiskEngine::check_order(&self, &nanobook::types::Symbol, nanobook_broker::types::BrokerSide, u64, i64, &nanobook_broker::types::Account, &[(nanobook::types::Symbol, i64)]) -> nanobook_risk::report::RiskReport
 pub fn nanobook_risk::RiskEngine::config(&self) -> &nanobook_risk::config::RiskConfig
-pub fn nanobook_risk::RiskEngine::new(config: nanobook_risk::config::RiskConfig) -> core::result::Result<Self, nanobook_risk::error::RiskError>
+pub fn nanobook_risk::RiskEngine::new(nanobook_risk::config::RiskConfig) -> core::result::Result<Self, nanobook_risk::error::RiskError>
+impl core::clone::Clone for nanobook_risk::RiskEngine
+pub fn nanobook_risk::RiskEngine::clone(&self) -> nanobook_risk::RiskEngine
+impl core::fmt::Debug for nanobook_risk::RiskEngine
+pub fn nanobook_risk::RiskEngine::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for nanobook_risk::RiskEngine
+impl core::marker::Send for nanobook_risk::RiskEngine
+impl core::marker::Sync for nanobook_risk::RiskEngine
+impl core::marker::Unpin for nanobook_risk::RiskEngine
+impl core::marker::UnsafeUnpin for nanobook_risk::RiskEngine
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook_risk::RiskEngine
+impl core::panic::unwind_safe::UnwindSafe for nanobook_risk::RiskEngine
 pub struct nanobook_risk::RiskReport
 pub nanobook_risk::RiskReport::checks: alloc::vec::Vec<nanobook_risk::report::RiskCheck>
 impl nanobook_risk::report::RiskReport
 pub fn nanobook_risk::report::RiskReport::has_failures(&self) -> bool
 pub fn nanobook_risk::report::RiskReport::has_warnings(&self) -> bool
+impl core::clone::Clone for nanobook_risk::report::RiskReport
+pub fn nanobook_risk::report::RiskReport::clone(&self) -> nanobook_risk::report::RiskReport
+impl core::fmt::Debug for nanobook_risk::report::RiskReport
+pub fn nanobook_risk::report::RiskReport::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for nanobook_risk::report::RiskReport
-pub fn nanobook_risk::report::RiskReport::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn nanobook_risk::report::RiskReport::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for nanobook_risk::report::RiskReport
+pub fn nanobook_risk::report::RiskReport::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl core::marker::Freeze for nanobook_risk::report::RiskReport
+impl core::marker::Send for nanobook_risk::report::RiskReport
+impl core::marker::Sync for nanobook_risk::report::RiskReport
+impl core::marker::Unpin for nanobook_risk::report::RiskReport
+impl core::marker::UnsafeUnpin for nanobook_risk::report::RiskReport
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook_risk::report::RiskReport
+impl core::panic::unwind_safe::UnwindSafe for nanobook_risk::report::RiskReport
