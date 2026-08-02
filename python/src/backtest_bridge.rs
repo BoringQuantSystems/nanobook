@@ -148,12 +148,20 @@ fn parse_bar_prices_schedule(
 ///         (identical to pre-fractional-share behavior). Useful values:
 ///         1_000_000 = whole shares, 1_000 = 0.001 share (Alpaca minimum),
 ///         100 = 0.0001 share (IBKR minimum), 1 = 0.000001 share (continuous).
+///     min_order_value: Optional minimum order notional in cents. Orders below
+///         this are skipped. Defaults to ``None`` (no minimum).
+///     no_trade_band_bps: Optional no-trade band, in basis points of equity. A
+///         position is left alone until it drifts from target by more than
+///         this many bps. Defaults to ``None`` (no band).
+///     max_trades_per_rebalance: Optional hard cap on orders placed at one
+///         rebalance. When the cap binds, the orders furthest from target
+///         (largest absolute drift) are kept. Defaults to ``None`` (no cap).
 ///
 /// Returns a dict with keys:
 ///     ``returns``, ``equity_curve``, ``final_cash``, ``metrics``, ``holdings``,
 ///     ``symbol_returns``, ``stop_events``.
 #[pyfunction]
-#[pyo3(signature = (weight_schedule, price_schedule, initial_cash, cost_model, fill_policy, periods_per_year=252.0, risk_free=0.0, stop_cfg=None, quantity_step=None))]
+#[pyo3(signature = (weight_schedule, price_schedule, initial_cash, cost_model, fill_policy, periods_per_year=252.0, risk_free=0.0, stop_cfg=None, quantity_step=None, min_order_value=None, no_trade_band_bps=None, max_trades_per_rebalance=None))]
 #[allow(clippy::too_many_arguments)]
 pub fn backtest_weights(
     py: Python<'_>,
@@ -166,6 +174,9 @@ pub fn backtest_weights(
     risk_free: f64,
     stop_cfg: Option<Bound<'_, PyDict>>,
     quantity_step: Option<i64>,
+    min_order_value: Option<i64>,
+    no_trade_band_bps: Option<f64>,
+    max_trades_per_rebalance: Option<usize>,
 ) -> PyResult<Py<PyAny>> {
     // Convert Python types to Rust types.
     let rust_weights = parse_symbol_schedule(&weight_schedule)?;
@@ -178,10 +189,27 @@ pub fn backtest_weights(
             "quantity_step must be positive, got {step}"
         )));
     }
+    if let Some(value) = min_order_value
+        && value < 0
+    {
+        return Err(PyValueError::new_err(format!(
+            "min_order_value must be non-negative, got {value}"
+        )));
+    }
+    if let Some(bps) = no_trade_band_bps
+        && (!bps.is_finite() || bps < 0.0)
+    {
+        return Err(PyValueError::new_err(format!(
+            "no_trade_band_bps must be finite and non-negative, got {bps}"
+        )));
+    }
 
     let options = BacktestBridgeOptions {
         stop_cfg: parse_stop_cfg(stop_cfg)?,
         quantity_step,
+        min_order_value,
+        no_trade_band_bps,
+        max_trades_per_rebalance,
     };
 
     // Release GIL during computation.
@@ -369,7 +397,7 @@ pub fn py_tear_sheet(
 
 /// Backward-compatible alias for older callers using ``py_backtest_weights``.
 #[pyfunction]
-#[pyo3(signature = (weight_schedule, price_schedule, initial_cash, cost_model, fill_policy, periods_per_year=252.0, risk_free=0.0, stop_cfg=None, quantity_step=None))]
+#[pyo3(signature = (weight_schedule, price_schedule, initial_cash, cost_model, fill_policy, periods_per_year=252.0, risk_free=0.0, stop_cfg=None, quantity_step=None, min_order_value=None, no_trade_band_bps=None, max_trades_per_rebalance=None))]
 #[allow(clippy::too_many_arguments)]
 pub fn py_backtest_weights(
     py: Python<'_>,
@@ -382,6 +410,9 @@ pub fn py_backtest_weights(
     risk_free: f64,
     stop_cfg: Option<Bound<'_, PyDict>>,
     quantity_step: Option<i64>,
+    min_order_value: Option<i64>,
+    no_trade_band_bps: Option<f64>,
+    max_trades_per_rebalance: Option<usize>,
 ) -> PyResult<Py<PyAny>> {
     backtest_weights(
         py,
@@ -394,6 +425,9 @@ pub fn py_backtest_weights(
         risk_free,
         stop_cfg,
         quantity_step,
+        min_order_value,
+        no_trade_band_bps,
+        max_trades_per_rebalance,
     )
 }
 

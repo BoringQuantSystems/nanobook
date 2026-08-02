@@ -107,6 +107,21 @@ pub struct Portfolio {
     /// (whole shares), which reproduces pre-fractional-share behaviour exactly.
     #[cfg_attr(feature = "serde", serde(default = "default_quantity_step"))]
     quantity_step: i64,
+    /// Minimum order notional (cents). Orders below this are skipped instead
+    /// of placed. Defaults to `0` (no minimum — every non-zero order is placed).
+    #[cfg_attr(feature = "serde", serde(default))]
+    min_order_value: i64,
+    /// No-trade band, in basis points of equity. A position is left alone
+    /// until its value drifts from its target by more than this many bps.
+    /// Defaults to `0.0` (any non-zero drift is corrected).
+    #[cfg_attr(feature = "serde", serde(default))]
+    no_trade_band_bps: f64,
+    /// Hard cap on the number of orders placed in a single rebalance. When the
+    /// cap binds, the orders furthest from target (largest absolute drift) are
+    /// kept and the rest are dropped, ties broken by symbol. Defaults to `None`
+    /// (no cap).
+    #[cfg_attr(feature = "serde", serde(default))]
+    max_trades_per_rebalance: Option<usize>,
 }
 
 /// Serde default for `Portfolio::quantity_step`: whole shares, so JSON saved
@@ -138,6 +153,9 @@ impl Portfolio {
             equity_curve: vec![initial_cash],
             prev_equity: initial_cash,
             quantity_step: Shares::SCALE,
+            min_order_value: 0,
+            no_trade_band_bps: 0.0,
+            max_trades_per_rebalance: None,
         }
     }
 
@@ -162,6 +180,49 @@ impl Portfolio {
     #[inline]
     pub fn quantity_step(&self) -> i64 {
         self.quantity_step
+    }
+
+    /// Set the minimum order notional (cents). Orders below this are skipped
+    /// instead of placed. Must be non-negative; values `< 0` are a programming
+    /// error (use `debug_assert`).
+    pub fn set_min_order_value(&mut self, value: i64) {
+        debug_assert!(value >= 0, "min_order_value must be non-negative, got {value}");
+        self.min_order_value = value;
+    }
+
+    /// The current minimum order notional (cents).
+    #[inline]
+    pub fn min_order_value(&self) -> i64 {
+        self.min_order_value
+    }
+
+    /// Set the no-trade band, in basis points of equity. Must be non-negative
+    /// and finite; other values are a programming error (use `debug_assert`).
+    pub fn set_no_trade_band_bps(&mut self, bps: f64) {
+        debug_assert!(
+            bps.is_finite() && bps >= 0.0,
+            "no_trade_band_bps must be finite and non-negative, got {bps}"
+        );
+        self.no_trade_band_bps = bps;
+    }
+
+    /// The current no-trade band, in basis points of equity.
+    #[inline]
+    pub fn no_trade_band_bps(&self) -> f64 {
+        self.no_trade_band_bps
+    }
+
+    /// Set the hard cap on orders placed per rebalance. `None` removes the cap.
+    /// When the cap binds, the orders furthest from target (largest absolute
+    /// drift) are kept.
+    pub fn set_max_trades_per_rebalance(&mut self, cap: Option<usize>) {
+        self.max_trades_per_rebalance = cap;
+    }
+
+    /// The current cap on orders placed per rebalance, if any.
+    #[inline]
+    pub fn max_trades_per_rebalance(&self) -> Option<usize> {
+        self.max_trades_per_rebalance
     }
 
     // === Queries ===
@@ -243,7 +304,13 @@ impl Portfolio {
 
         let target_map: FxHashMap<Symbol, f64> = targets.iter().copied().collect();
 
-        // Close positions not in targets
+        let mut planned: Vec<PlannedOrder> = Vec::new();
+
+        // Close positions not in targets. This mirrors the pre-existing
+        // behaviour exactly: a full close ignores `quantity_step` (it always
+        // liquidates the whole position) and does not require a positive
+        // price (a price of `<= 0` can still close a position, same as
+        // before these constraints existed).
         let to_close: Vec<Symbol> = self
             .positions
             .keys()
@@ -257,7 +324,23 @@ impl Portfolio {
                     Some(pos) if !pos.is_flat() => -pos.quantity,
                     _ => continue,
                 };
-                self.execute_fill(sym, qty, price);
+
+                let current_value = self
+                    .positions
+                    .get(&sym)
+                    .map(|p| p.market_value(price))
+                    .unwrap_or(0);
+                let drift_bps = drift_bps_of(current_value, equity);
+                if self.no_trade_band_bps > 0.0 && drift_bps <= self.no_trade_band_bps {
+                    continue;
+                }
+
+                let notional = notional_of(qty, price);
+                if self.min_order_value > 0 && notional < self.min_order_value {
+                    continue;
+                }
+
+                planned.push(PlannedOrder { symbol: sym, qty, price, drift_bps });
             }
         }
 
@@ -277,12 +360,43 @@ impl Portfolio {
             let target_value = (equity as f64 * target_weight) as i64;
             let diff_value = target_value.saturating_sub(current_value);
 
+            let drift_bps = drift_bps_of(diff_value, equity);
+            if self.no_trade_band_bps > 0.0 && drift_bps <= self.no_trade_band_bps {
+                continue;
+            }
+
             // Convert value difference to shares, rounded to a multiple of
             // quantity_step and truncated toward zero.
             let diff_qty = size_qty(diff_value, price, self.quantity_step);
-            if !diff_qty.is_zero() {
-                self.execute_fill(sym, diff_qty, price);
+            if diff_qty.is_zero() {
+                continue;
             }
+
+            let notional = notional_of(diff_qty, price);
+            if self.min_order_value > 0 && notional < self.min_order_value {
+                continue;
+            }
+
+            planned.push(PlannedOrder { symbol: sym, qty: diff_qty, price, drift_bps });
+        }
+
+        // Enforce the trade-count cap: keep the orders furthest from target
+        // (largest absolute drift), dropping the rest. Ties broken by symbol
+        // so the result never depends on hash-map iteration order.
+        if let Some(cap) = self.max_trades_per_rebalance
+            && planned.len() > cap
+        {
+            planned.sort_by(|a, b| {
+                b.drift_bps
+                    .partial_cmp(&a.drift_bps)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.symbol.cmp(&b.symbol))
+            });
+            planned.truncate(cap);
+        }
+
+        for order in planned {
+            self.execute_fill(order.symbol, order.qty, order.price);
         }
     }
 
@@ -532,6 +646,33 @@ impl Portfolio {
         let cash_delta = cash_delta_i128.clamp(i64::MIN as i128, i64::MAX as i128) as i64;
         self.cash = self.cash.saturating_sub(cash_delta.saturating_add(cost));
     }
+}
+
+/// A candidate order queued during rebalancing, before the trade-count cap
+/// (if any) is applied.
+struct PlannedOrder {
+    symbol: Symbol,
+    qty: Shares,
+    price: i64,
+    /// Absolute drift from target, in basis points of equity. Used to rank
+    /// orders when `max_trades_per_rebalance` binds.
+    drift_bps: f64,
+}
+
+/// Notional value (cents) of a fill: `|qty| * price`, in [`Shares`] micro-share
+/// units. Uses an `i128` intermediate for the same overflow-safety reason as
+/// `execute_fill`.
+fn notional_of(qty: Shares, price: i64) -> i64 {
+    let notional_i128 =
+        (qty.raw().unsigned_abs() as i128) * (price.unsigned_abs() as i128) / (Shares::SCALE as i128);
+    notional_i128.clamp(0, i64::MAX as i128) as i64
+}
+
+/// Drift of a value difference (cents) from target, expressed in basis points
+/// of equity: `|value| / equity * 10_000`. `equity` must be positive (callers
+/// already return early when `equity <= 0`).
+fn drift_bps_of(value: i64, equity: i64) -> f64 {
+    (value.unsigned_abs() as f64 / equity as f64) * 10_000.0
 }
 
 /// Convert a target value difference (cents) at a given price (cents/share)
@@ -855,6 +996,288 @@ mod tests {
         let expected = pos.quantity.whole() as i128 * price as i128;
         assert_eq!(mv as i128, expected);
         assert!(mv > 0, "market value wrapped negative under overflow");
+    }
+
+    // === Execution constraints: min_order_value, no_trade_band_bps,
+    // === max_trades_per_rebalance ===
+
+    fn ten_symbols() -> Vec<Symbol> {
+        (0..10).map(|i| Symbol::new(&format!("S{i}"))).collect()
+    }
+
+    /// THE REGRESSION THIS SUITE MUST CATCH: constant target weights, flat
+    /// prices, a non-zero commission floor, and ZERO price drift must place
+    /// only the initial buy — one order per name — and nothing on any later
+    /// rebalance. Before `no_trade_band_bps` existed, the first rebalance's
+    /// commission lowered equity, which lowered every target's value, which
+    /// made every position look marginally over target on the next
+    /// rebalance, triggering a "correction" that cost more commission,
+    /// forever: 10 names x 36 rebalances placed 360 orders instead of 10.
+    ///
+    /// Checked at both whole-share and fractional (0.001-share) granularity,
+    /// since whole-share rounding used to hide the defect by accident (the
+    /// correction rounded to zero shares).
+    #[test]
+    fn constant_weights_flat_prices_place_only_initial_orders() {
+        let symbols = ten_symbols();
+        let weight = 0.1;
+        let price = 200_00; // $200, flat across all 36 rebalances
+        let targets: Vec<(Symbol, f64)> = symbols.iter().map(|s| (*s, weight)).collect();
+        let prices: Vec<(Symbol, i64)> = symbols.iter().map(|s| (*s, price)).collect();
+
+        // Two accounts: identical cost model, differing only in quantity_step
+        // (whole-share default vs. fractional).
+        let model = CostModel {
+            commission_bps: 0.0,
+            slippage_bps: 0.0,
+            min_commission: 35, // $0.35/fill, matching the operator's repro
+        };
+
+        for step in [Shares::SCALE, 1_000] {
+            let mut portfolio = Portfolio::with_quantity_step(10_000_00, model, step);
+            portfolio.set_no_trade_band_bps(1.0); // any non-zero band stops the loop
+
+            portfolio.rebalance_simple(&targets, &prices); // initial buy: 10 orders
+            let equity_after_first = portfolio.total_equity(&prices);
+            let cost_after_first = 10_000_00 - equity_after_first;
+            assert_eq!(
+                cost_after_first,
+                10 * 35,
+                "initial rebalance should place exactly 10 orders at $0.35 each, step={step}"
+            );
+
+            for _ in 0..35 {
+                portfolio.rebalance_simple(&targets, &prices);
+            }
+
+            let equity_final = portfolio.total_equity(&prices);
+            assert_eq!(
+                equity_final, equity_after_first,
+                "no further commission should be charged after the initial buy, step={step}"
+            );
+        }
+    }
+
+    /// Same setup with NO band set (default `0.0`): reproduces the defect
+    /// exactly as measured — 360 orders, $126 of commission on a $10,000
+    /// account — proving the band, not some other change, is what fixes it.
+    #[test]
+    fn constant_weights_without_band_reproduces_the_feedback_loop() {
+        let symbols = ten_symbols();
+        let weight = 0.1;
+        let price = 200_00;
+        let targets: Vec<(Symbol, f64)> = symbols.iter().map(|s| (*s, weight)).collect();
+        let prices: Vec<(Symbol, i64)> = symbols.iter().map(|s| (*s, price)).collect();
+
+        let model = CostModel {
+            commission_bps: 0.0,
+            slippage_bps: 0.0,
+            min_commission: 35,
+        };
+        let mut portfolio = Portfolio::with_quantity_step(10_000_00, model, 1_000);
+        // no_trade_band_bps left at its default (0.0) deliberately.
+
+        for _ in 0..36 {
+            portfolio.rebalance_simple(&targets, &prices);
+        }
+
+        let equity_final = portfolio.total_equity(&prices);
+        let total_cost = 10_000_00 - equity_final;
+        assert_eq!(
+            total_cost,
+            360 * 35,
+            "without a band, every rebalance re-corrects every position: 360 orders total"
+        );
+    }
+
+    // --- min_order_value ---
+
+    #[test]
+    fn min_order_value_skips_small_orders_and_places_large_ones() {
+        let big = Symbol::new("BIG");
+        let small = Symbol::new("SMALL");
+        let price = 100_00; // $100/share
+        let mut portfolio = Portfolio::new(1_000_00, CostModel::zero()); // $1,000
+        // A $500 threshold: BIG's target ($500) clears it, SMALL's ($5) doesn't.
+        portfolio.set_min_order_value(500_00);
+
+        let targets = [(big, 0.5), (small, 0.005)];
+        let prices = [(big, price), (small, price)];
+        portfolio.rebalance_simple(&targets, &prices);
+
+        // BIG: target_value = 500_00, price = 100_00 -> exactly 5 shares.
+        assert_eq!(
+            portfolio.position(&big).unwrap().quantity,
+            Shares::from_whole(5)
+        );
+        // SMALL: order notional (5_00) is below the 500_00 threshold, so no
+        // position is opened at all.
+        assert!(portfolio.position(&small).is_none_or(|p| p.is_flat()));
+    }
+
+    #[test]
+    fn min_order_value_default_zero_places_every_nonzero_order() {
+        let portfolio_default_step = Shares::SCALE;
+        let sym = Symbol::new("TINY");
+        let price = 1_00; // $1/share
+        let mut portfolio = Portfolio::with_quantity_step(10_00, CostModel::zero(), portfolio_default_step);
+        assert_eq!(portfolio.min_order_value(), 0);
+
+        portfolio.rebalance_simple(&[(sym, 0.5)], &[(sym, price)]);
+        assert!(!portfolio.position(&sym).unwrap().is_flat());
+    }
+
+    // --- no_trade_band_bps ---
+
+    #[test]
+    fn no_trade_band_leaves_small_drift_untouched_and_corrects_large_drift() {
+        let a = Symbol::new("A");
+        let b = Symbol::new("B");
+        let price = 100_00;
+        let mut portfolio = Portfolio::new(1_000_00, CostModel::zero()); // $1,000
+        portfolio.set_no_trade_band_bps(500.0); // 5% band
+
+        // Initial: both at 50%, 5 shares each ($500 / $100).
+        portfolio.rebalance_simple(&[(a, 0.5), (b, 0.5)], &[(a, price), (b, price)]);
+        assert_eq!(portfolio.position(&a).unwrap().quantity, Shares::from_whole(5));
+        assert_eq!(portfolio.position(&b).unwrap().quantity, Shares::from_whole(5));
+
+        // Nudge targets: A drifts by 2% (inside the 5% band) -> untouched.
+        // B drifts by 10% (outside the band) -> corrected to 6 shares ($600 / $100).
+        portfolio.rebalance_simple(&[(a, 0.52), (b, 0.60)], &[(a, price), (b, price)]);
+
+        assert_eq!(
+            portfolio.position(&a).unwrap().quantity,
+            Shares::from_whole(5),
+            "A's 2% drift is inside the 5% band and must not trade"
+        );
+        assert_eq!(
+            portfolio.position(&b).unwrap().quantity,
+            Shares::from_whole(6),
+            "B's 10% drift is outside the 5% band and must be corrected"
+        );
+    }
+
+    #[test]
+    fn no_trade_band_default_zero_corrects_any_drift() {
+        let sym = Symbol::new("A");
+        let price = 100_00;
+        // Fractional quantity_step so a small drift doesn't get masked by
+        // whole-share truncation (the band, not the step, is under test).
+        let mut portfolio = Portfolio::with_quantity_step(1_000_00, CostModel::zero(), 1_000);
+        assert_eq!(portfolio.no_trade_band_bps(), 0.0);
+
+        portfolio.rebalance_simple(&[(sym, 0.5)], &[(sym, price)]);
+        assert_eq!(portfolio.position(&sym).unwrap().quantity, Shares::from_whole(5));
+
+        // A tiny 0.1% nudge still trades at the default (no band).
+        portfolio.rebalance_simple(&[(sym, 0.501)], &[(sym, price)]);
+        assert_ne!(portfolio.position(&sym).unwrap().quantity, Shares::from_whole(5));
+    }
+
+    // --- max_trades_per_rebalance ---
+
+    /// With 10 positions all needing correction and a cap of 3, exactly 3
+    /// orders execute and they are the 3 whose drift from target is largest
+    /// — asserted by WHICH symbols traded, not just the count. Symbol S9 has
+    /// the largest drift, then S8, then S7; S0..S6 must be untouched.
+    #[test]
+    fn max_trades_per_rebalance_keeps_largest_drift_orders() {
+        let symbols = ten_symbols();
+        let price = 100_00;
+        let prices: Vec<(Symbol, i64)> = symbols.iter().map(|s| (*s, price)).collect();
+
+        // Initial: all equal-weighted at 10%, 1 share each. Fractional
+        // quantity_step (0.001 share) so the small drifts below don't
+        // truncate to zero shares and hide the ranking.
+        let equal_targets: Vec<(Symbol, f64)> = symbols.iter().map(|s| (*s, 0.1)).collect();
+        let mut portfolio = Portfolio::with_quantity_step(1_000_00, CostModel::zero(), 1_000); // $1,000
+        portfolio.rebalance_simple(&equal_targets, &prices);
+        for s in &symbols {
+            assert_eq!(portfolio.position(s).unwrap().quantity, Shares::from_whole(1));
+        }
+
+        // New targets: increasing drift by symbol index, S9 largest.
+        // weight_i = 0.10 + 0.01*(i+1), i.e. S0 -> 0.11 ... S9 -> 0.20.
+        let new_targets: Vec<(Symbol, f64)> = symbols
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (*s, 0.10 + 0.01 * (i as f64 + 1.0)))
+            .collect();
+
+        portfolio.set_max_trades_per_rebalance(Some(3));
+        portfolio.rebalance_simple(&new_targets, &prices);
+
+        let traded: Vec<&str> = symbols
+            .iter()
+            .filter(|s| portfolio.position(s).unwrap().quantity != Shares::from_whole(1))
+            .map(|s| s.as_str())
+            .collect();
+        let mut traded_sorted = traded.clone();
+        traded_sorted.sort();
+        assert_eq!(
+            traded_sorted,
+            vec!["S7", "S8", "S9"],
+            "only the 3 largest-drift symbols should have traded, got {traded:?}"
+        );
+    }
+
+    /// Default `max_trades_per_rebalance` (`None`) places every order that
+    /// clears the other constraints — no cap at all.
+    #[test]
+    fn max_trades_per_rebalance_default_none_places_all_orders() {
+        let symbols = ten_symbols();
+        let price = 100_00;
+        let targets: Vec<(Symbol, f64)> = symbols.iter().map(|s| (*s, 0.1)).collect();
+        let prices: Vec<(Symbol, i64)> = symbols.iter().map(|s| (*s, price)).collect();
+
+        let mut portfolio = Portfolio::new(1_000_00, CostModel::zero());
+        assert_eq!(portfolio.max_trades_per_rebalance(), None);
+        portfolio.rebalance_simple(&targets, &prices);
+
+        for s in &symbols {
+            assert!(!portfolio.position(s).unwrap().is_flat());
+        }
+    }
+
+    // --- determinism ---
+
+    /// The same inputs must produce the same orders every run: guards
+    /// against `FxHashMap` iteration order leaking into which positions get
+    /// dropped when the trade cap binds.
+    #[test]
+    fn rebalance_is_deterministic_across_repeated_runs() {
+        let symbols = ten_symbols();
+        let price = 100_00;
+        let prices: Vec<(Symbol, i64)> = symbols.iter().map(|s| (*s, price)).collect();
+        let equal_targets: Vec<(Symbol, f64)> = symbols.iter().map(|s| (*s, 0.1)).collect();
+        let new_targets: Vec<(Symbol, f64)> = symbols
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (*s, 0.10 + 0.01 * (i as f64 + 1.0)))
+            .collect();
+
+        fn run(
+            symbols: &[Symbol],
+            equal_targets: &[(Symbol, f64)],
+            new_targets: &[(Symbol, f64)],
+            prices: &[(Symbol, i64)],
+        ) -> Vec<Shares> {
+            let mut portfolio = Portfolio::with_quantity_step(1_000_00, CostModel::zero(), 1_000);
+            portfolio.rebalance_simple(equal_targets, prices);
+            portfolio.set_max_trades_per_rebalance(Some(3));
+            portfolio.rebalance_simple(new_targets, prices);
+            symbols
+                .iter()
+                .map(|s| portfolio.position(s).unwrap().quantity)
+                .collect()
+        }
+
+        let first = run(&symbols, &equal_targets, &new_targets, &prices);
+        for _ in 0..10 {
+            let repeat = run(&symbols, &equal_targets, &new_targets, &prices);
+            assert_eq!(first, repeat, "rebalance output must be deterministic");
+        }
     }
 }
 

@@ -54,6 +54,16 @@ pub struct BacktestBridgeOptions {
     /// callers are unaffected. Set e.g. `Some(1_000)` for Alpaca's 0.001-share
     /// minimum.
     pub quantity_step: Option<i64>,
+    /// Minimum order notional (cents). `None` keeps the default: `0`, i.e. no
+    /// minimum. See [`crate::portfolio::Portfolio::set_min_order_value`].
+    pub min_order_value: Option<i64>,
+    /// No-trade band, in basis points of equity. `None` keeps the default:
+    /// `0.0`, i.e. no band. See
+    /// [`crate::portfolio::Portfolio::set_no_trade_band_bps`].
+    pub no_trade_band_bps: Option<f64>,
+    /// Hard cap on orders placed per rebalance. `None` keeps the default: no
+    /// cap. See [`crate::portfolio::Portfolio::set_max_trades_per_rebalance`].
+    pub max_trades_per_rebalance: Option<usize>,
 }
 
 #[derive(Clone, Debug, Copy)]
@@ -190,6 +200,15 @@ pub fn backtest_weights_with_options(
     let mut portfolio = Portfolio::new(initial_cash_cents, cost_model);
     if let Some(step) = options.quantity_step {
         portfolio.set_quantity_step(step);
+    }
+    if let Some(value) = options.min_order_value {
+        portfolio.set_min_order_value(value);
+    }
+    if let Some(bps) = options.no_trade_band_bps {
+        portfolio.set_no_trade_band_bps(bps);
+    }
+    if options.max_trades_per_rebalance.is_some() {
+        portfolio.set_max_trades_per_rebalance(options.max_trades_per_rebalance);
     }
     let mut equity_curve = Vec::with_capacity(weight_schedule.len() + 1);
     equity_curve.push(initial_cash_cents);

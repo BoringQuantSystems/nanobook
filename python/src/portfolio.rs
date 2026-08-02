@@ -75,6 +75,18 @@ impl PyCostModel {
 ///         - ``100`` — 0.0001 share (IBKR's fractional minimum)
 ///         - ``1`` — 0.000001 share (effectively continuous)
 ///
+///     min_order_value: Optional minimum order notional in cents. An order
+///         whose notional is below this is skipped instead of placed.
+///         Defaults to ``0`` (no minimum).
+///     no_trade_band_bps: Optional no-trade band, in basis points of equity.
+///         A position is left alone until it drifts from its target weight
+///         by more than this many bps. Defaults to ``0.0`` (no band).
+///     max_trades_per_rebalance: Optional hard cap on the number of orders
+///         placed in a single rebalance. When the cap binds, the orders
+///         furthest from target (largest absolute drift) are kept and the
+///         rest are dropped, ties broken by symbol. Defaults to ``None``
+///         (no cap).
+///
 /// Example::
 ///
 ///     portfolio = Portfolio(1_000_000_00, CostModel.zero())
@@ -99,12 +111,30 @@ impl PyPortfolio {
 #[pymethods]
 impl PyPortfolio {
     #[new]
-    #[pyo3(signature = (initial_cash, cost_model, quantity_step=None))]
-    fn new(initial_cash: i64, cost_model: &PyCostModel, quantity_step: Option<i64>) -> PyResult<Self> {
+    #[pyo3(signature = (initial_cash, cost_model, quantity_step=None, min_order_value=None, no_trade_band_bps=None, max_trades_per_rebalance=None))]
+    fn new(
+        initial_cash: i64,
+        cost_model: &PyCostModel,
+        quantity_step: Option<i64>,
+        min_order_value: Option<i64>,
+        no_trade_band_bps: Option<f64>,
+        max_trades_per_rebalance: Option<usize>,
+    ) -> PyResult<Self> {
         let mut inner = Portfolio::new(initial_cash, cost_model.inner);
         if let Some(step) = quantity_step {
             validate_quantity_step(step)?;
             inner.set_quantity_step(step);
+        }
+        if let Some(value) = min_order_value {
+            validate_min_order_value(value)?;
+            inner.set_min_order_value(value);
+        }
+        if let Some(bps) = no_trade_band_bps {
+            validate_no_trade_band_bps(bps)?;
+            inner.set_no_trade_band_bps(bps);
+        }
+        if let Some(cap) = max_trades_per_rebalance {
+            inner.set_max_trades_per_rebalance(Some(cap));
         }
         Ok(Self { inner })
     }
@@ -138,6 +168,52 @@ impl PyPortfolio {
         validate_quantity_step(step)?;
         self.inner.set_quantity_step(step);
         Ok(())
+    }
+
+    /// Minimum order notional in cents. An order below this is skipped
+    /// instead of placed.
+    #[getter]
+    fn min_order_value(&self) -> i64 {
+        self.inner.min_order_value()
+    }
+
+    /// Set the minimum order notional, in cents. Must be non-negative.
+    #[setter]
+    fn set_min_order_value(&mut self, value: i64) -> PyResult<()> {
+        validate_min_order_value(value)?;
+        self.inner.set_min_order_value(value);
+        Ok(())
+    }
+
+    /// No-trade band, in basis points of equity. A position is left alone
+    /// until it drifts from its target weight by more than this many bps.
+    #[getter]
+    fn no_trade_band_bps(&self) -> f64 {
+        self.inner.no_trade_band_bps()
+    }
+
+    /// Set the no-trade band, in basis points of equity. Must be finite and
+    /// non-negative.
+    #[setter]
+    fn set_no_trade_band_bps(&mut self, bps: f64) -> PyResult<()> {
+        validate_no_trade_band_bps(bps)?;
+        self.inner.set_no_trade_band_bps(bps);
+        Ok(())
+    }
+
+    /// Hard cap on the number of orders placed in a single rebalance, or
+    /// ``None`` for no cap. When the cap binds, the orders furthest from
+    /// target (largest absolute drift) are kept.
+    #[getter]
+    fn max_trades_per_rebalance(&self) -> Option<usize> {
+        self.inner.max_trades_per_rebalance()
+    }
+
+    /// Set the hard cap on orders placed per rebalance. Pass ``None`` to
+    /// remove the cap.
+    #[setter]
+    fn set_max_trades_per_rebalance(&mut self, cap: Option<usize>) {
+        self.inner.set_max_trades_per_rebalance(cap);
     }
 
     /// Current cash balance in cents.
@@ -289,6 +365,26 @@ fn validate_quantity_step(step: i64) -> PyResult<()> {
     if step <= 0 {
         return Err(pyo3::exceptions::PyValueError::new_err(format!(
             "quantity_step must be positive, got {step}"
+        )));
+    }
+    Ok(())
+}
+
+/// Validate a `min_order_value` (cents): must be non-negative.
+fn validate_min_order_value(value: i64) -> PyResult<()> {
+    if value < 0 {
+        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "min_order_value must be non-negative, got {value}"
+        )));
+    }
+    Ok(())
+}
+
+/// Validate a `no_trade_band_bps` value: must be finite and non-negative.
+fn validate_no_trade_band_bps(bps: f64) -> PyResult<()> {
+    if !bps.is_finite() || bps < 0.0 {
+        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "no_trade_band_bps must be finite and non-negative, got {bps}"
         )));
     }
     Ok(())
