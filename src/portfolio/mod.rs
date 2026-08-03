@@ -111,6 +111,11 @@ pub struct Portfolio {
     /// of placed. Defaults to `0` (no minimum — every non-zero order is placed).
     #[cfg_attr(feature = "serde", serde(default))]
     min_order_value: i64,
+    /// Maximum order notional (cents). Orders above this are truncated to the
+    /// largest quantity (respecting `quantity_step`) whose notional fits,
+    /// rather than being dropped. Defaults to `0` (unlimited).
+    #[cfg_attr(feature = "serde", serde(default))]
+    max_order_value: i64,
     /// No-trade band, in basis points of equity. A position is left alone
     /// until its value drifts from its target by more than this many bps.
     /// Defaults to `0.0` (any non-zero drift is corrected).
@@ -122,6 +127,16 @@ pub struct Portfolio {
     /// (no cap).
     #[cfg_attr(feature = "serde", serde(default))]
     max_trades_per_rebalance: Option<usize>,
+    /// Number of orders actually executed by the most recent `rebalance_simple`
+    /// call, after every filter. Not persisted: it's a transient report of the
+    /// last call, not portfolio state.
+    #[cfg_attr(feature = "serde", serde(skip, default))]
+    last_rebalance_order_count: usize,
+    /// Total absolute notional (cents) actually filled by the most recent
+    /// `rebalance_simple` call. Not persisted, for the same reason as
+    /// `last_rebalance_order_count`.
+    #[cfg_attr(feature = "serde", serde(skip, default))]
+    last_rebalance_notional: i64,
 }
 
 /// Serde default for `Portfolio::quantity_step`: whole shares, so JSON saved
@@ -154,8 +169,11 @@ impl Portfolio {
             prev_equity: initial_cash,
             quantity_step: Shares::SCALE,
             min_order_value: 0,
+            max_order_value: 0,
             no_trade_band_bps: 0.0,
             max_trades_per_rebalance: None,
+            last_rebalance_order_count: 0,
+            last_rebalance_notional: 0,
         }
     }
 
@@ -194,6 +212,47 @@ impl Portfolio {
     #[inline]
     pub fn min_order_value(&self) -> i64 {
         self.min_order_value
+    }
+
+    /// Set the maximum order notional (cents). Orders above this are
+    /// truncated to the largest quantity (respecting `quantity_step`) whose
+    /// notional fits, rather than being dropped: a real desk works a large
+    /// order down over time rather than skipping the position entirely, and
+    /// dropping it would silently leave the portfolio un-rebalanced with no
+    /// signal that anything happened. Truncation composes with
+    /// `min_order_value`: if the truncated quantity's notional then falls
+    /// below the minimum, the order is skipped like any other order that
+    /// doesn't clear the minimum. Must be non-negative; values `< 0` are a
+    /// programming error (use `debug_assert`). `0` means unlimited (the
+    /// default).
+    pub fn set_max_order_value(&mut self, value: i64) {
+        debug_assert!(value >= 0, "max_order_value must be non-negative, got {value}");
+        self.max_order_value = value;
+    }
+
+    /// The current maximum order notional (cents). `0` means unlimited.
+    #[inline]
+    pub fn max_order_value(&self) -> i64 {
+        self.max_order_value
+    }
+
+    /// Number of orders actually executed by the most recent
+    /// [`Portfolio::rebalance_simple`] call, after every filter (no-trade
+    /// band, min/max order value, trade-count cap) — including both
+    /// close-loop and target-loop orders. Resets to `0` at the start of each
+    /// such call, including calls that end up placing no orders.
+    #[inline]
+    pub fn last_rebalance_order_count(&self) -> usize {
+        self.last_rebalance_order_count
+    }
+
+    /// Total absolute notional (cents) actually filled by the most recent
+    /// [`Portfolio::rebalance_simple`] call, summed over close-loop and
+    /// target-loop orders alike. Resets to `0` at the start of each such
+    /// call.
+    #[inline]
+    pub fn last_rebalance_notional(&self) -> i64 {
+        self.last_rebalance_notional
     }
 
     /// Set the no-trade band, in basis points of equity. Must be non-negative
@@ -297,6 +356,9 @@ impl Portfolio {
         targets: &[(Symbol, f64)],
         price_map: &FxHashMap<Symbol, i64>,
     ) {
+        self.last_rebalance_order_count = 0;
+        self.last_rebalance_notional = 0;
+
         let equity = self.total_equity_from_price_map(price_map);
         if equity <= 0 {
             return;
@@ -335,7 +397,20 @@ impl Portfolio {
                     continue;
                 }
 
-                let notional = notional_of(qty, price);
+                let mut qty = qty;
+                let mut notional = notional_of(qty, price);
+                if self.max_order_value > 0 && notional > self.max_order_value {
+                    qty = truncate_qty_to_max_value(
+                        qty,
+                        price,
+                        self.quantity_step,
+                        self.max_order_value,
+                    );
+                    if qty.is_zero() {
+                        continue;
+                    }
+                    notional = notional_of(qty, price);
+                }
                 if self.min_order_value > 0 && notional < self.min_order_value {
                     continue;
                 }
@@ -367,12 +442,24 @@ impl Portfolio {
 
             // Convert value difference to shares, rounded to a multiple of
             // quantity_step and truncated toward zero.
-            let diff_qty = size_qty(diff_value, price, self.quantity_step);
+            let mut diff_qty = size_qty(diff_value, price, self.quantity_step);
             if diff_qty.is_zero() {
                 continue;
             }
 
-            let notional = notional_of(diff_qty, price);
+            let mut notional = notional_of(diff_qty, price);
+            if self.max_order_value > 0 && notional > self.max_order_value {
+                diff_qty = truncate_qty_to_max_value(
+                    diff_qty,
+                    price,
+                    self.quantity_step,
+                    self.max_order_value,
+                );
+                if diff_qty.is_zero() {
+                    continue;
+                }
+                notional = notional_of(diff_qty, price);
+            }
             if self.min_order_value > 0 && notional < self.min_order_value {
                 continue;
             }
@@ -394,6 +481,11 @@ impl Portfolio {
             });
             planned.truncate(cap);
         }
+
+        self.last_rebalance_order_count = planned.len();
+        self.last_rebalance_notional = planned.iter().fold(0_i64, |acc, order| {
+            acc.saturating_add(notional_of(order.qty, order.price))
+        });
 
         for order in planned {
             self.execute_fill(order.symbol, order.qty, order.price);
@@ -666,6 +758,28 @@ fn notional_of(qty: Shares, price: i64) -> i64 {
     let notional_i128 =
         (qty.raw().unsigned_abs() as i128) * (price.unsigned_abs() as i128) / (Shares::SCALE as i128);
     notional_i128.clamp(0, i64::MAX as i128) as i64
+}
+
+/// Truncate `qty` (magnitude only; sign preserved) to the largest quantity,
+/// snapped down to a multiple of `step`, whose notional at `price` fits
+/// within `max_value` (cents). Uses an `i128` intermediate for the same
+/// overflow-safety reason as `notional_of`. Floor division is conservative:
+/// it never rounds the resulting notional above `max_value`. Returns
+/// `Shares::ZERO` if even one `step` doesn't fit within `max_value`, or if
+/// `price` is zero (no quantity has a well-defined truncated notional then).
+fn truncate_qty_to_max_value(qty: Shares, price: i64, step: i64, max_value: i64) -> Shares {
+    if max_value <= 0 || price == 0 || step <= 0 {
+        return Shares::ZERO;
+    }
+    let price_abs = price.unsigned_abs() as i128;
+    let max_value_i128 = max_value as i128;
+    let scale = Shares::SCALE as i128;
+    let raw_abs_cap = (max_value_i128 * scale) / price_abs;
+    let step_i128 = step as i128;
+    let snapped = (raw_abs_cap / step_i128) * step_i128;
+    let snapped_i64 = snapped.clamp(0, i64::MAX as i128) as i64;
+    let signed = if qty.is_negative() { -snapped_i64 } else { snapped_i64 };
+    Shares::from_raw(signed)
 }
 
 /// Drift of a value difference (cents) from target, expressed in basis points
@@ -1125,6 +1239,91 @@ mod tests {
 
         portfolio.rebalance_simple(&[(sym, 0.5)], &[(sym, price)]);
         assert!(!portfolio.position(&sym).unwrap().is_flat());
+    }
+
+    // --- max_order_value ---
+
+    #[test]
+    fn max_order_value_truncates_rather_than_drops() {
+        let sym = Symbol::new("BIG");
+        let price = 100_00; // $100/share
+        let mut portfolio = Portfolio::new(1_000_000_00, CostModel::zero()); // $1,000,000, whole-share step
+        portfolio.set_max_order_value(30_000_00); // cap each order at $30,000
+
+        // Target: 100% weight -> target value $1,000,000 / $100 = 10,000 shares,
+        // which would exceed the cap; the order must be truncated to exactly
+        // $30,000 / $100 = 300 shares, not dropped.
+        portfolio.rebalance_simple(&[(sym, 1.0)], &[(sym, price)]);
+
+        assert_eq!(
+            portfolio.position(&sym).unwrap().quantity,
+            Shares::from_whole(300)
+        );
+        assert_eq!(portfolio.last_rebalance_order_count(), 1);
+        assert_eq!(portfolio.last_rebalance_notional(), 30_000_00);
+    }
+
+    #[test]
+    fn max_order_value_default_zero_is_unlimited() {
+        let sym = Symbol::new("BIG");
+        let price = 100_00;
+        let portfolio = Portfolio::new(1_000_000_00, CostModel::zero());
+        assert_eq!(portfolio.max_order_value(), 0);
+
+        let mut portfolio = portfolio;
+        portfolio.rebalance_simple(&[(sym, 1.0)], &[(sym, price)]);
+        assert_eq!(
+            portfolio.position(&sym).unwrap().quantity,
+            Shares::from_whole(10_000)
+        );
+    }
+
+    /// `max_order_value` and `min_order_value` must compose sanely: when
+    /// truncation lands the order's notional below the minimum, the order is
+    /// skipped entirely rather than executed under-minimum.
+    #[test]
+    fn max_order_value_composing_with_min_order_value_truncation_below_minimum_skips() {
+        let sym = Symbol::new("SMALL");
+        let price = 100_00; // $100/share
+        let mut portfolio =
+            Portfolio::with_quantity_step(1_000_000_00, CostModel::zero(), 1_000); // 0.001-share step
+        portfolio.set_max_order_value(250); // $2.50 cap: truncates to 0.025 share
+        portfolio.set_min_order_value(300); // $3.00 minimum: $2.50 < $3.00
+
+        portfolio.rebalance_simple(&[(sym, 1.0)], &[(sym, price)]);
+
+        assert!(portfolio.position(&sym).is_none_or(|p| p.is_flat()));
+        assert_eq!(portfolio.last_rebalance_order_count(), 0);
+        assert_eq!(portfolio.last_rebalance_notional(), 0);
+    }
+
+    // --- last_rebalance_order_count / last_rebalance_notional ---
+
+    /// The accessors must report exact values, reset every call, and include
+    /// close-loop orders (not only target-loop orders).
+    #[test]
+    fn last_rebalance_stats_report_exact_values_including_close_orders() {
+        let a = Symbol::new("A");
+        let b = Symbol::new("B");
+        let price = 100_00; // $100/share, flat throughout
+        let mut portfolio = Portfolio::new(1_000_00, CostModel::zero()); // $1,000
+
+        // Initial: both A and B opened, 5 shares ($500) each -> 2 orders,
+        // $1,000 total notional.
+        portfolio.rebalance_simple(&[(a, 0.5), (b, 0.5)], &[(a, price), (b, price)]);
+        assert_eq!(portfolio.last_rebalance_order_count(), 2);
+        assert_eq!(portfolio.last_rebalance_notional(), 1_000_00);
+
+        // Second: only A targeted -> B is closed (close-loop order, $500) and
+        // A is bought up to 100% ($500 -> $1,000, another $500 order).
+        portfolio.rebalance_simple(&[(a, 1.0)], &[(a, price), (b, price)]);
+        assert_eq!(portfolio.last_rebalance_order_count(), 2);
+        assert_eq!(portfolio.last_rebalance_notional(), 1_000_00);
+
+        // Third: no drift at all -> zero orders, zero notional (stats reset).
+        portfolio.rebalance_simple(&[(a, 1.0)], &[(a, price)]);
+        assert_eq!(portfolio.last_rebalance_order_count(), 0);
+        assert_eq!(portfolio.last_rebalance_notional(), 0);
     }
 
     // --- no_trade_band_bps ---

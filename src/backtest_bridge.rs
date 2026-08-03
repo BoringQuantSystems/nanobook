@@ -64,6 +64,36 @@ pub struct BacktestBridgeOptions {
     /// Hard cap on orders placed per rebalance. `None` keeps the default: no
     /// cap. See [`crate::portfolio::Portfolio::set_max_trades_per_rebalance`].
     pub max_trades_per_rebalance: Option<usize>,
+    /// Maximum order notional (cents). `None` keeps the default: `0`, i.e. no
+    /// maximum. See [`crate::portfolio::Portfolio::set_max_order_value`].
+    pub max_order_value: Option<i64>,
+    /// Hard cap on orders placed across all rebalances that share the same
+    /// `period_day_ordinal`. `None` keeps the default: no cap. Inert (no-op)
+    /// if `period_day_ordinal` is not supplied, even when this is `Some`.
+    pub max_trades_per_day: Option<usize>,
+    /// Hard cap on orders placed across all rebalances that share the same
+    /// `period_month_ordinal`. `None` keeps the default: no cap. Inert
+    /// (no-op) if `period_month_ordinal` is not supplied, even when this is
+    /// `Some`.
+    pub max_trades_per_month: Option<usize>,
+    /// Maximum total absolute notional (cents) traded across all rebalances
+    /// that share the same `period_month_ordinal`. `None` keeps the default:
+    /// no cap. Inert (no-op) if `period_month_ordinal` is not supplied, even
+    /// when this is `Some`.
+    pub max_traded_value_per_month: Option<i64>,
+    /// Per-period day ordinal, parallel to `weight_schedule`/`price_schedule`
+    /// (same length, or the bridge returns an empty result). A monotonically
+    /// non-decreasing integer identifying which calendar day a period falls
+    /// on — e.g. `date.toordinal()`. This crate has no calendar of its own,
+    /// so the caller supplies it; consecutive periods sharing a day is normal
+    /// for a 24/7 venue. `None` disables every day-scoped budget.
+    pub period_day_ordinal: Option<Vec<i64>>,
+    /// Per-period month ordinal, parallel to `weight_schedule`/`price_schedule`
+    /// (same length, or the bridge returns an empty result). A monotonically
+    /// non-decreasing integer identifying which calendar month a period falls
+    /// on — e.g. `year * 12 + month`. `None` disables every month-scoped
+    /// budget.
+    pub period_month_ordinal: Option<Vec<i64>>,
 }
 
 #[derive(Clone, Debug, Copy)]
@@ -191,6 +221,16 @@ pub fn backtest_weights_with_options(
     if !valid_inputs(weight_schedule, price_schedule, initial_cash_cents) {
         return empty_result(initial_cash_cents);
     }
+    if let Some(days) = &options.period_day_ordinal
+        && days.len() != weight_schedule.len()
+    {
+        return empty_result(initial_cash_cents);
+    }
+    if let Some(months) = &options.period_month_ordinal
+        && months.len() != weight_schedule.len()
+    {
+        return empty_result(initial_cash_cents);
+    }
 
     let stop_cfg = options
         .stop_cfg
@@ -204,12 +244,36 @@ pub fn backtest_weights_with_options(
     if let Some(value) = options.min_order_value {
         portfolio.set_min_order_value(value);
     }
+    if let Some(value) = options.max_order_value {
+        portfolio.set_max_order_value(value);
+    }
     if let Some(bps) = options.no_trade_band_bps {
         portfolio.set_no_trade_band_bps(bps);
     }
     if options.max_trades_per_rebalance.is_some() {
         portfolio.set_max_trades_per_rebalance(options.max_trades_per_rebalance);
     }
+
+    // Windowed (day/month) budgets: the bridge owns the calendar (via the
+    // caller-supplied ordinals) since Portfolio has no concept of dates.
+    // Every field here defaults to inert so unset options reproduce the
+    // exact behaviour above with no per-period overriding at all.
+    let base_max_trades_per_rebalance = options.max_trades_per_rebalance;
+    let base_max_order_value = options.max_order_value.unwrap_or(0);
+    let has_day_budget =
+        options.max_trades_per_day.is_some() && options.period_day_ordinal.is_some();
+    let has_month_trade_budget =
+        options.max_trades_per_month.is_some() && options.period_month_ordinal.is_some();
+    let has_month_value_budget =
+        options.max_traded_value_per_month.is_some() && options.period_month_ordinal.is_some();
+    let windowed_budgets_active = has_day_budget || has_month_trade_budget || has_month_value_budget;
+
+    let mut trades_used_today: usize = 0;
+    let mut trades_used_month: usize = 0;
+    let mut value_used_month: i64 = 0;
+    let mut prev_day_ordinal: Option<i64> = None;
+    let mut prev_month_ordinal: Option<i64> = None;
+
     let mut equity_curve = Vec::with_capacity(weight_schedule.len() + 1);
     equity_curve.push(initial_cash_cents);
 
@@ -251,9 +315,71 @@ pub fn backtest_weights_with_options(
         period_symbol_returns.sort_by_key(|(sym, _)| *sym);
         symbol_returns.push(period_symbol_returns);
 
+        if windowed_budgets_active {
+            if let Some(days) = &options.period_day_ordinal {
+                let day = days[period_index];
+                if prev_day_ordinal != Some(day) {
+                    trades_used_today = 0;
+                    prev_day_ordinal = Some(day);
+                }
+            }
+            if let Some(months) = &options.period_month_ordinal {
+                let month = months[period_index];
+                if prev_month_ordinal != Some(month) {
+                    trades_used_month = 0;
+                    value_used_month = 0;
+                    prev_month_ordinal = Some(month);
+                }
+            }
+
+            let mut cap_candidates: Vec<usize> = Vec::new();
+            if let Some(base) = base_max_trades_per_rebalance {
+                cap_candidates.push(base);
+            }
+            if has_day_budget {
+                let max_day = options.max_trades_per_day.expect("has_day_budget implies Some");
+                cap_candidates.push(max_day.saturating_sub(trades_used_today));
+            }
+            if has_month_trade_budget {
+                let max_month = options
+                    .max_trades_per_month
+                    .expect("has_month_trade_budget implies Some");
+                cap_candidates.push(max_month.saturating_sub(trades_used_month));
+            }
+
+            let mut effective_max_order_value = base_max_order_value;
+            if has_month_value_budget {
+                let month_value_budget = options
+                    .max_traded_value_per_month
+                    .expect("has_month_value_budget implies Some");
+                let remaining = month_value_budget.saturating_sub(value_used_month);
+                if remaining <= 0 {
+                    // Value budget exhausted for the month: no more trading
+                    // until the next month ordinal resets it.
+                    cap_candidates.push(0);
+                } else {
+                    effective_max_order_value = if base_max_order_value > 0 {
+                        base_max_order_value.min(remaining)
+                    } else {
+                        remaining
+                    };
+                }
+            }
+
+            portfolio.set_max_trades_per_rebalance(cap_candidates.into_iter().min());
+            portfolio.set_max_order_value(effective_max_order_value);
+        }
+
         if let Some(fill_prices) = fill_prices_for_period(price_schedule, period_index, fill_policy)
         {
             portfolio.rebalance_simple(weights, &fill_prices);
+            if windowed_budgets_active {
+                let orders = portfolio.last_rebalance_order_count();
+                trades_used_today += orders;
+                trades_used_month += orders;
+                value_used_month =
+                    value_used_month.saturating_add(portfolio.last_rebalance_notional());
+            }
         } else {
             skipped_rebalances.push(period_index);
         }
@@ -767,6 +893,269 @@ mod tests {
             },
         );
         assert!(fractional_result.final_cash < 10_00);
+    }
+
+    // === Windowed (day/month) execution budgets ===
+
+    fn sym(i: usize) -> Symbol {
+        Symbol::new(&format!("S{i}"))
+    }
+
+    /// `max_trades_per_day` must bind ACROSS multiple rebalances that share
+    /// the same day ordinal — the crypto case, where consecutive periods can
+    /// land on the same calendar day. Asserts exactly which symbols traded
+    /// on the second rebalance of the day, not just a count.
+    #[test]
+    fn max_trades_per_day_binds_across_multiple_rebalances_same_day() {
+        let price = 100_00; // $100/share, flat
+        let symbols: Vec<Symbol> = (0..5).map(sym).collect();
+        let bars: Vec<(Symbol, BarPrices)> = symbols.iter().map(|s| (*s, bar(price))).collect();
+        let prices = vec![bars.clone(), bars];
+
+        // Period 0: open S0, S1 (2 orders). Period 1 (same day): also target
+        // S2, S3, S4 (3 more orders needed), but the day's budget is 3 total
+        // and 2 are already spent, leaving room for exactly 1.
+        let weights = vec![
+            vec![(symbols[0], 0.2), (symbols[1], 0.2)],
+            vec![
+                (symbols[0], 0.2),
+                (symbols[1], 0.2),
+                (symbols[2], 0.2),
+                (symbols[3], 0.2),
+                (symbols[4], 0.2),
+            ],
+        ];
+
+        let options = BacktestBridgeOptions {
+            max_trades_per_day: Some(3),
+            period_day_ordinal: Some(vec![1, 1]), // both periods, same day
+            ..Default::default()
+        };
+
+        let result = backtest_weights_with_options(
+            &weights,
+            &prices,
+            1_000_000_00,
+            CostModel::zero(),
+            FillPolicy::SignalBarClose,
+            252.0,
+            0.0,
+            options,
+        );
+
+        // After period 0: S0 and S1 only.
+        let held0: Vec<&str> = result.holdings[0].iter().map(|(s, _)| s.as_str()).collect();
+        assert_eq!(held0, vec!["S0", "S1"]);
+
+        // After period 1: only 1 of {S2, S3, S4} can trade (budget: 3 - 2 = 1
+        // left). Ties broken by symbol ascending (Portfolio's own rule), so
+        // S2 is the one that gets in; S3 and S4 stay unopened.
+        let held1: Vec<&str> = result.holdings[1].iter().map(|(s, _)| s.as_str()).collect();
+        assert_eq!(held1, vec!["S0", "S1", "S2"]);
+    }
+
+    /// `max_trades_per_month` must bind across periods sharing a month
+    /// ordinal and RESET when the ordinal changes.
+    #[test]
+    fn max_trades_per_month_binds_across_periods_and_resets_at_month_boundary() {
+        let price = 100_00;
+        let symbols: Vec<Symbol> = (0..4).map(sym).collect();
+        let bars: Vec<(Symbol, BarPrices)> = symbols.iter().map(|s| (*s, bar(price))).collect();
+        let prices = vec![bars.clone(), bars.clone(), bars.clone(), bars];
+
+        // Introduce one new symbol per period: A (0), then +B (1), then +C
+        // (2, blocked by the exhausted monthly budget), then +C+D once the
+        // month resets (3).
+        let weights = vec![
+            vec![(symbols[0], 0.25)],
+            vec![(symbols[0], 0.25), (symbols[1], 0.25)],
+            vec![(symbols[0], 0.25), (symbols[1], 0.25), (symbols[2], 0.25)],
+            vec![
+                (symbols[0], 0.25),
+                (symbols[1], 0.25),
+                (symbols[2], 0.25),
+                (symbols[3], 0.25),
+            ],
+        ];
+
+        let options = BacktestBridgeOptions {
+            max_trades_per_month: Some(2),
+            period_month_ordinal: Some(vec![1, 1, 1, 2]), // periods 0-2 in month 1, period 3 in month 2
+            ..Default::default()
+        };
+
+        let result = backtest_weights_with_options(
+            &weights,
+            &prices,
+            1_000_000_00,
+            CostModel::zero(),
+            FillPolicy::SignalBarClose,
+            252.0,
+            0.0,
+            options,
+        );
+
+        // Period 0: 1 trade (A). Period 1: 1 trade (B) -> month budget (2)
+        // fully spent. Period 2: C is blocked, budget exhausted for the month.
+        let held2: Vec<&str> = result.holdings[2].iter().map(|(s, _)| s.as_str()).collect();
+        assert_eq!(held2, vec!["S0", "S1"]);
+
+        // Period 3: new month ordinal (2) resets the budget to 2, enough for
+        // both the still-pending C and the new D.
+        let held3: Vec<&str> = result.holdings[3].iter().map(|(s, _)| s.as_str()).collect();
+        assert_eq!(held3, vec!["S0", "S1", "S2", "S3"]);
+    }
+
+    /// `max_traded_value_per_month` exhausting mid-month must stop trading
+    /// for the rest of that month, including corrective orders on positions
+    /// left short by an earlier truncation.
+    #[test]
+    fn max_traded_value_per_month_exhausted_mid_month_stops_further_trading() {
+        let price = 100_00; // $100/share
+        let a = sym(0);
+        let b = sym(1);
+        let c = sym(2);
+        let bars = |syms: &[Symbol]| -> Vec<(Symbol, BarPrices)> {
+            syms.iter().map(|s| (*s, bar(price))).collect()
+        };
+        let prices = vec![
+            bars(&[a]),
+            bars(&[a, b]),
+            bars(&[a, b, c]),
+        ];
+
+        // $100,000 account, 0.6% target weight -> $600 per fully-funded
+        // position (6 shares at $100).
+        let weights = vec![
+            vec![(a, 0.006)],
+            vec![(a, 0.006), (b, 0.006)],
+            vec![(a, 0.006), (b, 0.006), (c, 0.006)],
+        ];
+
+        let options = BacktestBridgeOptions {
+            max_traded_value_per_month: Some(1_000_00), // $1,000/month
+            period_month_ordinal: Some(vec![1, 1, 1]),  // all 3 periods, same month
+            ..Default::default()
+        };
+
+        let result = backtest_weights_with_options(
+            &weights,
+            &prices,
+            100_000_00,
+            CostModel::zero(),
+            FillPolicy::SignalBarClose,
+            252.0,
+            0.0,
+            options,
+        );
+
+        // Period 0: A opened at the full $600 -> $400 of the month's $1,000
+        // budget remains.
+        // Period 1: B would need $600 but only $400 remains, so it is
+        // tightened via max_order_value to exactly $400 (4 shares) -> the
+        // month's budget is now fully spent ($600 + $400 = $1,000).
+        let b_weight_after_1 = result.holdings[1]
+            .iter()
+            .find(|(s, _)| *s == b)
+            .map(|(_, w)| *w)
+            .expect("B should hold a truncated position");
+        // 4 shares * $100 = $400 out of $100,000 equity = 0.004, not the
+        // requested 0.006 -- proof the order was truncated, not skipped.
+        assert!(
+            (b_weight_after_1 - 0.004).abs() < 1e-9,
+            "expected B truncated to 0.004 weight ($400), got {b_weight_after_1}"
+        );
+
+        // Period 2: the month's value budget is fully exhausted, so the
+        // effective trade cap is 0 for this period -- C is never opened, AND
+        // B is NOT corrected up to its 0.006 target even though it is still
+        // under-target from the period-1 truncation.
+        let held2: Vec<&str> = result.holdings[2].iter().map(|(s, _)| s.as_str()).collect();
+        assert_eq!(held2, vec!["S0", "S1"], "C must not open once the month's value budget is exhausted");
+        let b_weight_after_2 = result.holdings[2]
+            .iter()
+            .find(|(s, _)| *s == b)
+            .map(|(_, w)| *w)
+            .expect("B still holds its truncated position");
+        assert!(
+            (b_weight_after_2 - b_weight_after_1).abs() < 1e-9,
+            "B must not be corrected once the month's value budget is exhausted: {b_weight_after_1} -> {b_weight_after_2}"
+        );
+    }
+
+    /// Mismatched ordinal array length must be treated as an invalid input
+    /// (empty result), the same as a mismatched weight/price schedule length.
+    #[test]
+    fn mismatched_ordinal_length_returns_empty_result() {
+        let weights = vec![vec![(aapl(), 1.0)]; 2];
+        let prices = vec![vec![(aapl(), bar(100_00))]; 2];
+
+        let options = BacktestBridgeOptions {
+            max_trades_per_day: Some(1),
+            period_day_ordinal: Some(vec![1]), // length 1, schedule length 2
+            ..Default::default()
+        };
+
+        let result = backtest_weights_with_options(
+            &weights,
+            &prices,
+            1_000_000_00,
+            CostModel::zero(),
+            FillPolicy::SignalBarClose,
+            252.0,
+            0.0,
+            options,
+        );
+
+        assert!(result.returns.is_empty());
+        assert!(result.holdings.is_empty());
+        assert_eq!(result.final_cash, 1_000_000_00);
+    }
+
+    /// All five new options default to `None`/unset, so a backtest that
+    /// doesn't touch them must reproduce byte-identical numbers to the
+    /// pre-existing baseline: no per-period overriding happens at all.
+    #[test]
+    fn windowed_budget_options_default_to_unset_and_preserve_baseline_behavior() {
+        let weights = vec![vec![(aapl(), 1.0)]];
+        let prices = vec![vec![(aapl(), bar(150_00))]];
+
+        let result = backtest_weights_with_options(
+            &weights,
+            &prices,
+            1_000_000_00,
+            CostModel::zero(),
+            FillPolicy::SignalBarClose,
+            252.0,
+            0.0,
+            BacktestBridgeOptions {
+                max_order_value: None,
+                max_trades_per_day: None,
+                max_trades_per_month: None,
+                max_traded_value_per_month: None,
+                period_day_ordinal: None,
+                period_month_ordinal: None,
+                ..Default::default()
+            },
+        );
+
+        // 1,000,000_00 / 150_00 = 6666.67 -> 6666 whole shares at the
+        // default quantity_step; $100 remains in cash. Pinned exact numbers.
+        assert_eq!(result.final_cash, 100_00);
+        assert_eq!(result.equity_curve, vec![1_000_000_00, 1_000_000_00]);
+
+        let default_result = backtest_weights(
+            &weights,
+            &prices,
+            1_000_000_00,
+            CostModel::zero(),
+            FillPolicy::SignalBarClose,
+            252.0,
+            0.0,
+        );
+        assert_eq!(default_result.final_cash, result.final_cash);
+        assert_eq!(default_result.equity_curve, result.equity_curve);
+        assert_eq!(default_result.holdings, result.holdings);
     }
 
     #[test]

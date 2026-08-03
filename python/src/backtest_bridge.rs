@@ -156,12 +156,35 @@ fn parse_bar_prices_schedule(
 ///     max_trades_per_rebalance: Optional hard cap on orders placed at one
 ///         rebalance. When the cap binds, the orders furthest from target
 ///         (largest absolute drift) are kept. Defaults to ``None`` (no cap).
+///     max_order_value: Optional maximum order notional in cents. Orders
+///         above this are truncated to the largest quantity that fits,
+///         rather than dropped. Defaults to ``None`` (no maximum).
+///     max_trades_per_day: Optional hard cap on orders placed across all
+///         rebalances sharing the same ``period_day_ordinal``. Defaults to
+///         ``None``. Inert if ``period_day_ordinal`` is not supplied.
+///     max_trades_per_month: Optional hard cap on orders placed across all
+///         rebalances sharing the same ``period_month_ordinal``. Defaults to
+///         ``None``. Inert if ``period_month_ordinal`` is not supplied.
+///     max_traded_value_per_month: Optional maximum total absolute notional
+///         (cents) traded across all rebalances sharing the same
+///         ``period_month_ordinal``. Defaults to ``None``. Inert if
+///         ``period_month_ordinal`` is not supplied.
+///     period_day_ordinal: Optional per-period day ordinal (e.g.
+///         ``date.toordinal()``), parallel to ``weight_schedule``. Must be
+///         the same length as ``weight_schedule`` or a ``ValueError`` is
+///         raised. This crate has no calendar of its own, so the caller
+///         supplies it; consecutive periods sharing a day is normal for a
+///         24/7 venue.
+///     period_month_ordinal: Optional per-period month ordinal (e.g.
+///         ``year * 12 + month``), parallel to ``weight_schedule``. Must be
+///         the same length as ``weight_schedule`` or a ``ValueError`` is
+///         raised.
 ///
 /// Returns a dict with keys:
 ///     ``returns``, ``equity_curve``, ``final_cash``, ``metrics``, ``holdings``,
 ///     ``symbol_returns``, ``stop_events``.
 #[pyfunction]
-#[pyo3(signature = (weight_schedule, price_schedule, initial_cash, cost_model, fill_policy, periods_per_year=252.0, risk_free=0.0, stop_cfg=None, quantity_step=None, min_order_value=None, no_trade_band_bps=None, max_trades_per_rebalance=None))]
+#[pyo3(signature = (weight_schedule, price_schedule, initial_cash, cost_model, fill_policy, periods_per_year=252.0, risk_free=0.0, stop_cfg=None, quantity_step=None, min_order_value=None, no_trade_band_bps=None, max_trades_per_rebalance=None, max_order_value=None, max_trades_per_day=None, max_trades_per_month=None, max_traded_value_per_month=None, period_day_ordinal=None, period_month_ordinal=None))]
 #[allow(clippy::too_many_arguments)]
 pub fn backtest_weights(
     py: Python<'_>,
@@ -177,6 +200,12 @@ pub fn backtest_weights(
     min_order_value: Option<i64>,
     no_trade_band_bps: Option<f64>,
     max_trades_per_rebalance: Option<usize>,
+    max_order_value: Option<i64>,
+    max_trades_per_day: Option<usize>,
+    max_trades_per_month: Option<usize>,
+    max_traded_value_per_month: Option<i64>,
+    period_day_ordinal: Option<Vec<i64>>,
+    period_month_ordinal: Option<Vec<i64>>,
 ) -> PyResult<Py<PyAny>> {
     // Convert Python types to Rust types.
     let rust_weights = parse_symbol_schedule(&weight_schedule)?;
@@ -196,11 +225,43 @@ pub fn backtest_weights(
             "min_order_value must be non-negative, got {value}"
         )));
     }
+    if let Some(value) = max_order_value
+        && value < 0
+    {
+        return Err(PyValueError::new_err(format!(
+            "max_order_value must be non-negative, got {value}"
+        )));
+    }
     if let Some(bps) = no_trade_band_bps
         && (!bps.is_finite() || bps < 0.0)
     {
         return Err(PyValueError::new_err(format!(
             "no_trade_band_bps must be finite and non-negative, got {bps}"
+        )));
+    }
+    if let Some(value) = max_traded_value_per_month
+        && value < 0
+    {
+        return Err(PyValueError::new_err(format!(
+            "max_traded_value_per_month must be non-negative, got {value}"
+        )));
+    }
+    if let Some(days) = &period_day_ordinal
+        && days.len() != weight_schedule.len()
+    {
+        return Err(PyValueError::new_err(format!(
+            "period_day_ordinal length ({}) must match weight_schedule length ({})",
+            days.len(),
+            weight_schedule.len()
+        )));
+    }
+    if let Some(months) = &period_month_ordinal
+        && months.len() != weight_schedule.len()
+    {
+        return Err(PyValueError::new_err(format!(
+            "period_month_ordinal length ({}) must match weight_schedule length ({})",
+            months.len(),
+            weight_schedule.len()
         )));
     }
 
@@ -210,6 +271,12 @@ pub fn backtest_weights(
         min_order_value,
         no_trade_band_bps,
         max_trades_per_rebalance,
+        max_order_value,
+        max_trades_per_day,
+        max_trades_per_month,
+        max_traded_value_per_month,
+        period_day_ordinal,
+        period_month_ordinal,
     };
 
     // Release GIL during computation.
@@ -397,7 +464,7 @@ pub fn py_tear_sheet(
 
 /// Backward-compatible alias for older callers using ``py_backtest_weights``.
 #[pyfunction]
-#[pyo3(signature = (weight_schedule, price_schedule, initial_cash, cost_model, fill_policy, periods_per_year=252.0, risk_free=0.0, stop_cfg=None, quantity_step=None, min_order_value=None, no_trade_band_bps=None, max_trades_per_rebalance=None))]
+#[pyo3(signature = (weight_schedule, price_schedule, initial_cash, cost_model, fill_policy, periods_per_year=252.0, risk_free=0.0, stop_cfg=None, quantity_step=None, min_order_value=None, no_trade_band_bps=None, max_trades_per_rebalance=None, max_order_value=None, max_trades_per_day=None, max_trades_per_month=None, max_traded_value_per_month=None, period_day_ordinal=None, period_month_ordinal=None))]
 #[allow(clippy::too_many_arguments)]
 pub fn py_backtest_weights(
     py: Python<'_>,
@@ -413,6 +480,12 @@ pub fn py_backtest_weights(
     min_order_value: Option<i64>,
     no_trade_band_bps: Option<f64>,
     max_trades_per_rebalance: Option<usize>,
+    max_order_value: Option<i64>,
+    max_trades_per_day: Option<usize>,
+    max_trades_per_month: Option<usize>,
+    max_traded_value_per_month: Option<i64>,
+    period_day_ordinal: Option<Vec<i64>>,
+    period_month_ordinal: Option<Vec<i64>>,
 ) -> PyResult<Py<PyAny>> {
     backtest_weights(
         py,
@@ -428,6 +501,12 @@ pub fn py_backtest_weights(
         min_order_value,
         no_trade_band_bps,
         max_trades_per_rebalance,
+        max_order_value,
+        max_trades_per_day,
+        max_trades_per_month,
+        max_traded_value_per_month,
+        period_day_ordinal,
+        period_month_ordinal,
     )
 }
 

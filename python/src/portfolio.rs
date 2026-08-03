@@ -78,6 +78,10 @@ impl PyCostModel {
 ///     min_order_value: Optional minimum order notional in cents. An order
 ///         whose notional is below this is skipped instead of placed.
 ///         Defaults to ``0`` (no minimum).
+///     max_order_value: Optional maximum order notional in cents. An order
+///         whose notional exceeds this is truncated to the largest quantity
+///         (respecting quantity_step) whose notional fits, rather than
+///         dropped. Defaults to ``0`` (no maximum).
 ///     no_trade_band_bps: Optional no-trade band, in basis points of equity.
 ///         A position is left alone until it drifts from its target weight
 ///         by more than this many bps. Defaults to ``0.0`` (no band).
@@ -111,12 +115,13 @@ impl PyPortfolio {
 #[pymethods]
 impl PyPortfolio {
     #[new]
-    #[pyo3(signature = (initial_cash, cost_model, quantity_step=None, min_order_value=None, no_trade_band_bps=None, max_trades_per_rebalance=None))]
+    #[pyo3(signature = (initial_cash, cost_model, quantity_step=None, min_order_value=None, max_order_value=None, no_trade_band_bps=None, max_trades_per_rebalance=None))]
     fn new(
         initial_cash: i64,
         cost_model: &PyCostModel,
         quantity_step: Option<i64>,
         min_order_value: Option<i64>,
+        max_order_value: Option<i64>,
         no_trade_band_bps: Option<f64>,
         max_trades_per_rebalance: Option<usize>,
     ) -> PyResult<Self> {
@@ -128,6 +133,10 @@ impl PyPortfolio {
         if let Some(value) = min_order_value {
             validate_min_order_value(value)?;
             inner.set_min_order_value(value);
+        }
+        if let Some(value) = max_order_value {
+            validate_max_order_value(value)?;
+            inner.set_max_order_value(value);
         }
         if let Some(bps) = no_trade_band_bps {
             validate_no_trade_band_bps(bps)?;
@@ -183,6 +192,38 @@ impl PyPortfolio {
         validate_min_order_value(value)?;
         self.inner.set_min_order_value(value);
         Ok(())
+    }
+
+    /// Maximum order notional in cents (`0` means unlimited). An order above
+    /// this is truncated to the largest quantity (respecting quantity_step)
+    /// whose notional fits, rather than dropped.
+    #[getter]
+    fn max_order_value(&self) -> i64 {
+        self.inner.max_order_value()
+    }
+
+    /// Set the maximum order notional, in cents. Must be non-negative; `0`
+    /// means unlimited.
+    #[setter]
+    fn set_max_order_value(&mut self, value: i64) -> PyResult<()> {
+        validate_max_order_value(value)?;
+        self.inner.set_max_order_value(value);
+        Ok(())
+    }
+
+    /// Number of orders actually executed by the most recent
+    /// `rebalance_simple` call, after every filter (no-trade band, min/max
+    /// order value, trade-count cap).
+    #[getter]
+    fn last_rebalance_order_count(&self) -> usize {
+        self.inner.last_rebalance_order_count()
+    }
+
+    /// Total absolute notional (cents) actually filled by the most recent
+    /// `rebalance_simple` call.
+    #[getter]
+    fn last_rebalance_notional(&self) -> i64 {
+        self.inner.last_rebalance_notional()
     }
 
     /// No-trade band, in basis points of equity. A position is left alone
@@ -375,6 +416,16 @@ fn validate_min_order_value(value: i64) -> PyResult<()> {
     if value < 0 {
         return Err(pyo3::exceptions::PyValueError::new_err(format!(
             "min_order_value must be non-negative, got {value}"
+        )));
+    }
+    Ok(())
+}
+
+/// Validate a `max_order_value` (cents): must be non-negative.
+fn validate_max_order_value(value: i64) -> PyResult<()> {
+    if value < 0 {
+        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "max_order_value must be non-negative, got {value}"
         )));
     }
     Ok(())
