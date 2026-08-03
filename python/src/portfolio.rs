@@ -90,6 +90,12 @@ impl PyCostModel {
 ///         furthest from target (largest absolute drift) are kept and the
 ///         rest are dropped, ties broken by symbol. Defaults to ``None``
 ///         (no cap).
+///     max_rebalance_notional: Optional maximum total absolute notional
+///         (cents) traded in a single rebalance, enforced as a running sum
+///         over orders in priority order (largest drift first). The order
+///         that would push the running total past the cap is truncated to
+///         exactly the remaining budget and no further orders are admitted.
+///         Defaults to ``0`` (no maximum).
 ///
 /// Example::
 ///
@@ -115,7 +121,8 @@ impl PyPortfolio {
 #[pymethods]
 impl PyPortfolio {
     #[new]
-    #[pyo3(signature = (initial_cash, cost_model, quantity_step=None, min_order_value=None, max_order_value=None, no_trade_band_bps=None, max_trades_per_rebalance=None))]
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (initial_cash, cost_model, quantity_step=None, min_order_value=None, max_order_value=None, no_trade_band_bps=None, max_trades_per_rebalance=None, max_rebalance_notional=None))]
     fn new(
         initial_cash: i64,
         cost_model: &PyCostModel,
@@ -124,6 +131,7 @@ impl PyPortfolio {
         max_order_value: Option<i64>,
         no_trade_band_bps: Option<f64>,
         max_trades_per_rebalance: Option<usize>,
+        max_rebalance_notional: Option<i64>,
     ) -> PyResult<Self> {
         let mut inner = Portfolio::new(initial_cash, cost_model.inner);
         if let Some(step) = quantity_step {
@@ -144,6 +152,10 @@ impl PyPortfolio {
         }
         if let Some(cap) = max_trades_per_rebalance {
             inner.set_max_trades_per_rebalance(Some(cap));
+        }
+        if let Some(value) = max_rebalance_notional {
+            validate_max_rebalance_notional(value)?;
+            inner.set_max_rebalance_notional(value);
         }
         Ok(Self { inner })
     }
@@ -255,6 +267,25 @@ impl PyPortfolio {
     #[setter]
     fn set_max_trades_per_rebalance(&mut self, cap: Option<usize>) {
         self.inner.set_max_trades_per_rebalance(cap);
+    }
+
+    /// Maximum total absolute notional (cents) a single rebalance may trade
+    /// (`0` means unlimited). Enforced as a running sum over orders in
+    /// priority order (largest drift first); the order that would push the
+    /// total past the cap is truncated to exactly the remaining budget and
+    /// no further orders are admitted.
+    #[getter]
+    fn max_rebalance_notional(&self) -> i64 {
+        self.inner.max_rebalance_notional()
+    }
+
+    /// Set the maximum total absolute notional, in cents, a single rebalance
+    /// may trade. Must be non-negative; `0` means unlimited.
+    #[setter]
+    fn set_max_rebalance_notional(&mut self, value: i64) -> PyResult<()> {
+        validate_max_rebalance_notional(value)?;
+        self.inner.set_max_rebalance_notional(value);
+        Ok(())
     }
 
     /// Current cash balance in cents.
@@ -426,6 +457,16 @@ fn validate_max_order_value(value: i64) -> PyResult<()> {
     if value < 0 {
         return Err(pyo3::exceptions::PyValueError::new_err(format!(
             "max_order_value must be non-negative, got {value}"
+        )));
+    }
+    Ok(())
+}
+
+/// Validate a `max_rebalance_notional` (cents): must be non-negative.
+fn validate_max_rebalance_notional(value: i64) -> PyResult<()> {
+    if value < 0 {
+        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "max_rebalance_notional must be non-negative, got {value}"
         )));
     }
     Ok(())

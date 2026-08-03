@@ -77,9 +77,13 @@ pub struct BacktestBridgeOptions {
     /// `Some`.
     pub max_trades_per_month: Option<usize>,
     /// Maximum total absolute notional (cents) traded across all rebalances
-    /// that share the same `period_month_ordinal`. `None` keeps the default:
-    /// no cap. Inert (no-op) if `period_month_ordinal` is not supplied, even
-    /// when this is `Some`.
+    /// that share the same `period_month_ordinal`. Enforced exactly via
+    /// [`crate::portfolio::Portfolio::set_max_rebalance_notional`] on each
+    /// rebalance, not by tightening the per-order maximum, so a rebalance
+    /// opening several positions in one period still cannot exceed the
+    /// remaining monthly budget. `None` keeps the default: no cap. Inert
+    /// (no-op) if `period_month_ordinal` is not supplied, even when this is
+    /// `Some`.
     pub max_traded_value_per_month: Option<i64>,
     /// Per-period day ordinal, parallel to `weight_schedule`/`price_schedule`
     /// (same length, or the bridge returns an empty result). A monotonically
@@ -259,7 +263,6 @@ pub fn backtest_weights_with_options(
     // Every field here defaults to inert so unset options reproduce the
     // exact behaviour above with no per-period overriding at all.
     let base_max_trades_per_rebalance = options.max_trades_per_rebalance;
-    let base_max_order_value = options.max_order_value.unwrap_or(0);
     let has_day_budget =
         options.max_trades_per_day.is_some() && options.period_day_ordinal.is_some();
     let has_month_trade_budget =
@@ -347,7 +350,14 @@ pub fn backtest_weights_with_options(
                 cap_candidates.push(max_month.saturating_sub(trades_used_month));
             }
 
-            let mut effective_max_order_value = base_max_order_value;
+            // The monthly value budget is an exact per-rebalance notional cap
+            // (`max_rebalance_notional`), not a per-order cap: tightening
+            // `max_order_value` instead only bounds each order individually
+            // against a snapshot taken at the start of the period, so a
+            // single rebalance opening several positions could spend up to
+            // roughly N times the budget with N orders. `max_order_value`
+            // itself is left doing only its own per-order job.
+            let mut month_value_remaining: i64 = 0;
             if has_month_value_budget {
                 let month_value_budget = options
                     .max_traded_value_per_month
@@ -358,16 +368,12 @@ pub fn backtest_weights_with_options(
                     // until the next month ordinal resets it.
                     cap_candidates.push(0);
                 } else {
-                    effective_max_order_value = if base_max_order_value > 0 {
-                        base_max_order_value.min(remaining)
-                    } else {
-                        remaining
-                    };
+                    month_value_remaining = remaining;
                 }
             }
 
             portfolio.set_max_trades_per_rebalance(cap_candidates.into_iter().min());
-            portfolio.set_max_order_value(effective_max_order_value);
+            portfolio.set_max_rebalance_notional(month_value_remaining);
         }
 
         if let Some(fill_prices) = fill_prices_for_period(price_schedule, period_index, fill_policy)
@@ -1052,8 +1058,8 @@ mod tests {
         // Period 0: A opened at the full $600 -> $400 of the month's $1,000
         // budget remains.
         // Period 1: B would need $600 but only $400 remains, so it is
-        // tightened via max_order_value to exactly $400 (4 shares) -> the
-        // month's budget is now fully spent ($600 + $400 = $1,000).
+        // truncated via max_rebalance_notional to exactly $400 (4 shares) ->
+        // the month's budget is now fully spent ($600 + $400 = $1,000).
         let b_weight_after_1 = result.holdings[1]
             .iter()
             .find(|(s, _)| *s == b)

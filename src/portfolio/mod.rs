@@ -127,6 +127,11 @@ pub struct Portfolio {
     /// (no cap).
     #[cfg_attr(feature = "serde", serde(default))]
     max_trades_per_rebalance: Option<usize>,
+    /// Maximum total absolute notional (cents) admitted in a single
+    /// `rebalance_simple` call, enforced as a running sum over orders in
+    /// priority order (largest drift first). Defaults to `0` (unlimited).
+    #[cfg_attr(feature = "serde", serde(default))]
+    max_rebalance_notional: i64,
     /// Number of orders actually executed by the most recent `rebalance_simple`
     /// call, after every filter. Not persisted: it's a transient report of the
     /// last call, not portfolio state.
@@ -172,6 +177,7 @@ impl Portfolio {
             max_order_value: 0,
             no_trade_band_bps: 0.0,
             max_trades_per_rebalance: None,
+            max_rebalance_notional: 0,
             last_rebalance_order_count: 0,
             last_rebalance_notional: 0,
         }
@@ -282,6 +288,32 @@ impl Portfolio {
     #[inline]
     pub fn max_trades_per_rebalance(&self) -> Option<usize> {
         self.max_trades_per_rebalance
+    }
+
+    /// Set the maximum total absolute notional (cents) a single
+    /// `rebalance_simple` call may trade. Enforced as a running sum over
+    /// orders in priority order (largest drift first, ties by symbol): the
+    /// first order that would push the running total past the cap is
+    /// truncated to exactly the remaining budget and no further orders are
+    /// admitted, so the budget is spent in full on the highest-priority
+    /// correction rather than left partly unused while smaller orders are
+    /// skipped in favour of it. If that truncation lands below
+    /// `min_order_value`, the order is skipped like any other order that
+    /// doesn't clear the minimum — trading still stops there. Must be
+    /// non-negative; values `< 0` are a programming error (use
+    /// `debug_assert`). `0` means unlimited (the default).
+    pub fn set_max_rebalance_notional(&mut self, value: i64) {
+        debug_assert!(
+            value >= 0,
+            "max_rebalance_notional must be non-negative, got {value}"
+        );
+        self.max_rebalance_notional = value;
+    }
+
+    /// The current per-rebalance notional cap (cents). `0` means unlimited.
+    #[inline]
+    pub fn max_rebalance_notional(&self) -> i64 {
+        self.max_rebalance_notional
     }
 
     // === Queries ===
@@ -467,19 +499,64 @@ impl Portfolio {
             planned.push(PlannedOrder { symbol: sym, qty: diff_qty, price, drift_bps });
         }
 
-        // Enforce the trade-count cap: keep the orders furthest from target
-        // (largest absolute drift), dropping the rest. Ties broken by symbol
-        // so the result never depends on hash-map iteration order.
-        if let Some(cap) = self.max_trades_per_rebalance
-            && planned.len() > cap
-        {
+        // Enforce the trade-count cap and the per-rebalance notional cap
+        // together, in priority order (largest absolute drift first, ties
+        // broken by symbol so the result never depends on hash-map iteration
+        // order). Sorting runs whenever either cap is active so admission is
+        // deterministic even when the trade-count cap alone wouldn't need to
+        // drop anything.
+        if self.max_trades_per_rebalance.is_some() || self.max_rebalance_notional > 0 {
             planned.sort_by(|a, b| {
                 b.drift_bps
                     .partial_cmp(&a.drift_bps)
                     .unwrap_or(std::cmp::Ordering::Equal)
                     .then_with(|| a.symbol.cmp(&b.symbol))
             });
-            planned.truncate(cap);
+
+            let trade_cap = self.max_trades_per_rebalance.unwrap_or(usize::MAX);
+            let mut admitted: Vec<PlannedOrder> = Vec::with_capacity(planned.len().min(trade_cap));
+            let mut running_notional: i64 = 0;
+
+            for mut order in planned {
+                if admitted.len() >= trade_cap {
+                    break;
+                }
+
+                let notional = notional_of(order.qty, order.price);
+                if self.max_rebalance_notional > 0 {
+                    let remaining = self.max_rebalance_notional - running_notional;
+                    if remaining <= 0 {
+                        break;
+                    }
+                    if notional > remaining {
+                        // This order alone would breach the cap: truncate it
+                        // to exactly the remaining budget (see
+                        // `set_max_rebalance_notional` for why truncate
+                        // rather than skip-and-continue) and admit no
+                        // further orders, since the budget is now spent.
+                        order.qty = truncate_qty_to_max_value(
+                            order.qty,
+                            order.price,
+                            self.quantity_step,
+                            remaining,
+                        );
+                        if !order.qty.is_zero() {
+                            let truncated_notional = notional_of(order.qty, order.price);
+                            if self.min_order_value <= 0
+                                || truncated_notional >= self.min_order_value
+                            {
+                                admitted.push(order);
+                            }
+                        }
+                        break;
+                    }
+                }
+
+                running_notional += notional;
+                admitted.push(order);
+            }
+
+            planned = admitted;
         }
 
         self.last_rebalance_order_count = planned.len();
@@ -1437,6 +1514,137 @@ mod tests {
         for s in &symbols {
             assert!(!portfolio.position(s).unwrap().is_flat());
         }
+    }
+
+    // --- max_rebalance_notional ---
+
+    /// Shared fixture for the `max_rebalance_notional` tests below: a flat
+    /// $100,000 account opening three positions in one rebalance, priced so
+    /// notional equals target value exactly ($100/share). Target weights are
+    /// staggered (S0 smallest, S2 largest) so the three orders have distinct
+    /// drift and a deterministic priority order: S2 ($15,000) first, then S1
+    /// ($10,000), then S0 ($5,000). Combined notional is $30,000.
+    fn staggered_three_symbol_fixture() -> (Symbol, Symbol, Symbol, Portfolio, Vec<(Symbol, f64)>, Vec<(Symbol, i64)>) {
+        let s0 = Symbol::new("S0");
+        let s1 = Symbol::new("S1");
+        let s2 = Symbol::new("S2");
+        let price = 100_00; // $100/share
+        let portfolio = Portfolio::new(100_000_00, CostModel::zero()); // $100,000
+        let targets = vec![(s0, 0.05), (s1, 0.10), (s2, 0.15)];
+        let prices = vec![(s0, price), (s1, price), (s2, price)];
+        (s0, s1, s2, portfolio, targets, prices)
+    }
+
+    /// THE BUG ITSELF: tightening `max_order_value` to the period's remaining
+    /// budget checks each order against the same $20,000 snapshot
+    /// independently. Every one of S2 ($15,000), S1 ($10,000) and S0
+    /// ($5,000) individually fits under $20,000, so that approach would
+    /// place all three and spend $30,000 — 1.5x the cap. This test asserts
+    /// the ACTUAL total spent is exactly the cap, which the old per-order
+    /// approach would have failed (it would have produced $30,000, not
+    /// $20,000): S2 is admitted in full ($15,000), leaving $5,000, which is
+    /// exactly enough to truncate S1 to 50 shares ($5,000) and no more; S0
+    /// never gets a turn.
+    #[test]
+    fn max_rebalance_notional_caps_total_spend_across_multiple_orders() {
+        let (s0, s1, s2, mut portfolio, targets, prices) = staggered_three_symbol_fixture();
+        portfolio.set_max_rebalance_notional(20_000_00);
+
+        portfolio.rebalance_simple(&targets, &prices);
+
+        assert_eq!(
+            portfolio.last_rebalance_notional(),
+            20_000_00,
+            "must spend exactly the cap, not the ~$30,000 the old per-order snapshot approach would allow"
+        );
+        assert!(portfolio.last_rebalance_notional() <= 20_000_00);
+
+        assert_eq!(portfolio.position(&s2).unwrap().quantity, Shares::from_whole(150));
+        assert_eq!(portfolio.position(&s1).unwrap().quantity, Shares::from_whole(50));
+        assert!(portfolio.position(&s0).is_none_or(|p| p.is_flat()));
+    }
+
+    /// When the cap binds, the orders admitted (fully or truncated) are the
+    /// highest-drift ones, in priority order: S2 first (fully), then S1
+    /// (truncated), and S0 — the smallest drift — never trades at all.
+    #[test]
+    fn max_rebalance_notional_preserves_drift_priority() {
+        let (s0, s1, s2, mut portfolio, targets, prices) = staggered_three_symbol_fixture();
+        portfolio.set_max_rebalance_notional(20_000_00);
+
+        portfolio.rebalance_simple(&targets, &prices);
+
+        assert!(!portfolio.position(&s2).unwrap().is_flat(), "S2 has the largest drift and must trade");
+        assert!(!portfolio.position(&s1).unwrap().is_flat(), "S1 has the second-largest drift and must trade (truncated)");
+        assert!(
+            portfolio.position(&s0).is_none_or(|p| p.is_flat()),
+            "S0 has the smallest drift and must not trade once the budget is exhausted"
+        );
+    }
+
+    /// Truncation composes with `min_order_value`: when the remaining budget
+    /// only leaves room to truncate an order below the minimum, that order is
+    /// skipped (not placed under-minimum), and no further, smaller-priority
+    /// orders are considered either — the budget is still exhausted.
+    #[test]
+    fn max_rebalance_notional_truncation_below_min_order_value_is_skipped() {
+        let (s0, s1, s2, mut portfolio, targets, prices) = staggered_three_symbol_fixture();
+        portfolio.set_max_rebalance_notional(20_000_00); // $5,000 left after S2
+        portfolio.set_min_order_value(6_000_00); // truncated S1 ($5,000) falls below this
+
+        portfolio.rebalance_simple(&targets, &prices);
+
+        assert_eq!(
+            portfolio.last_rebalance_notional(),
+            15_000_00,
+            "only S2's full $15,000 order should have executed"
+        );
+        assert_eq!(portfolio.position(&s2).unwrap().quantity, Shares::from_whole(150));
+        assert!(
+            portfolio.position(&s1).is_none_or(|p| p.is_flat()),
+            "S1's truncated order falls below min_order_value and must be skipped"
+        );
+        assert!(portfolio.position(&s0).is_none_or(|p| p.is_flat()));
+    }
+
+    /// `max_rebalance_notional` composes with `max_trades_per_rebalance`:
+    /// whichever binds first wins. Here the trade-count cap of 1 stops
+    /// admission after S2 even though $2,000 of the $17,000 notional budget
+    /// is still unused — the trade-count cap is the tighter constraint and
+    /// it is respected exactly, without the notional cap reaching in to
+    /// admit or truncate a second order.
+    #[test]
+    fn max_rebalance_notional_composes_with_max_trades_per_rebalance() {
+        let (s0, s1, s2, mut portfolio, targets, prices) = staggered_three_symbol_fixture();
+        portfolio.set_max_rebalance_notional(17_000_00);
+        portfolio.set_max_trades_per_rebalance(Some(1));
+
+        portfolio.rebalance_simple(&targets, &prices);
+
+        assert_eq!(portfolio.last_rebalance_order_count(), 1);
+        assert_eq!(
+            portfolio.last_rebalance_notional(),
+            15_000_00,
+            "trade-count cap must stop admission after S2, leaving notional budget unused"
+        );
+        assert_eq!(portfolio.position(&s2).unwrap().quantity, Shares::from_whole(150));
+        assert!(portfolio.position(&s1).is_none_or(|p| p.is_flat()));
+        assert!(portfolio.position(&s0).is_none_or(|p| p.is_flat()));
+    }
+
+    /// Default `max_rebalance_notional` (`0`) is unlimited: all three orders
+    /// execute in full, unchanged from behaviour before this cap existed.
+    #[test]
+    fn max_rebalance_notional_default_zero_is_unlimited() {
+        let (s0, s1, s2, mut portfolio, targets, prices) = staggered_three_symbol_fixture();
+        assert_eq!(portfolio.max_rebalance_notional(), 0);
+
+        portfolio.rebalance_simple(&targets, &prices);
+
+        assert_eq!(portfolio.last_rebalance_notional(), 30_000_00);
+        assert_eq!(portfolio.position(&s0).unwrap().quantity, Shares::from_whole(50));
+        assert_eq!(portfolio.position(&s1).unwrap().quantity, Shares::from_whole(100));
+        assert_eq!(portfolio.position(&s2).unwrap().quantity, Shares::from_whole(150));
     }
 
     // --- determinism ---
