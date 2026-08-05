@@ -5,10 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [Unreleased] — 0.18.0
+
+The crate version is bumped to `0.18.0` ahead of publication. 0.17.2 is on
+crates.io and the tree has carried breaking changes since; leaving the manifest
+at 0.17.2 meant two different APIs answering to one version number. Publishing
+is a separate, deliberate step — the heading gets its date then.
+
+**Breaking (nanobook 0.17.2 → 0.18.0):**
+
+- `Position.quantity` is `Shares`, not `i64`.
+- The Python `Position.quantity` getter returns a float.
+- `backtest_weights_with_options` takes new optional fields on
+  `BacktestBridgeOptions`; existing calls keep compiling, and every new default
+  is a strict no-op.
 
 ### Changed
 
+- **BREAKING: position quantities are fractional.** `Position.quantity` becomes
+  `Shares`, a newtype over `i64` counting micro-shares (1e-6), and `Portfolio`
+  gains `quantity_step` in the same unit — `1_000_000` for whole shares
+  (default), `1_000` for 0.001, `1` for effectively continuous. Whole shares
+  were not a rounding detail at small size: $1,000 spread over 20 names priced
+  near $219 rounds every target to zero and the portfolio holds nothing. A
+  newtype rather than an alias so the compiler flags every call site instead of
+  letting them silently mean something 1e6 different; fixed point rather than
+  `f64` so results stay reproducible regardless of summation order. `notional`
+  goes through `i128` before narrowing, since micro-shares of a large position
+  exceed `i64`. The order book is untouched — `Quantity = u64` still drives
+  matching, because a limit order book matches whole lots.
+- **BREAKING (Python): `Position.quantity` returns a float.** It called
+  `Shares::whole()`, so a position of 0.4 shares reported 0 and was invisible
+  from Python. `quantity_micro` gives the exact integer and `quantity_whole`
+  the old truncated value.
+- **The monthly value budget is an exact cap, not an approximation.** Each
+  order was tightened against the budget remaining at the *start* of a period,
+  so every order looked compliant alone while the period overspent — three
+  positions each fitting under a $20,000 budget spent $30,000 of it. It is now
+  a running sum over the priority-sorted orders. This matters because
+  transaction volume relative to portfolio size is a criterion that can
+  reclassify a private investor as a professional trader for tax, and a cap
+  that can be exceeded by half again is not a cap.
 - **CI now lints the whole workspace.** `cargo clippy` ran without
   `--workspace`, so only the root crate was checked and broker, risk and
   rebalancer accumulated 141 unchecked findings. Clearing them was mostly
@@ -38,6 +75,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Execution constraints on `Portfolio`, as parameters rather than policy:**
+  `no_trade_band_bps` (leave a position alone until it is off target by more
+  than this), `min_order_value` (never place an order below this notional),
+  `max_trades_per_rebalance`, `max_order_value` (truncates the order rather
+  than dropping it, the way a desk works a large order down) and
+  `max_rebalance_notional`. Which values are right depends on the account and
+  the venue, so they are something to sweep or solve for, not to hardcode.
+
+  These exist because of what fractional shares uncovered. A portfolio with
+  *constant* target weights and *flat* prices placed 360 orders across 36
+  rebalances of 10 positions; the correct answer is 10, the initial buy. The
+  loop is driven by commission itself — a rebalance pays commission, equity
+  falls, every target value falls with it, so next period every position reads
+  as marginally over target and gets corrected, which costs more commission.
+  Whole-share rounding used to mask this as an accidental no-trade band. A band
+  of one basis point brings it back to 10 orders, which is the measure of how
+  little those other 350 were correcting.
+
+  Defaults (`0`, `0.0`, `None`) are a strict no-op and reproduce the previous
+  behaviour exactly. When a cap binds, the surviving orders are those furthest
+  from target with ties broken by symbol, so the result never depends on hash
+  iteration order.
+- **Windowed trade budgets on the backtest bridge:** `max_trades_per_day`,
+  `max_trades_per_month`, `max_traded_value_per_month`. They live in the bridge
+  because `Portfolio` has no concept of dates and does not gain one. The bridge
+  has no dates either, so the caller supplies `period_day_ordinal` and
+  `period_month_ordinal` — plain monotonic integers. That keeps a calendar
+  library out of this crate, since the only questions asked are "same day?" and
+  "same month?", and it makes 24/7 venues fall out for free: several periods
+  sharing a day ordinal simply share the daily budget. A budget is **inert**
+  unless both the budget and its ordinal array are supplied — a cap can never
+  be enforced against a calendar the caller did not provide, so absent ordinals
+  fail open to no constraint rather than to a guessed one. Mismatched ordinal
+  length is an error, not a silent truncation.
+- **`last_rebalance_order_count` and `last_rebalance_notional`** report what a
+  rebalance actually executed, after every filter. Additive accessors rather
+  than a changed `rebalance_simple` signature, which is published API.
+- **`quantity_step` is settable from Python**, so fractional sizing is
+  reachable through the bindings; `Position` also exposes `quantity_micro`
+  (exact) and `quantity_whole` (truncated).
 - **Frozen reference test for the native ChaCha20 Monte Carlo path**
   (`native_mc_matches_frozen_reference`). The existing reproducibility test
   compares two runs inside one build, so it passes whether or not an RNG

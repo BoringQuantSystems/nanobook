@@ -58,6 +58,16 @@ impl core::marker::UnsafeUnpin for nanobook::backtest_bridge::AttributionTrade
 impl core::panic::unwind_safe::RefUnwindSafe for nanobook::backtest_bridge::AttributionTrade
 impl core::panic::unwind_safe::UnwindSafe for nanobook::backtest_bridge::AttributionTrade
 pub struct nanobook::backtest_bridge::BacktestBridgeOptions
+pub nanobook::backtest_bridge::BacktestBridgeOptions::max_order_value: core::option::Option<i64>
+pub nanobook::backtest_bridge::BacktestBridgeOptions::max_traded_value_per_month: core::option::Option<i64>
+pub nanobook::backtest_bridge::BacktestBridgeOptions::max_trades_per_day: core::option::Option<usize>
+pub nanobook::backtest_bridge::BacktestBridgeOptions::max_trades_per_month: core::option::Option<usize>
+pub nanobook::backtest_bridge::BacktestBridgeOptions::max_trades_per_rebalance: core::option::Option<usize>
+pub nanobook::backtest_bridge::BacktestBridgeOptions::min_order_value: core::option::Option<i64>
+pub nanobook::backtest_bridge::BacktestBridgeOptions::no_trade_band_bps: core::option::Option<f64>
+pub nanobook::backtest_bridge::BacktestBridgeOptions::period_day_ordinal: core::option::Option<alloc::vec::Vec<i64>>
+pub nanobook::backtest_bridge::BacktestBridgeOptions::period_month_ordinal: core::option::Option<alloc::vec::Vec<i64>>
+pub nanobook::backtest_bridge::BacktestBridgeOptions::quantity_step: core::option::Option<i64>
 pub nanobook::backtest_bridge::BacktestBridgeOptions::stop_cfg: core::option::Option<nanobook::backtest_bridge::BacktestStopConfig>
 impl core::clone::Clone for nanobook::backtest_bridge::BacktestBridgeOptions
 pub fn nanobook::backtest_bridge::BacktestBridgeOptions::clone(&self) -> nanobook::backtest_bridge::BacktestBridgeOptions
@@ -559,12 +569,12 @@ pub fn nanobook::portfolio::metrics::sortino(&[f64], f64, f64, u32) -> f64
 pub mod nanobook::portfolio::position
 pub struct nanobook::portfolio::position::Position
 pub nanobook::portfolio::position::Position::avg_entry_price: i64
-pub nanobook::portfolio::position::Position::quantity: i64
+pub nanobook::portfolio::position::Position::quantity: nanobook::portfolio::position::Shares
 pub nanobook::portfolio::position::Position::realized_pnl: i64
 pub nanobook::portfolio::position::Position::symbol: nanobook::Symbol
 pub nanobook::portfolio::position::Position::total_cost: i64
 impl nanobook::portfolio::position::Position
-pub fn nanobook::portfolio::position::Position::apply_fill(&mut self, i64, i64)
+pub fn nanobook::portfolio::position::Position::apply_fill(&mut self, nanobook::portfolio::position::Shares, i64)
 pub fn nanobook::portfolio::position::Position::is_flat(&self) -> bool
 pub fn nanobook::portfolio::position::Position::market_value(&self, i64) -> i64
 pub fn nanobook::portfolio::position::Position::new(nanobook::Symbol) -> Self
@@ -584,6 +594,57 @@ impl core::marker::Unpin for nanobook::portfolio::position::Position
 impl core::marker::UnsafeUnpin for nanobook::portfolio::position::Position
 impl core::panic::unwind_safe::RefUnwindSafe for nanobook::portfolio::position::Position
 impl core::panic::unwind_safe::UnwindSafe for nanobook::portfolio::position::Position
+pub struct nanobook::portfolio::position::Shares(_)
+impl nanobook::portfolio::position::Shares
+pub const nanobook::portfolio::position::Shares::SCALE: i64
+pub const nanobook::portfolio::position::Shares::ZERO: nanobook::portfolio::position::Shares
+pub fn nanobook::portfolio::position::Shares::abs(self) -> Self
+pub fn nanobook::portfolio::position::Shares::from_raw(i64) -> Self
+pub fn nanobook::portfolio::position::Shares::from_whole(i64) -> Self
+pub fn nanobook::portfolio::position::Shares::is_negative(self) -> bool
+pub fn nanobook::portfolio::position::Shares::is_positive(self) -> bool
+pub fn nanobook::portfolio::position::Shares::is_zero(self) -> bool
+pub fn nanobook::portfolio::position::Shares::raw(self) -> i64
+pub fn nanobook::portfolio::position::Shares::to_f64(self) -> f64
+pub fn nanobook::portfolio::position::Shares::unsigned_abs(self) -> u64
+pub fn nanobook::portfolio::position::Shares::whole(self) -> i64
+impl core::clone::Clone for nanobook::portfolio::position::Shares
+pub fn nanobook::portfolio::position::Shares::clone(&self) -> nanobook::portfolio::position::Shares
+impl core::cmp::Eq for nanobook::portfolio::position::Shares
+impl core::cmp::Ord for nanobook::portfolio::position::Shares
+pub fn nanobook::portfolio::position::Shares::cmp(&self, &nanobook::portfolio::position::Shares) -> core::cmp::Ordering
+impl core::cmp::PartialEq for nanobook::portfolio::position::Shares
+pub fn nanobook::portfolio::position::Shares::eq(&self, &nanobook::portfolio::position::Shares) -> bool
+impl core::cmp::PartialOrd for nanobook::portfolio::position::Shares
+pub fn nanobook::portfolio::position::Shares::partial_cmp(&self, &nanobook::portfolio::position::Shares) -> core::option::Option<core::cmp::Ordering>
+impl core::default::Default for nanobook::portfolio::position::Shares
+pub fn nanobook::portfolio::position::Shares::default() -> nanobook::portfolio::position::Shares
+impl core::fmt::Debug for nanobook::portfolio::position::Shares
+pub fn nanobook::portfolio::position::Shares::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for nanobook::portfolio::position::Shares
+impl core::marker::StructuralPartialEq for nanobook::portfolio::position::Shares
+impl core::ops::arith::Add for nanobook::portfolio::position::Shares
+pub type nanobook::portfolio::position::Shares::Output = nanobook::portfolio::position::Shares
+pub fn nanobook::portfolio::position::Shares::add(self, Self) -> Self::Output
+impl core::ops::arith::AddAssign for nanobook::portfolio::position::Shares
+pub fn nanobook::portfolio::position::Shares::add_assign(&mut self, Self)
+impl core::ops::arith::Neg for nanobook::portfolio::position::Shares
+pub type nanobook::portfolio::position::Shares::Output = nanobook::portfolio::position::Shares
+pub fn nanobook::portfolio::position::Shares::neg(self) -> Self::Output
+impl core::ops::arith::Sub for nanobook::portfolio::position::Shares
+pub type nanobook::portfolio::position::Shares::Output = nanobook::portfolio::position::Shares
+pub fn nanobook::portfolio::position::Shares::sub(self, Self) -> Self::Output
+impl serde_core::ser::Serialize for nanobook::portfolio::position::Shares
+pub fn nanobook::portfolio::position::Shares::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::portfolio::position::Shares
+pub fn nanobook::portfolio::position::Shares::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::portfolio::position::Shares
+impl core::marker::Send for nanobook::portfolio::position::Shares
+impl core::marker::Sync for nanobook::portfolio::position::Shares
+impl core::marker::Unpin for nanobook::portfolio::position::Shares
+impl core::marker::UnsafeUnpin for nanobook::portfolio::position::Shares
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::portfolio::position::Shares
+impl core::panic::unwind_safe::UnwindSafe for nanobook::portfolio::position::Shares
 pub mod nanobook::portfolio::strategy
 pub struct nanobook::portfolio::strategy::BacktestResult
 pub nanobook::portfolio::strategy::BacktestResult::metrics: core::option::Option<nanobook::portfolio::metrics::Metrics>
@@ -706,17 +767,32 @@ pub fn nanobook::portfolio::Portfolio::close_position_at(&mut self, nanobook::Sy
 pub fn nanobook::portfolio::Portfolio::cost_model(&self) -> &nanobook::portfolio::cost_model::CostModel
 pub fn nanobook::portfolio::Portfolio::current_weights(&self, &[(nanobook::Symbol, i64)]) -> alloc::vec::Vec<(nanobook::Symbol, f64)>
 pub fn nanobook::portfolio::Portfolio::equity_curve(&self) -> &[i64]
+pub fn nanobook::portfolio::Portfolio::last_rebalance_notional(&self) -> i64
+pub fn nanobook::portfolio::Portfolio::last_rebalance_order_count(&self) -> usize
 pub fn nanobook::portfolio::Portfolio::load_json(&std::path::Path) -> core::io::error::Result<Self>
+pub fn nanobook::portfolio::Portfolio::max_order_value(&self) -> i64
+pub fn nanobook::portfolio::Portfolio::max_rebalance_notional(&self) -> i64
+pub fn nanobook::portfolio::Portfolio::max_trades_per_rebalance(&self) -> core::option::Option<usize>
+pub fn nanobook::portfolio::Portfolio::min_order_value(&self) -> i64
 pub fn nanobook::portfolio::Portfolio::new(i64, nanobook::portfolio::cost_model::CostModel) -> Self
+pub fn nanobook::portfolio::Portfolio::no_trade_band_bps(&self) -> f64
 pub fn nanobook::portfolio::Portfolio::position(&self, &nanobook::Symbol) -> core::option::Option<&nanobook::portfolio::position::Position>
 pub fn nanobook::portfolio::Portfolio::positions(&self) -> impl core::iter::traits::iterator::Iterator<Item = (&nanobook::Symbol, &nanobook::portfolio::position::Position)>
+pub fn nanobook::portfolio::Portfolio::quantity_step(&self) -> i64
 pub fn nanobook::portfolio::Portfolio::rebalance_lob(&mut self, &[(nanobook::Symbol, f64)], &mut nanobook::multi_exchange::MultiExchange)
 pub fn nanobook::portfolio::Portfolio::rebalance_simple(&mut self, &[(nanobook::Symbol, f64)], &[(nanobook::Symbol, i64)])
 pub fn nanobook::portfolio::Portfolio::record_return(&mut self, &[(nanobook::Symbol, i64)])
 pub fn nanobook::portfolio::Portfolio::returns(&self) -> &[f64]
 pub fn nanobook::portfolio::Portfolio::save_json(&self, &std::path::Path) -> core::io::error::Result<()>
+pub fn nanobook::portfolio::Portfolio::set_max_order_value(&mut self, i64)
+pub fn nanobook::portfolio::Portfolio::set_max_rebalance_notional(&mut self, i64)
+pub fn nanobook::portfolio::Portfolio::set_max_trades_per_rebalance(&mut self, core::option::Option<usize>)
+pub fn nanobook::portfolio::Portfolio::set_min_order_value(&mut self, i64)
+pub fn nanobook::portfolio::Portfolio::set_no_trade_band_bps(&mut self, f64)
+pub fn nanobook::portfolio::Portfolio::set_quantity_step(&mut self, i64)
 pub fn nanobook::portfolio::Portfolio::snapshot(&self, &[(nanobook::Symbol, i64)]) -> nanobook::portfolio::PortfolioSnapshot
 pub fn nanobook::portfolio::Portfolio::total_equity(&self, &[(nanobook::Symbol, i64)]) -> i64
+pub fn nanobook::portfolio::Portfolio::with_quantity_step(i64, nanobook::portfolio::cost_model::CostModel, i64) -> Self
 impl core::clone::Clone for nanobook::portfolio::Portfolio
 pub fn nanobook::portfolio::Portfolio::clone(&self) -> nanobook::portfolio::Portfolio
 impl core::fmt::Debug for nanobook::portfolio::Portfolio
@@ -755,12 +831,12 @@ impl core::panic::unwind_safe::RefUnwindSafe for nanobook::portfolio::PortfolioS
 impl core::panic::unwind_safe::UnwindSafe for nanobook::portfolio::PortfolioSnapshot
 pub struct nanobook::portfolio::Position
 pub nanobook::portfolio::Position::avg_entry_price: i64
-pub nanobook::portfolio::Position::quantity: i64
+pub nanobook::portfolio::Position::quantity: nanobook::portfolio::position::Shares
 pub nanobook::portfolio::Position::realized_pnl: i64
 pub nanobook::portfolio::Position::symbol: nanobook::Symbol
 pub nanobook::portfolio::Position::total_cost: i64
 impl nanobook::portfolio::position::Position
-pub fn nanobook::portfolio::position::Position::apply_fill(&mut self, i64, i64)
+pub fn nanobook::portfolio::position::Position::apply_fill(&mut self, nanobook::portfolio::position::Shares, i64)
 pub fn nanobook::portfolio::position::Position::is_flat(&self) -> bool
 pub fn nanobook::portfolio::position::Position::market_value(&self, i64) -> i64
 pub fn nanobook::portfolio::position::Position::new(nanobook::Symbol) -> Self
@@ -780,6 +856,57 @@ impl core::marker::Unpin for nanobook::portfolio::position::Position
 impl core::marker::UnsafeUnpin for nanobook::portfolio::position::Position
 impl core::panic::unwind_safe::RefUnwindSafe for nanobook::portfolio::position::Position
 impl core::panic::unwind_safe::UnwindSafe for nanobook::portfolio::position::Position
+pub struct nanobook::portfolio::Shares(_)
+impl nanobook::portfolio::position::Shares
+pub const nanobook::portfolio::position::Shares::SCALE: i64
+pub const nanobook::portfolio::position::Shares::ZERO: nanobook::portfolio::position::Shares
+pub fn nanobook::portfolio::position::Shares::abs(self) -> Self
+pub fn nanobook::portfolio::position::Shares::from_raw(i64) -> Self
+pub fn nanobook::portfolio::position::Shares::from_whole(i64) -> Self
+pub fn nanobook::portfolio::position::Shares::is_negative(self) -> bool
+pub fn nanobook::portfolio::position::Shares::is_positive(self) -> bool
+pub fn nanobook::portfolio::position::Shares::is_zero(self) -> bool
+pub fn nanobook::portfolio::position::Shares::raw(self) -> i64
+pub fn nanobook::portfolio::position::Shares::to_f64(self) -> f64
+pub fn nanobook::portfolio::position::Shares::unsigned_abs(self) -> u64
+pub fn nanobook::portfolio::position::Shares::whole(self) -> i64
+impl core::clone::Clone for nanobook::portfolio::position::Shares
+pub fn nanobook::portfolio::position::Shares::clone(&self) -> nanobook::portfolio::position::Shares
+impl core::cmp::Eq for nanobook::portfolio::position::Shares
+impl core::cmp::Ord for nanobook::portfolio::position::Shares
+pub fn nanobook::portfolio::position::Shares::cmp(&self, &nanobook::portfolio::position::Shares) -> core::cmp::Ordering
+impl core::cmp::PartialEq for nanobook::portfolio::position::Shares
+pub fn nanobook::portfolio::position::Shares::eq(&self, &nanobook::portfolio::position::Shares) -> bool
+impl core::cmp::PartialOrd for nanobook::portfolio::position::Shares
+pub fn nanobook::portfolio::position::Shares::partial_cmp(&self, &nanobook::portfolio::position::Shares) -> core::option::Option<core::cmp::Ordering>
+impl core::default::Default for nanobook::portfolio::position::Shares
+pub fn nanobook::portfolio::position::Shares::default() -> nanobook::portfolio::position::Shares
+impl core::fmt::Debug for nanobook::portfolio::position::Shares
+pub fn nanobook::portfolio::position::Shares::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for nanobook::portfolio::position::Shares
+impl core::marker::StructuralPartialEq for nanobook::portfolio::position::Shares
+impl core::ops::arith::Add for nanobook::portfolio::position::Shares
+pub type nanobook::portfolio::position::Shares::Output = nanobook::portfolio::position::Shares
+pub fn nanobook::portfolio::position::Shares::add(self, Self) -> Self::Output
+impl core::ops::arith::AddAssign for nanobook::portfolio::position::Shares
+pub fn nanobook::portfolio::position::Shares::add_assign(&mut self, Self)
+impl core::ops::arith::Neg for nanobook::portfolio::position::Shares
+pub type nanobook::portfolio::position::Shares::Output = nanobook::portfolio::position::Shares
+pub fn nanobook::portfolio::position::Shares::neg(self) -> Self::Output
+impl core::ops::arith::Sub for nanobook::portfolio::position::Shares
+pub type nanobook::portfolio::position::Shares::Output = nanobook::portfolio::position::Shares
+pub fn nanobook::portfolio::position::Shares::sub(self, Self) -> Self::Output
+impl serde_core::ser::Serialize for nanobook::portfolio::position::Shares
+pub fn nanobook::portfolio::position::Shares::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for nanobook::portfolio::position::Shares
+pub fn nanobook::portfolio::position::Shares::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for nanobook::portfolio::position::Shares
+impl core::marker::Send for nanobook::portfolio::position::Shares
+impl core::marker::Sync for nanobook::portfolio::position::Shares
+impl core::marker::Unpin for nanobook::portfolio::position::Shares
+impl core::marker::UnsafeUnpin for nanobook::portfolio::position::Shares
+impl core::panic::unwind_safe::RefUnwindSafe for nanobook::portfolio::position::Shares
+impl core::panic::unwind_safe::UnwindSafe for nanobook::portfolio::position::Shares
 pub trait nanobook::portfolio::Strategy
 pub fn nanobook::portfolio::Strategy::compute_weights(&self, usize, &[(nanobook::Symbol, i64)], &nanobook::portfolio::Portfolio) -> alloc::vec::Vec<(nanobook::Symbol, f64)>
 impl nanobook::portfolio::strategy::Strategy for nanobook::portfolio::strategy::EqualWeight

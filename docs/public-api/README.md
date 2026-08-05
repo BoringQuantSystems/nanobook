@@ -24,8 +24,12 @@ because it reads as a guarantee while describing an API that has moved on.
 
 ## Provenance
 
-Last regenerated 2026-07-31 for v0.17.2, with `cargo-public-api` 0.52.0 on
-rustc 1.97.1.
+Last regenerated 2026-08-05 for the 0.18.0 bump, with `cargo-public-api` 0.52.0
+on rustc 1.97.1 — the same tool version as the previous run, so the diff is the
+real API change and not rendering churn. Only `nanobook.txt` moved: `Shares`
+arrives with its full surface, `Position::quantity` and `Position::apply_fill`
+change type from `i64`, and `BacktestBridgeOptions` gains the execution
+constraints. Nothing else was removed.
 
 Record the tool version when you regenerate. The output format is not stable
 across `cargo-public-api` releases: the 0.52 line above dropped argument names

@@ -1241,7 +1241,7 @@ dependencies = [
 
 [[package]]
 name = "nanobook"
-version = "0.17.2"
+version = "0.18.0"
 dependencies = [
  "criterion",
  "memmap2",
@@ -1281,7 +1281,7 @@ dependencies = [
 
 [[package]]
 name = "nanobook-python"
-version = "0.17.2"
+version = "0.18.0"
 dependencies = [
  "nanobook",
  "nanobook-broker",
