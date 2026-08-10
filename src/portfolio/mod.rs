@@ -142,6 +142,15 @@ pub struct Portfolio {
     /// `last_rebalance_order_count`.
     #[cfg_attr(feature = "serde", serde(skip, default))]
     last_rebalance_notional: i64,
+    /// Number of buy fills truncated because the account could not cover the
+    /// requested quantity plus costs. Cumulative over the portfolio's life;
+    /// not persisted.
+    #[cfg_attr(feature = "serde", serde(skip, default))]
+    trimmed_fill_count: u64,
+    /// Sum, in cents of notional, of buy quantity that was requested but not
+    /// filled because cash was insufficient. Cumulative; not persisted.
+    #[cfg_attr(feature = "serde", serde(skip, default))]
+    trimmed_shortfall_cents: i64,
 }
 
 /// Serde default for `Portfolio::quantity_step`: whole shares, so JSON saved
@@ -180,6 +189,8 @@ impl Portfolio {
             max_rebalance_notional: 0,
             last_rebalance_order_count: 0,
             last_rebalance_notional: 0,
+            trimmed_fill_count: 0,
+            trimmed_shortfall_cents: 0,
         }
     }
 
@@ -259,6 +270,23 @@ impl Portfolio {
     #[inline]
     pub fn last_rebalance_notional(&self) -> i64 {
         self.last_rebalance_notional
+    }
+
+    /// Number of buy fills that were truncated because cash could not cover
+    /// the requested quantity plus costs. Cumulative over the portfolio's
+    /// lifetime (not reset by rebalance).
+    #[inline]
+    pub fn trimmed_fill_count(&self) -> u64 {
+        self.trimmed_fill_count
+    }
+
+    /// Total notional (cents) of buy quantity that was requested but not
+    /// filled because cash was insufficient. Cumulative over the portfolio's
+    /// lifetime (not reset by rebalance). Zero means no buy has ever been
+    /// trimmed for affordability.
+    #[inline]
+    pub fn trimmed_shortfall_cents(&self) -> i64 {
+        self.trimmed_shortfall_cents
     }
 
     /// Set the no-trade band, in basis points of equity. Must be non-negative
@@ -785,6 +813,12 @@ impl Portfolio {
     /// Execute a fill: update position, deduct cost, adjust cash.
     ///
     /// `qty` is signed micro-shares (see [`Shares`]).
+    ///
+    /// Buys never spend more cash than the account holds. An unaffordable buy
+    /// is truncated to the largest `quantity_step` multiple whose notional
+    /// plus [`CostModel::compute_cost`] fits in `cash`. A quantity that snaps
+    /// to zero is skipped entirely (no zero-notional fill that would still
+    /// charge `min_commission`). Sells are never truncated — they raise cash.
     fn execute_fill(&mut self, symbol: Symbol, qty: Shares, price: i64) {
         if qty.is_zero() {
             return;
@@ -796,13 +830,61 @@ impl Portfolio {
         let effective_price_f = price as f64 * slippage_factor;
         let effective_price = effective_price_f.round() as i64;
 
+        let mut qty = qty;
+
+        // Affordability gate for buys. `compute_cost` is monotonic in notional
+        // but has a `min_commission` floor, so `cash / price` alone overshoots:
+        // solve with the cost model and snap down to `quantity_step`.
+        if qty.is_positive() {
+            let requested_raw = qty.raw();
+            let required = buy_cash_required(requested_raw, effective_price, &self.cost_model);
+            if required > self.cash {
+                let affordable = largest_affordable_buy_qty(
+                    requested_raw,
+                    self.cash,
+                    self.quantity_step,
+                    effective_price,
+                    &self.cost_model,
+                );
+                let requested_notional = notional_of(qty, effective_price);
+                let filled_notional = notional_of(affordable, effective_price);
+                self.trimmed_fill_count = self.trimmed_fill_count.saturating_add(1);
+                self.trimmed_shortfall_cents = self
+                    .trimmed_shortfall_cents
+                    .saturating_add(requested_notional.saturating_sub(filled_notional));
+                qty = affordable;
+                if qty.is_zero() {
+                    // No fill of zero-with-cost: skipping avoids charging the
+                    // min_commission floor against an empty trade.
+                    return;
+                }
+            }
+        }
+
         // i128 intermediate: at micro-share granularity a large position
         // (e.g. 1e6 shares at $10,000) overflows i64 before normalizing by
         // Shares::SCALE, so raw_qty * price must not be computed in i64.
-        let notional_i128 = (qty.raw().unsigned_abs() as i128) * (effective_price.unsigned_abs() as i128)
+        let notional_i128 = (qty.raw().unsigned_abs() as i128)
+            * (effective_price.unsigned_abs() as i128)
             / (Shares::SCALE as i128);
         let notional = notional_i128.clamp(0, i64::MAX as i128) as i64;
         let cost = self.cost_model.compute_cost(notional);
+
+        let cash_delta_i128 =
+            (qty.raw() as i128) * (effective_price as i128) / (Shares::SCALE as i128);
+        let cash_delta = cash_delta_i128.clamp(i64::MIN as i128, i64::MAX as i128) as i64;
+
+        // Sells are never quantity-truncated, but a tiny sell can still carry a
+        // `min_commission` larger than its proceeds. If cash + proceeds cannot
+        // cover the commission, skip the fill entirely rather than overdraw —
+        // reducing the sell would only make the floor worse, and the buy-side
+        // trim path does not apply.
+        if qty.is_negative() {
+            let cash_after = self.cash.saturating_sub(cash_delta.saturating_add(cost));
+            if cash_after < 0 {
+                return;
+            }
+        }
 
         let pos = self
             .positions
@@ -810,10 +892,8 @@ impl Portfolio {
             .or_insert_with(|| Position::new(symbol));
         pos.apply_fill(qty, effective_price);
 
-        let cash_delta_i128 =
-            (qty.raw() as i128) * (effective_price as i128) / (Shares::SCALE as i128);
-        let cash_delta = cash_delta_i128.clamp(i64::MIN as i128, i64::MAX as i128) as i64;
         self.cash = self.cash.saturating_sub(cash_delta.saturating_add(cost));
+        debug_assert!(self.cash >= 0);
     }
 }
 
@@ -835,6 +915,52 @@ fn notional_of(qty: Shares, price: i64) -> i64 {
     let notional_i128 =
         (qty.raw().unsigned_abs() as i128) * (price.unsigned_abs() as i128) / (Shares::SCALE as i128);
     notional_i128.clamp(0, i64::MAX as i128) as i64
+}
+
+/// Cash outlay (cents) required to buy `raw_abs` micro-shares at
+/// `effective_price`: notional plus [`CostModel::compute_cost`]. Uses an
+/// `i128` intermediate for the same overflow-safety reason as `notional_of`.
+fn buy_cash_required(raw_abs: i64, effective_price: i64, cost_model: &CostModel) -> i64 {
+    if raw_abs <= 0 || effective_price <= 0 {
+        return 0;
+    }
+    let notional_i128 =
+        (raw_abs as i128) * (effective_price as i128) / (Shares::SCALE as i128);
+    let notional = notional_i128.clamp(0, i64::MAX as i128) as i64;
+    notional.saturating_add(cost_model.compute_cost(notional))
+}
+
+/// Largest buy quantity at or below `requested_raw` micro-shares whose
+/// notional-plus-cost fits in `cash`, snapped down to a multiple of `step`.
+/// Returns [`Shares::ZERO`] when even one step is unaffordable (or inputs are
+/// degenerate). Binary-searches step multiples because `min_commission` makes
+/// a naive `cash / price` overshoot.
+fn largest_affordable_buy_qty(
+    requested_raw: i64,
+    cash: i64,
+    step: i64,
+    effective_price: i64,
+    cost_model: &CostModel,
+) -> Shares {
+    if requested_raw <= 0 || cash <= 0 || step <= 0 || effective_price <= 0 {
+        return Shares::ZERO;
+    }
+    if buy_cash_required(requested_raw, effective_price, cost_model) <= cash {
+        return Shares::from_raw(requested_raw);
+    }
+    // Search over k = number of steps, k * step <= requested_raw.
+    let mut lo = 0_i64;
+    let mut hi = requested_raw / step;
+    while lo < hi {
+        let mid = lo + (hi - lo + 1) / 2;
+        let raw = mid.saturating_mul(step);
+        if buy_cash_required(raw, effective_price, cost_model) <= cash {
+            lo = mid;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    Shares::from_raw(lo.saturating_mul(step))
 }
 
 /// Truncate `qty` (magnitude only; sign preserved) to the largest quantity,
@@ -1249,9 +1375,21 @@ mod tests {
         }
     }
 
-    /// Same setup with NO band set (default `0.0`): reproduces the defect
-    /// exactly as measured — 360 orders, $126 of commission on a $10,000
-    /// account — proving the band, not some other change, is what fixes it.
+    /// Same setup with NO band set (default `0.0`), measured against the banded
+    /// run above.
+    ///
+    /// This test used to assert that the unbanded run burned 360 × $0.35 = $126
+    /// of commission, and that the band was what prevented it. That was only
+    /// true while the portfolio could spend cash it did not have. Once a fill
+    /// can no longer overdraw the account, both runs stop at the same $3.50 —
+    /// ten opening commissions — because a cash account cannot finance a
+    /// correction it cannot afford.
+    ///
+    /// So the band still changes how many orders are PLANNED (360 vs 45), but at
+    /// a $10,000 account it no longer changes what is SPENT. Whether the band
+    /// earns its keep at this size is now an open question rather than a settled
+    /// one; the numbers below are pinned exactly so that any future change to
+    /// either brake shows up as a failure instead of a drift.
     #[test]
     fn constant_weights_without_band_reproduces_the_feedback_loop() {
         let symbols = ten_symbols();
@@ -1265,20 +1403,47 @@ mod tests {
             slippage_bps: 0.0,
             min_commission: 35,
         };
-        let mut portfolio = Portfolio::with_quantity_step(10_000_00, model, 1_000);
-        // no_trade_band_bps left at its default (0.0) deliberately.
+        let mut no_band = Portfolio::with_quantity_step(10_000_00, model, 1_000);
+        let mut with_band = Portfolio::with_quantity_step(10_000_00, model, 1_000);
+        with_band.set_no_trade_band_bps(1.0);
 
+        let mut orders_no_band = 0usize;
+        let mut orders_with_band = 0usize;
         for _ in 0..36 {
-            portfolio.rebalance_simple(&targets, &prices);
+            no_band.rebalance_simple(&targets, &prices);
+            with_band.rebalance_simple(&targets, &prices);
+            orders_no_band += no_band.last_rebalance_order_count();
+            orders_with_band += with_band.last_rebalance_order_count();
+            assert!(no_band.cash() >= 0);
+            assert!(with_band.cash() >= 0);
         }
 
-        let equity_final = portfolio.total_equity(&prices);
-        let total_cost = 10_000_00 - equity_final;
+        // Measured, not approximated. Without a band the portfolio still PLANS a
+        // correction for all ten names on all 36 rebalances; the band suppresses
+        // all but the opening buys plus a handful of corrections.
         assert_eq!(
-            total_cost,
-            360 * 35,
-            "without a band, every rebalance re-corrects every position: 360 orders total"
+            orders_no_band, 360,
+            "unbanded: 10 names x 36 rebalances are all planned"
         );
+        assert_eq!(orders_with_band, 45, "banded: openings plus a few corrections");
+
+        // The money is the point, and here it is identical on both sides. A cash
+        // account cannot finance a correction it cannot afford, so spending stops
+        // at the same place with or without a band: ten opening commissions,
+        // $0.35 each. The band changes how many orders are PLANNED, not what this
+        // account can SPEND.
+        let cost_no_band = 10_000_00 - no_band.total_equity(&prices);
+        let cost_with_band = 10_000_00 - with_band.total_equity(&prices);
+        assert_eq!(cost_no_band, 10 * 35, "ten opening commissions and no more");
+        assert_eq!(
+            cost_with_band, cost_no_band,
+            "at this account size the band saves nothing once the overdraft is gone"
+        );
+
+        // Every rebalance is trimmed: the account is fully invested and the
+        // targets cannot be met in full. That is the honest state, not an error.
+        assert_eq!(no_band.trimmed_fill_count(), 36);
+        assert_eq!(with_band.trimmed_fill_count(), 36);
     }
 
     // --- min_order_value ---
@@ -1413,25 +1578,29 @@ mod tests {
         let mut portfolio = Portfolio::new(1_000_00, CostModel::zero()); // $1,000
         portfolio.set_no_trade_band_bps(500.0); // 5% band
 
-        // Initial: both at 50%, 5 shares each ($500 / $100).
-        portfolio.rebalance_simple(&[(a, 0.5), (b, 0.5)], &[(a, price), (b, price)]);
-        assert_eq!(portfolio.position(&a).unwrap().quantity, Shares::from_whole(5));
-        assert_eq!(portfolio.position(&b).unwrap().quantity, Shares::from_whole(5));
+        // Initial: 40% each leaves $200 cash so a later buy does not need an
+        // overdraft (targets that sum above invested weight used to borrow
+        // from cash that was not there).
+        portfolio.rebalance_simple(&[(a, 0.4), (b, 0.4)], &[(a, price), (b, price)]);
+        assert_eq!(portfolio.position(&a).unwrap().quantity, Shares::from_whole(4));
+        assert_eq!(portfolio.position(&b).unwrap().quantity, Shares::from_whole(4));
+        assert_eq!(portfolio.cash(), 200_00);
 
-        // Nudge targets: A drifts by 2% (inside the 5% band) -> untouched.
-        // B drifts by 10% (outside the band) -> corrected to 6 shares ($600 / $100).
-        portfolio.rebalance_simple(&[(a, 0.52), (b, 0.60)], &[(a, price), (b, price)]);
+        // A drifts by 1% of equity (inside the 5% band) -> untouched.
+        // B drifts by 15% of equity (outside the band) -> buys one share from cash.
+        portfolio.rebalance_simple(&[(a, 0.41), (b, 0.55)], &[(a, price), (b, price)]);
 
         assert_eq!(
             portfolio.position(&a).unwrap().quantity,
-            Shares::from_whole(5),
-            "A's 2% drift is inside the 5% band and must not trade"
+            Shares::from_whole(4),
+            "A's 1% drift is inside the 5% band and must not trade"
         );
         assert_eq!(
             portfolio.position(&b).unwrap().quantity,
-            Shares::from_whole(6),
-            "B's 10% drift is outside the 5% band and must be corrected"
+            Shares::from_whole(5),
+            "B's 15% drift is outside the 5% band and must be corrected"
         );
+        assert!(portfolio.cash() >= 0);
     }
 
     #[test]
@@ -1463,22 +1632,31 @@ mod tests {
         let price = 100_00;
         let prices: Vec<(Symbol, i64)> = symbols.iter().map(|s| (*s, price)).collect();
 
-        // Initial: all equal-weighted at 10%, 1 share each. Fractional
-        // quantity_step (0.001 share) so the small drifts below don't
-        // truncate to zero shares and hide the ranking.
-        let equal_targets: Vec<(Symbol, f64)> = symbols.iter().map(|s| (*s, 0.1)).collect();
+        // Initial: 5% each leaves half the account in cash so later buys are
+        // funded without an overdraft. Fractional quantity_step (0.001 share)
+        // so small drifts don't truncate to zero and hide the ranking.
+        let equal_targets: Vec<(Symbol, f64)> = symbols.iter().map(|s| (*s, 0.05)).collect();
         let mut portfolio = Portfolio::with_quantity_step(1_000_00, CostModel::zero(), 1_000); // $1,000
         portfolio.rebalance_simple(&equal_targets, &prices);
         for s in &symbols {
-            assert_eq!(portfolio.position(s).unwrap().quantity, Shares::from_whole(1));
+            assert_eq!(portfolio.position(s).unwrap().quantity, Shares::from_raw(500_000)); // 0.5 share
         }
+        assert!(portfolio.cash() > 0);
 
-        // New targets: increasing drift by symbol index, S9 largest.
-        // weight_i = 0.10 + 0.01*(i+1), i.e. S0 -> 0.11 ... S9 -> 0.20.
+        // New targets: S0..S6 stay put; S7/S8/S9 step up with increasing drift.
+        // Absolute drifts: S9 > S8 > S7 >> S0..S6 (== 0), so a cap of 3 keeps
+        // exactly those three buys.
         let new_targets: Vec<(Symbol, f64)> = symbols
             .iter()
             .enumerate()
-            .map(|(i, s)| (*s, 0.10 + 0.01 * (i as f64 + 1.0)))
+            .map(|(i, s)| {
+                let w = if i >= 7 {
+                    0.05 + 0.03 * (i as f64 - 6.0) // S7=0.08, S8=0.11, S9=0.14
+                } else {
+                    0.05
+                };
+                (*s, w)
+            })
             .collect();
 
         portfolio.set_max_trades_per_rebalance(Some(3));
@@ -1486,7 +1664,7 @@ mod tests {
 
         let traded: Vec<&str> = symbols
             .iter()
-            .filter(|s| portfolio.position(s).unwrap().quantity != Shares::from_whole(1))
+            .filter(|s| portfolio.position(s).unwrap().quantity != Shares::from_raw(500_000))
             .map(|s| s.as_str())
             .collect();
         let mut traded_sorted = traded.clone();
@@ -1496,6 +1674,7 @@ mod tests {
             vec!["S7", "S8", "S9"],
             "only the 3 largest-drift symbols should have traded, got {traded:?}"
         );
+        assert!(portfolio.cash() >= 0);
     }
 
     /// Default `max_trades_per_rebalance` (`None`) places every order that
@@ -1685,6 +1864,187 @@ mod tests {
             let repeat = run(&symbols, &equal_targets, &new_targets, &prices);
             assert_eq!(first, repeat, "rebalance output must be deterministic");
         }
+    }
+
+    // === Cash affordability: buys never overdraw the account ===
+
+    /// Operator repro (pre-fix measured values left in the comment):
+    /// $1,000, 10 equal-weight names at $200, US-equities-tiered costs
+    /// (`commission_bps=0.5`, `slippage_bps=2.0`, `min_commission=35`),
+    /// `quantity_step=1_000`. Before the affordability gate this stabilised
+    /// around cash −$5.30 / invested 100.55% after repeated rebalances — the
+    /// portfolio was levered on an overdraft that does not exist at a broker.
+    /// After the gate: cash stays non-negative and invested ≤ 100%.
+    #[test]
+    fn small_account_us_equities_never_overdraws_cash() {
+        let symbols = ten_symbols();
+        let weight = 0.1;
+        let price = 200_00;
+        let targets: Vec<(Symbol, f64)> = symbols.iter().map(|s| (*s, weight)).collect();
+        let prices: Vec<(Symbol, i64)> = symbols.iter().map(|s| (*s, price)).collect();
+
+        let model = CostModel {
+            commission_bps: 0.5,
+            slippage_bps: 2.0,
+            min_commission: 35,
+        };
+        let mut portfolio = Portfolio::with_quantity_step(1_000_00, model, 1_000);
+
+        for _ in 0..12 {
+            portfolio.rebalance_simple(&targets, &prices);
+            assert!(
+                portfolio.cash() >= 0,
+                "cash went negative: {}",
+                portfolio.cash()
+            );
+        }
+
+        let equity = portfolio.total_equity(&prices);
+        assert!(equity > 0, "equity collapsed to {equity}");
+        let invested_pct = (1.0 - portfolio.cash() as f64 / equity as f64) * 100.0;
+        assert!(
+            invested_pct <= 100.0,
+            "invested {invested_pct:.4}% > 100% (cash={}, equity={equity})",
+            portfolio.cash()
+        );
+        // The trim must be visible, not a silent clamp: this account cannot
+        // fund ten min-commission buys at full target without cutting size.
+        assert!(
+            portfolio.trimmed_fill_count() > 0,
+            "expected at least one buy trimmed on the $1,000 repro"
+        );
+        assert!(
+            portfolio.trimmed_shortfall_cents() > 0,
+            "expected positive shortfall cents on the $1,000 repro"
+        );
+    }
+
+    /// Grid: account size × cost model × quantity_step. After every rebalance
+    /// `cash() >= 0`. Every cell actually runs.
+    #[test]
+    fn cash_non_negative_across_account_cost_and_step_grid() {
+        let symbols = ten_symbols();
+        let weight = 0.1;
+        let price = 200_00;
+        let targets: Vec<(Symbol, f64)> = symbols.iter().map(|s| (*s, weight)).collect();
+        let prices: Vec<(Symbol, i64)> = symbols.iter().map(|s| (*s, price)).collect();
+
+        let account_sizes = [1_000_00, 10_000_00, 100_000_00, 1_000_000_00];
+        let cost_models = [
+            CostModel::zero(),
+            // US equities (IBKR Tiered) — ADR-0003 reference parameters.
+            CostModel {
+                commission_bps: 0.5,
+                slippage_bps: 2.0,
+                min_commission: 35,
+            },
+            // Commission-only: bps fee, no slippage, no floor.
+            CostModel {
+                commission_bps: 10.0,
+                slippage_bps: 0.0,
+                min_commission: 0,
+            },
+        ];
+        let steps = [Shares::SCALE, 1_000]; // whole-share, fractional 0.001
+
+        for &cash0 in &account_sizes {
+            for &model in &cost_models {
+                for &step in &steps {
+                    let mut portfolio = Portfolio::with_quantity_step(cash0, model, step);
+                    for _ in 0..6 {
+                        portfolio.rebalance_simple(&targets, &prices);
+                        assert!(
+                            portfolio.cash() >= 0,
+                            "cash={} < 0 for cash0={cash0}, model={model:?}, step={step}",
+                            portfolio.cash()
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// Truncation picks the largest affordable step-multiple, not `cash/price`.
+    /// With a $0.35 floor on a $100 account at $10/share, ten shares cost
+    /// $100.35 and overshoot; nine shares cost $90.35 and fit. A naive
+    /// `cash / price` would still try ten.
+    #[test]
+    fn affordability_picks_largest_step_multiple_under_min_commission() {
+        let model = CostModel {
+            commission_bps: 0.0,
+            slippage_bps: 0.0,
+            min_commission: 35,
+        };
+        let mut portfolio = Portfolio::with_quantity_step(100_00, model, Shares::SCALE);
+        let sym = aapl();
+        // Request the full account as a single name: size_qty wants ~10 shares.
+        portfolio.rebalance_simple(&[(sym, 1.0)], &[(sym, 10_00)]);
+
+        let pos = portfolio.position(&sym).expect("position opened");
+        assert_eq!(
+            pos.quantity,
+            Shares::from_whole(9),
+            "expected 9 shares (10 overshoots by the $0.35 floor)"
+        );
+        assert!(portfolio.cash() >= 0);
+        // 9 * $10 + $0.35 = $90.35 → cash left $9.65.
+        assert_eq!(portfolio.cash(), 100_00 - 90_00 - 35);
+        assert_eq!(portfolio.trimmed_fill_count(), 1);
+        // Requested ~10 shares ($100 notional) vs filled 9 ($90): $10 shortfall.
+        assert_eq!(portfolio.trimmed_shortfall_cents(), 10_00);
+    }
+
+    /// A quantity that cannot fund even one step is skipped — no zero fill
+    /// that would still levy `min_commission`.
+    #[test]
+    fn unaffordable_step_produces_no_fill_and_no_cost() {
+        let model = CostModel {
+            commission_bps: 0.0,
+            slippage_bps: 0.0,
+            min_commission: 50, // $0.50 floor
+        };
+        // One whole share at $100 is sizeable, but $100 cash cannot also cover
+        // the $0.50 floor, so the buy must be skipped rather than filled at
+        // zero-with-cost.
+        let mut portfolio = Portfolio::with_quantity_step(100_00, model, Shares::SCALE);
+        let sym = aapl();
+        portfolio.rebalance_simple(&[(sym, 1.0)], &[(sym, 100_00)]);
+
+        assert!(portfolio.position(&sym).is_none_or(|p| p.is_flat()));
+        assert_eq!(
+            portfolio.cash(),
+            100_00,
+            "skipped fill must not charge commission"
+        );
+        assert_eq!(portfolio.trimmed_fill_count(), 1);
+        assert_eq!(portfolio.trimmed_shortfall_cents(), 100_00);
+    }
+
+    /// Sells raise cash and must never be truncated by the affordability gate,
+    /// even when cash is already zero before the sale proceeds land.
+    #[test]
+    fn sells_are_never_truncated_by_affordability() {
+        let mut portfolio = Portfolio::new(100_00, CostModel::zero());
+        let sym = aapl();
+        // Exact whole-share buy leaves cash at zero.
+        portfolio.rebalance_simple(&[(sym, 1.0)], &[(sym, 100_00)]);
+        let qty_before = portfolio.position(&sym).unwrap().quantity;
+        assert_eq!(qty_before, Shares::from_whole(1));
+        assert_eq!(portfolio.cash(), 0);
+        assert_eq!(portfolio.trimmed_fill_count(), 0);
+
+        // Full close at a higher price must liquidate every share and credit
+        // the full notional — a sell is never an affordability problem.
+        let closed = portfolio.close_position_at(sym, 110_00);
+        assert!(closed);
+        assert!(portfolio.position(&sym).unwrap().is_flat());
+        assert_eq!(portfolio.cash(), 110_00);
+        assert_eq!(
+            portfolio.trimmed_fill_count(),
+            0,
+            "sells must not increment trimmed_fill_count"
+        );
+        assert_eq!(portfolio.trimmed_shortfall_cents(), 0);
     }
 }
 

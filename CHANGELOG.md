@@ -73,6 +73,23 @@ is a separate, deliberate step — the heading gets its date then.
   mid-execution; it needs its own change driven by the mock-TWS drills rather
   than arriving as a weekly PR. Minor and patch bumps still come through.
 
+### Fixed
+
+- **Buys never spend cash the account does not have.** `execute_fill` deducted
+  an unaffordable buy with `saturating_sub`, so cash went negative and the
+  portfolio held more than its equity — leverage financed by an overdraft no
+  broker extends. On a $1,000 account (10 equal-weight names, US-equities-tiered
+  costs) that stabilised around cash −$5.30 / invested 100.55%. Buys are now
+  truncated to the largest `quantity_step` multiple whose notional plus
+  `CostModel::compute_cost` fits in cash; a quantity that snaps to zero is
+  skipped entirely (no zero-notional fill that would still charge
+  `min_commission`). Sell quantities are never reduced, but a sell whose
+  `min_commission` exceeds cash plus proceeds is skipped whole — reducing it
+  would only make the floor worse. The buy-side trim is observable through
+  `trimmed_fill_count` and `trimmed_shortfall_cents` so the portfolio cannot
+  quietly diverge from the strategy with nothing recording why. Additive
+  accessors only — `new`, `with_quantity_step`, `rebalance_simple`, and the
+  `execute_fill` call sites keep their signatures.
 ### Added
 
 - **Execution constraints on `Portfolio`, as parameters rather than policy:**
