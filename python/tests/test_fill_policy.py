@@ -97,3 +97,37 @@ def test_last_bar_skip_diagnostics():
     )
     assert len(result["returns"]) == n
     assert len(result["equity_curve"]) == n + 1
+
+
+def test_fill_schedule_redirects_next_bar_open():
+    """Optional fill_schedule: NextBarOpen reads fill_schedule[i], empty skips."""
+    decision = [
+        [("AAPL", make_degenerate_bar(100_00))],
+        [("AAPL", make_degenerate_bar(100_00))],
+        [("AAPL", make_degenerate_bar(100_00))],
+    ]
+    fill = [
+        [("AAPL", make_degenerate_bar(200_00))],
+        [("AAPL", make_degenerate_bar(200_00))],
+        [],  # no later bar → no fill
+    ]
+    weights = [[("AAPL", 1.0)]] * 3
+    with_fill = nanobook.backtest_weights(
+        weights,
+        decision,
+        initial_cash=1_000_000_00,
+        cost_model=nanobook.CostModel.zero(),
+        fill_policy=nanobook.FillPolicy.NextBarOpen,
+        fill_schedule=fill,
+    )
+    legacy = nanobook.backtest_weights(
+        weights,
+        decision,
+        initial_cash=1_000_000_00,
+        cost_model=nanobook.CostModel.zero(),
+        fill_policy=nanobook.FillPolicy.NextBarOpen,
+    )
+    assert 2 in with_fill["skipped_rebalances"]
+    assert 2 in legacy["skipped_rebalances"]
+    assert with_fill["equity_curve"] != legacy["equity_curve"]
+    assert with_fill["final_cash"] == 0

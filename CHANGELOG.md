@@ -20,6 +20,15 @@ is a separate, deliberate step — the heading gets its date then.
   `BacktestBridgeOptions`; existing calls keep compiling, and every new default
   is a strict no-op.
 
+### Added
+
+- **Optional `fill_schedule` on `backtest_weights` / `py_backtest_weights`.**
+  Callers that decide on a coarse calendar (monthly rebalances) but want to
+  fill on the real next trading bar can pass a parallel bar schedule. When
+  supplied, `NextBarOpen` / `NextBarTypical` read `fill_schedule[i]` instead
+  of `price_schedule[i+1]`; an empty entry means no fill for that period.
+  When omitted, behaviour is unchanged. `SignalBarClose` ignores it.
+
 ### Changed
 
 - **BREAKING: position quantities are fractional.** `Position.quantity` becomes

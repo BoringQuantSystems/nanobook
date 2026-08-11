@@ -98,6 +98,14 @@ pub struct BacktestBridgeOptions {
     /// on — e.g. `year * 12 + month`. `None` disables every month-scoped
     /// budget.
     pub period_month_ordinal: Option<Vec<i64>>,
+    /// Optional parallel fill-bar schedule. When `Some`, `NextBarOpen` /
+    /// `NextBarTypical` read fill prices from `fill_schedule[i]` instead of
+    /// `price_schedule[i + 1]`. An empty entry means "no fill" for that
+    /// period (same as a missing next bar today). `None` keeps the legacy
+    /// next-period behaviour. Ignored by `SignalBarClose`. Must be the same
+    /// length as `weight_schedule` when supplied, or the bridge returns an
+    /// empty result.
+    pub fill_schedule: Option<Vec<Vec<(Symbol, BarPrices)>>>,
 }
 
 #[derive(Clone, Debug, Copy)]
@@ -232,6 +240,11 @@ pub fn backtest_weights_with_options(
     }
     if let Some(months) = &options.period_month_ordinal
         && months.len() != weight_schedule.len()
+    {
+        return empty_result(initial_cash_cents);
+    }
+    if let Some(fill) = &options.fill_schedule
+        && fill.len() != weight_schedule.len()
     {
         return empty_result(initial_cash_cents);
     }
@@ -376,8 +389,12 @@ pub fn backtest_weights_with_options(
             portfolio.set_max_rebalance_notional(month_value_remaining);
         }
 
-        if let Some(fill_prices) = fill_prices_for_period(price_schedule, period_index, fill_policy)
-        {
+        if let Some(fill_prices) = fill_prices_for_period(
+            price_schedule,
+            period_index,
+            fill_policy,
+            options.fill_schedule.as_deref(),
+        ) {
             portfolio.rebalance_simple(weights, &fill_prices);
             if windowed_budgets_active {
                 let orders = portfolio.last_rebalance_order_count();
@@ -435,6 +452,7 @@ fn fill_prices_for_period(
     price_schedule: &[Vec<(Symbol, BarPrices)>],
     period_index: usize,
     fill_policy: FillPolicy,
+    fill_schedule: Option<&[Vec<(Symbol, BarPrices)>]>,
 ) -> Option<Vec<(Symbol, i64)>> {
     match fill_policy {
         FillPolicy::SignalBarClose => Some(
@@ -444,17 +462,17 @@ fn fill_prices_for_period(
                 .collect(),
         ),
         FillPolicy::NextBarOpen => {
-            let next = price_schedule.get(period_index + 1)?;
+            let bars = next_fill_bars(price_schedule, period_index, fill_schedule)?;
             Some(
-                next.iter()
+                bars.iter()
                     .map(|&(symbol, bar_prices)| (symbol, bar_prices.open))
                     .collect(),
             )
         }
         FillPolicy::NextBarTypical => {
-            let next = price_schedule.get(period_index + 1)?;
+            let bars = next_fill_bars(price_schedule, period_index, fill_schedule)?;
             Some(
-                next.iter()
+                bars.iter()
                     .map(|&(symbol, bar_prices)| {
                         (
                             symbol,
@@ -464,6 +482,29 @@ fn fill_prices_for_period(
                     .collect(),
             )
         }
+    }
+}
+
+/// Resolve the bar set a next-bar fill policy reads from.
+///
+/// When `fill_schedule` is supplied, period `i` fills from `fill_schedule[i]`
+/// (empty entry → no fill). When absent, legacy behaviour uses
+/// `price_schedule[i + 1]` (missing → no fill).
+fn next_fill_bars<'a>(
+    price_schedule: &'a [Vec<(Symbol, BarPrices)>],
+    period_index: usize,
+    fill_schedule: Option<&'a [Vec<(Symbol, BarPrices)>]>,
+) -> Option<&'a [(Symbol, BarPrices)]> {
+    match fill_schedule {
+        Some(schedule) => {
+            let entry = schedule.get(period_index)?;
+            if entry.is_empty() {
+                None
+            } else {
+                Some(entry.as_slice())
+            }
+        }
+        None => price_schedule.get(period_index + 1).map(|v| v.as_slice()),
     }
 }
 
@@ -1216,6 +1257,75 @@ mod tests {
         );
         assert!(result.skipped_rebalances.contains(&(n - 1)));
         assert_eq!(result.equity_curve.len(), n + 1);
+    }
+
+    /// Optional `fill_schedule` redirects NextBarOpen to `fill_schedule[i]`
+    /// (not `price_schedule[i+1]`). An empty entry skips the period, matching
+    /// a missing next bar. Omitting the schedule keeps legacy behaviour.
+    #[test]
+    fn fill_schedule_next_bar_open_reads_parallel_bars() {
+        let a = aapl();
+        // Decision bars: flat $100 closes. Without fill_schedule, NextBarOpen
+        // would fill at price_schedule[i+1].open (= $100). With fill_schedule,
+        // period 0 fills at $200 open instead.
+        let decision = vec![
+            vec![(a, bar(100_00))],
+            vec![(a, bar(100_00))],
+            vec![(a, bar(100_00))],
+        ];
+        let fill = vec![
+            vec![(
+                a,
+                BarPrices {
+                    open: 200_00,
+                    high: 200_00,
+                    low: 200_00,
+                    close: 200_00,
+                },
+            )],
+            vec![(
+                a,
+                BarPrices {
+                    open: 200_00,
+                    high: 200_00,
+                    low: 200_00,
+                    close: 200_00,
+                },
+            )],
+            vec![], // last period: no later trading day → no fill
+        ];
+        let weights = vec![vec![(a, 1.0)]; 3];
+
+        let with_fill = backtest_weights_with_options(
+            &weights,
+            &decision,
+            1_000_000_00,
+            CostModel::zero(),
+            FillPolicy::NextBarOpen,
+            252.0,
+            0.0,
+            BacktestBridgeOptions {
+                fill_schedule: Some(fill),
+                ..Default::default()
+            },
+        );
+        let legacy = backtest_weights(
+            &weights,
+            &decision,
+            1_000_000_00,
+            CostModel::zero(),
+            FillPolicy::NextBarOpen,
+            252.0,
+            0.0,
+        );
+
+        // Last period skipped either way.
+        assert!(with_fill.skipped_rebalances.contains(&2));
+        assert!(legacy.skipped_rebalances.contains(&2));
+        // Fill at $200 vs $100 must move the equity path.
+        assert_ne!(with_fill.equity_curve, legacy.equity_curve);
+        // At $200/share, 1_000_000_00 / 200_00 = 5000 whole shares, $0 cash.
+        assert_eq!(with_fill.final_cash, 0);
     }
 
     #[test]

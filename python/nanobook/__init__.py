@@ -32,7 +32,14 @@ def backtest_weights(
     periods_per_year=252.0,
     risk_free=0.0,
     stop_cfg=None,
+    fill_schedule=None,
+    **kwargs,
 ):
+    """Clean alias for ``py_backtest_weights``.
+
+    ``fill_schedule`` is accepted explicitly so callers and signature probes
+    see it on this wrapper; remaining keywords forward to the Rust function.
+    """
     return py_backtest_weights(
         weight_schedule,
         price_schedule,
@@ -42,6 +49,8 @@ def backtest_weights(
         periods_per_year,
         risk_free,
         stop_cfg,
+        fill_schedule=fill_schedule,
+        **kwargs,
     )
 
 
