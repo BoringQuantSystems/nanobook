@@ -134,7 +134,7 @@ jobs:
       # without this step the tag alone is enough to publish, on the
       # strength of whatever CI happened to run earlier.
       - name: Test before publish
-        run: cargo test --workspace --all-features
+        run: cargo test --workspace --features "nanobook/serde,nanobook/persistence,nanobook/portfolio,nanobook/parallel,nanobook/itch,nanobook/scenarios,nanobook-broker/binance,nanobook-broker/strict-market-reject"
 
       # Version-gated publish (I1). Replaces `|| true`, which used
       # to mask real publish failures (network, auth, malformed

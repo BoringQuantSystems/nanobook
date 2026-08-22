@@ -48,8 +48,11 @@ jobs:
       # so the broker/risk/rebalancer suites never ran here and a test that
       # called the live Binance API sat undetected until the release gate
       # tried to publish and hit a 451 from a restricted runner region.
-      - name: Run tests (all features)
-        run: cargo test --workspace --all-features
+      # Curated feature list instead of --all-features (bq-oxtu): the opt-in
+      # `native-tls` broker backend drags in openssl-sys, which cannot build
+      # on machines without system OpenSSL headers. Everything else ships.
+      - name: Run tests (curated features)
+        run: cargo test --workspace --features "nanobook/serde,nanobook/persistence,nanobook/portfolio,nanobook/parallel,nanobook/itch,nanobook/scenarios,nanobook-broker/binance,nanobook-broker/strict-market-reject"
 
       - name: Run tests (no default features)
         run: cargo test --no-default-features
@@ -192,8 +195,10 @@ jobs:
       # unchecked. Bringing them in cleared 141 findings, most of them the
       # dollar.cents digit-grouping convention that was never declared for
       # those crates.
+      # Curated features, not --all-features: native-tls needs openssl-sys
+      # (bq-oxtu). Same list as the test job.
       - name: Clippy
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        run: cargo clippy --workspace --all-targets --features "nanobook/serde,nanobook/persistence,nanobook/portfolio,nanobook/parallel,nanobook/itch,nanobook/scenarios,nanobook-broker/binance,nanobook-broker/strict-market-reject" -- -D warnings
 
   # The `security` job moved to .github/workflows/audit.yml so it can run on
   # a weekly schedule. Here it only fired on push/PR, so an advisory filed
@@ -216,7 +221,7 @@ jobs:
         run: cargo install cargo-llvm-cov --version 0.8.5 --locked
 
       - name: Generate coverage
-        run: cargo llvm-cov --all-features --lcov --output-path lcov.info
+        run: cargo llvm-cov --workspace --features "nanobook/serde,nanobook/persistence,nanobook/portfolio,nanobook/parallel,nanobook/itch,nanobook/scenarios,nanobook-broker/binance,nanobook-broker/strict-market-reject" --lcov --output-path lcov.info
 
       - name: Upload to Codecov
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
@@ -236,7 +241,7 @@ jobs:
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
       - name: Run benchmarks
-        run: cargo bench --all-features
+        run: cargo bench --features "nanobook/serde,nanobook/persistence,nanobook/portfolio,nanobook/parallel,nanobook/itch,nanobook/scenarios,nanobook-broker/binance,nanobook-broker/strict-market-reject"
 
   itch-replay-smoke:
     # Runs on a small committed fixture (a few seconds of real ITCH data),

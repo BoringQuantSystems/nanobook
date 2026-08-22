@@ -8,7 +8,8 @@ Thank you for your interest in contributing to nanobook!
 2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/nanobook.git`
 3. Create a branch: `git checkout -b feature/your-feature`
 4. Make your changes
-5. Run tests: `cargo test --all-features`
+5. Run tests: `cargo test --workspace --features "nanobook/serde,nanobook/persistence,nanobook/portfolio,nanobook/parallel,nanobook/itch,nanobook/scenarios,nanobook-broker/binance,nanobook-broker/strict-market-reject"`
+   (the same curated list CI runs — see Testing below for why not --all-features)
 6. Run lints: `cargo fmt && cargo clippy -- -D warnings`
 7. Commit and push
 8. Open a pull request
@@ -24,8 +25,8 @@ git clone https://github.com/BoringQuantSystems/nanobook.git
 cd nanobook
 cargo build
 
-# Run tests
-cargo test --all-features
+# Run tests (same curated feature list as CI)
+cargo test --workspace --features "nanobook/serde,nanobook/persistence,nanobook/portfolio,nanobook/parallel,nanobook/itch,nanobook/scenarios,nanobook-broker/binance,nanobook-broker/strict-market-reject"
 
 # Run benchmarks
 cargo bench
