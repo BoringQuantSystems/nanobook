@@ -373,8 +373,26 @@ class TestValidation:
             _validate_mc_inputs(100.0, 100, 1.0, float("inf"))
 
     def test_validate_mc_inputs_valid(self):
-        """Test validation with valid inputs."""
-        _validate_mc_inputs(100.0, 1000, 1.0, 0.2)  # Should not raise
+        """Valid inputs return None, and each boundary is one step away.
+
+        The four rejections prove the validator is still live on this same
+        call, so acceptance means something. Without them the test would also
+        pass if the function body were deleted.
+        """
+        assert _validate_mc_inputs(100.0, 1000, 1.0, 0.2) is None
+
+        # n_paths = 0 is allowed (the guard is < 0), and vol = 0 is allowed
+        # (the guard is < 0), so both edges of the accepted range stay in.
+        assert _validate_mc_inputs(100.0, 0, 1.0, 0.0) is None
+
+        with pytest.raises(ValueError, match="current_price must be positive"):
+            _validate_mc_inputs(0.0, 1000, 1.0, 0.2)
+        with pytest.raises(ValueError, match="n_paths must be >= 0"):
+            _validate_mc_inputs(100.0, -1, 1.0, 0.2)
+        with pytest.raises(ValueError, match="horizon must be positive"):
+            _validate_mc_inputs(100.0, 1000, 0.0, 0.2)
+        with pytest.raises(ValueError, match="annual_vol must be non-negative"):
+            _validate_mc_inputs(100.0, 1000, 1.0, -0.1)
 
 
 class TestRngAndNormal:
