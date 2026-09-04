@@ -6,8 +6,11 @@
 //! - Recovery time (completes in reasonable time)
 //! - Checkpoint sequence validity
 
+#[cfg(feature = "write_ahead_logging")]
 use nanobook::Symbol;
+#[cfg(feature = "write_ahead_logging")]
 use nanobook_broker::mock::{FillMode, MockBroker};
+#[cfg(feature = "write_ahead_logging")]
 use nanobook_broker::{Broker, BrokerOrder, BrokerOrderType, BrokerSide};
 use nanobook_rebalancer::audit::{
     AuditLog, Checkpoint, parse_audit_events, validate_checkpoints_from_parsed,

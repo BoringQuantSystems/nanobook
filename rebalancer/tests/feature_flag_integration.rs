@@ -852,7 +852,7 @@ fn test_dry_run_audit_log_valid() {
 
         // Without feature, the function doesn't write to audit log
         // The audit log should still be parseable (empty is valid)
-        let events = parse_audit_events(&audit_path).unwrap();
+        parse_audit_events(&audit_path).unwrap();
         // Events may be empty since the fallback function doesn't write checkpoints
         // This is expected behavior
     }

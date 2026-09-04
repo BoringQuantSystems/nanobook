@@ -282,7 +282,8 @@ pub fn backtest_weights_with_options(
         options.max_trades_per_month.is_some() && options.period_month_ordinal.is_some();
     let has_month_value_budget =
         options.max_traded_value_per_month.is_some() && options.period_month_ordinal.is_some();
-    let windowed_budgets_active = has_day_budget || has_month_trade_budget || has_month_value_budget;
+    let windowed_budgets_active =
+        has_day_budget || has_month_trade_budget || has_month_value_budget;
 
     let mut trades_used_today: usize = 0;
     let mut trades_used_month: usize = 0;
@@ -353,7 +354,9 @@ pub fn backtest_weights_with_options(
                 cap_candidates.push(base);
             }
             if has_day_budget {
-                let max_day = options.max_trades_per_day.expect("has_day_budget implies Some");
+                let max_day = options
+                    .max_trades_per_day
+                    .expect("has_day_budget implies Some");
                 cap_candidates.push(max_day.saturating_sub(trades_used_today));
             }
             if has_month_trade_budget {
@@ -1065,11 +1068,7 @@ mod tests {
         let bars = |syms: &[Symbol]| -> Vec<(Symbol, BarPrices)> {
             syms.iter().map(|s| (*s, bar(price))).collect()
         };
-        let prices = vec![
-            bars(&[a]),
-            bars(&[a, b]),
-            bars(&[a, b, c]),
-        ];
+        let prices = vec![bars(&[a]), bars(&[a, b]), bars(&[a, b, c])];
 
         // $100,000 account, 0.6% target weight -> $600 per fully-funded
         // position (6 shares at $100).
@@ -1118,7 +1117,11 @@ mod tests {
         // B is NOT corrected up to its 0.006 target even though it is still
         // under-target from the period-1 truncation.
         let held2: Vec<&str> = result.holdings[2].iter().map(|(s, _)| s.as_str()).collect();
-        assert_eq!(held2, vec!["S0", "S1"], "C must not open once the month's value budget is exhausted");
+        assert_eq!(
+            held2,
+            vec!["S0", "S1"],
+            "C must not open once the month's value budget is exhausted"
+        );
         let b_weight_after_2 = result.holdings[2]
             .iter()
             .find(|(s, _)| *s == b)

@@ -11,8 +11,11 @@
 //! - Disk full during audit log write
 //! - Permission denied on audit log file
 
+#[cfg(feature = "write_ahead_logging")]
 use nanobook::Symbol;
+#[cfg(feature = "write_ahead_logging")]
 use nanobook_broker::mock::{FillMode, MockBroker};
+#[cfg(feature = "write_ahead_logging")]
 use nanobook_broker::{Broker, BrokerOrder, BrokerOrderType, BrokerSide};
 use nanobook_rebalancer::audit::{AuditLog, Checkpoint, parse_audit_events};
 use nanobook_rebalancer::recovery::{RecoveryAction, reconstruct_state};

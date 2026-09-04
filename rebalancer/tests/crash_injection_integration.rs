@@ -3,8 +3,11 @@
 //! These tests simulate crashes at specific checkpoints in the order submission flow
 //! and verify that recovery correctly reconstructs state and prevents duplicate orders.
 
+#[cfg(feature = "write_ahead_logging")]
 use nanobook::Symbol;
+#[cfg(feature = "write_ahead_logging")]
 use nanobook_broker::mock::{FillMode, MockBroker};
+#[cfg(feature = "write_ahead_logging")]
 use nanobook_broker::{Broker, BrokerOrder, BrokerOrderType, BrokerSide};
 use nanobook_rebalancer::audit::{AuditLog, Checkpoint, parse_audit_events};
 use nanobook_rebalancer::recovery::{RecoveryAction, reconstruct_state};

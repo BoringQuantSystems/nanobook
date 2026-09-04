@@ -110,12 +110,10 @@ jobs:
         working-directory: python
         run: uv sync --python ${{ matrix.python }} --group dev
 
+      # One line: Windows PowerShell does not treat a backslash as continuation.
       - name: Run Python tests (property + unit)
         working-directory: python
-        run: |
-          uv run --python ${{ matrix.python }} --group dev python -m pytest tests/ -v \
-            --ignore=tests/reference \
-            --cov=nanobook --cov-report=term --cov-fail-under=100
+        run: uv run --python ${{ matrix.python }} --group dev python -m pytest tests/ -v --ignore=tests/reference --cov=nanobook --cov-report=term --cov-fail-under=100
 
   python-scenarios:
     name: Python scenarios (${{ matrix.label }})
@@ -244,7 +242,7 @@ jobs:
       - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
 
       - name: Run benchmarks
-        run: cargo bench --features "nanobook/serde,nanobook/persistence,nanobook/portfolio,nanobook/parallel,nanobook/itch,nanobook/scenarios,nanobook-broker/binance,nanobook-broker/strict-market-reject"
+        run: cargo bench --workspace --features "nanobook/serde,nanobook/persistence,nanobook/portfolio,nanobook/parallel,nanobook/itch,nanobook/scenarios,nanobook-broker/binance,nanobook-broker/strict-market-reject"
 
   itch-replay-smoke:
     # Runs on a small committed fixture (a few seconds of real ITCH data),

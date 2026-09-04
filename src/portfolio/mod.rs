@@ -221,7 +221,10 @@ impl Portfolio {
     /// instead of placed. Must be non-negative; values `< 0` are a programming
     /// error (use `debug_assert`).
     pub fn set_min_order_value(&mut self, value: i64) {
-        debug_assert!(value >= 0, "min_order_value must be non-negative, got {value}");
+        debug_assert!(
+            value >= 0,
+            "min_order_value must be non-negative, got {value}"
+        );
         self.min_order_value = value;
     }
 
@@ -243,7 +246,10 @@ impl Portfolio {
     /// programming error (use `debug_assert`). `0` means unlimited (the
     /// default).
     pub fn set_max_order_value(&mut self, value: i64) {
-        debug_assert!(value >= 0, "max_order_value must be non-negative, got {value}");
+        debug_assert!(
+            value >= 0,
+            "max_order_value must be non-negative, got {value}"
+        );
         self.max_order_value = value;
     }
 
@@ -475,7 +481,12 @@ impl Portfolio {
                     continue;
                 }
 
-                planned.push(PlannedOrder { symbol: sym, qty, price, drift_bps });
+                planned.push(PlannedOrder {
+                    symbol: sym,
+                    qty,
+                    price,
+                    drift_bps,
+                });
             }
         }
 
@@ -524,7 +535,12 @@ impl Portfolio {
                 continue;
             }
 
-            planned.push(PlannedOrder { symbol: sym, qty: diff_qty, price, drift_bps });
+            planned.push(PlannedOrder {
+                symbol: sym,
+                qty: diff_qty,
+                price,
+                drift_bps,
+            });
         }
 
         // Enforce the trade-count cap and the per-rebalance notional cap
@@ -912,8 +928,8 @@ struct PlannedOrder {
 /// units. Uses an `i128` intermediate for the same overflow-safety reason as
 /// `execute_fill`.
 fn notional_of(qty: Shares, price: i64) -> i64 {
-    let notional_i128 =
-        (qty.raw().unsigned_abs() as i128) * (price.unsigned_abs() as i128) / (Shares::SCALE as i128);
+    let notional_i128 = (qty.raw().unsigned_abs() as i128) * (price.unsigned_abs() as i128)
+        / (Shares::SCALE as i128);
     notional_i128.clamp(0, i64::MAX as i128) as i64
 }
 
@@ -924,8 +940,7 @@ fn buy_cash_required(raw_abs: i64, effective_price: i64, cost_model: &CostModel)
     if raw_abs <= 0 || effective_price <= 0 {
         return 0;
     }
-    let notional_i128 =
-        (raw_abs as i128) * (effective_price as i128) / (Shares::SCALE as i128);
+    let notional_i128 = (raw_abs as i128) * (effective_price as i128) / (Shares::SCALE as i128);
     let notional = notional_i128.clamp(0, i64::MAX as i128) as i64;
     notional.saturating_add(cost_model.compute_cost(notional))
 }
@@ -981,7 +996,11 @@ fn truncate_qty_to_max_value(qty: Shares, price: i64, step: i64, max_value: i64)
     let step_i128 = step as i128;
     let snapped = (raw_abs_cap / step_i128) * step_i128;
     let snapped_i64 = snapped.clamp(0, i64::MAX as i128) as i64;
-    let signed = if qty.is_negative() { -snapped_i64 } else { snapped_i64 };
+    let signed = if qty.is_negative() {
+        -snapped_i64
+    } else {
+        snapped_i64
+    };
     Shares::from_raw(signed)
 }
 
@@ -1205,14 +1224,11 @@ mod tests {
     /// every target hold a non-zero position and invest > 99% of capital.
     #[test]
     fn fractional_step_invests_small_account() {
-        let mut portfolio =
-            Portfolio::with_quantity_step(1_000_00, CostModel::zero(), 1_000); // $1,000, 0.001-share step
+        let mut portfolio = Portfolio::with_quantity_step(1_000_00, CostModel::zero(), 1_000); // $1,000, 0.001-share step
         let price = 219_00; // $219, matches the plan's median-price figure
         let n = 20;
         let weight = 1.0 / n as f64;
-        let symbols: Vec<Symbol> = (0..n)
-            .map(|i| Symbol::new(&format!("SYM{i}")))
-            .collect();
+        let symbols: Vec<Symbol> = (0..n).map(|i| Symbol::new(&format!("SYM{i}"))).collect();
         let prices: Vec<(Symbol, i64)> = symbols.iter().map(|s| (*s, price)).collect();
         let targets: Vec<(Symbol, f64)> = symbols.iter().map(|s| (*s, weight)).collect();
 
@@ -1245,9 +1261,7 @@ mod tests {
         let price = 219_00;
         let n = 20;
         let weight = 1.0 / n as f64;
-        let symbols: Vec<Symbol> = (0..n)
-            .map(|i| Symbol::new(&format!("SYM{i}")))
-            .collect();
+        let symbols: Vec<Symbol> = (0..n).map(|i| Symbol::new(&format!("SYM{i}"))).collect();
         let prices: Vec<(Symbol, i64)> = symbols.iter().map(|s| (*s, price)).collect();
         let targets: Vec<(Symbol, f64)> = symbols.iter().map(|s| (*s, weight)).collect();
 
@@ -1425,7 +1439,10 @@ mod tests {
             orders_no_band, 360,
             "unbanded: 10 names x 36 rebalances are all planned"
         );
-        assert_eq!(orders_with_band, 45, "banded: openings plus a few corrections");
+        assert_eq!(
+            orders_with_band, 45,
+            "banded: openings plus a few corrections"
+        );
 
         // The money is the point, and here it is identical on both sides. A cash
         // account cannot finance a correction it cannot afford, so spending stops
@@ -1476,7 +1493,8 @@ mod tests {
         let portfolio_default_step = Shares::SCALE;
         let sym = Symbol::new("TINY");
         let price = 1_00; // $1/share
-        let mut portfolio = Portfolio::with_quantity_step(10_00, CostModel::zero(), portfolio_default_step);
+        let mut portfolio =
+            Portfolio::with_quantity_step(10_00, CostModel::zero(), portfolio_default_step);
         assert_eq!(portfolio.min_order_value(), 0);
 
         portfolio.rebalance_simple(&[(sym, 0.5)], &[(sym, price)]);
@@ -1527,8 +1545,7 @@ mod tests {
     fn max_order_value_composing_with_min_order_value_truncation_below_minimum_skips() {
         let sym = Symbol::new("SMALL");
         let price = 100_00; // $100/share
-        let mut portfolio =
-            Portfolio::with_quantity_step(1_000_000_00, CostModel::zero(), 1_000); // 0.001-share step
+        let mut portfolio = Portfolio::with_quantity_step(1_000_000_00, CostModel::zero(), 1_000); // 0.001-share step
         portfolio.set_max_order_value(250); // $2.50 cap: truncates to 0.025 share
         portfolio.set_min_order_value(300); // $3.00 minimum: $2.50 < $3.00
 
@@ -1582,8 +1599,14 @@ mod tests {
         // overdraft (targets that sum above invested weight used to borrow
         // from cash that was not there).
         portfolio.rebalance_simple(&[(a, 0.4), (b, 0.4)], &[(a, price), (b, price)]);
-        assert_eq!(portfolio.position(&a).unwrap().quantity, Shares::from_whole(4));
-        assert_eq!(portfolio.position(&b).unwrap().quantity, Shares::from_whole(4));
+        assert_eq!(
+            portfolio.position(&a).unwrap().quantity,
+            Shares::from_whole(4)
+        );
+        assert_eq!(
+            portfolio.position(&b).unwrap().quantity,
+            Shares::from_whole(4)
+        );
         assert_eq!(portfolio.cash(), 200_00);
 
         // A drifts by 1% of equity (inside the 5% band) -> untouched.
@@ -1613,11 +1636,17 @@ mod tests {
         assert_eq!(portfolio.no_trade_band_bps(), 0.0);
 
         portfolio.rebalance_simple(&[(sym, 0.5)], &[(sym, price)]);
-        assert_eq!(portfolio.position(&sym).unwrap().quantity, Shares::from_whole(5));
+        assert_eq!(
+            portfolio.position(&sym).unwrap().quantity,
+            Shares::from_whole(5)
+        );
 
         // A tiny 0.1% nudge still trades at the default (no band).
         portfolio.rebalance_simple(&[(sym, 0.501)], &[(sym, price)]);
-        assert_ne!(portfolio.position(&sym).unwrap().quantity, Shares::from_whole(5));
+        assert_ne!(
+            portfolio.position(&sym).unwrap().quantity,
+            Shares::from_whole(5)
+        );
     }
 
     // --- max_trades_per_rebalance ---
@@ -1639,7 +1668,10 @@ mod tests {
         let mut portfolio = Portfolio::with_quantity_step(1_000_00, CostModel::zero(), 1_000); // $1,000
         portfolio.rebalance_simple(&equal_targets, &prices);
         for s in &symbols {
-            assert_eq!(portfolio.position(s).unwrap().quantity, Shares::from_raw(500_000)); // 0.5 share
+            assert_eq!(
+                portfolio.position(s).unwrap().quantity,
+                Shares::from_raw(500_000)
+            ); // 0.5 share
         }
         assert!(portfolio.cash() > 0);
 
@@ -1703,7 +1735,16 @@ mod tests {
     /// staggered (S0 smallest, S2 largest) so the three orders have distinct
     /// drift and a deterministic priority order: S2 ($15,000) first, then S1
     /// ($10,000), then S0 ($5,000). Combined notional is $30,000.
-    fn staggered_three_symbol_fixture() -> (Symbol, Symbol, Symbol, Portfolio, Vec<(Symbol, f64)>, Vec<(Symbol, i64)>) {
+    type StaggeredThreeSymbolFixture = (
+        Symbol,
+        Symbol,
+        Symbol,
+        Portfolio,
+        Vec<(Symbol, f64)>,
+        Vec<(Symbol, i64)>,
+    );
+
+    fn staggered_three_symbol_fixture() -> StaggeredThreeSymbolFixture {
         let s0 = Symbol::new("S0");
         let s1 = Symbol::new("S1");
         let s2 = Symbol::new("S2");
@@ -1738,8 +1779,14 @@ mod tests {
         );
         assert!(portfolio.last_rebalance_notional() <= 20_000_00);
 
-        assert_eq!(portfolio.position(&s2).unwrap().quantity, Shares::from_whole(150));
-        assert_eq!(portfolio.position(&s1).unwrap().quantity, Shares::from_whole(50));
+        assert_eq!(
+            portfolio.position(&s2).unwrap().quantity,
+            Shares::from_whole(150)
+        );
+        assert_eq!(
+            portfolio.position(&s1).unwrap().quantity,
+            Shares::from_whole(50)
+        );
         assert!(portfolio.position(&s0).is_none_or(|p| p.is_flat()));
     }
 
@@ -1753,8 +1800,14 @@ mod tests {
 
         portfolio.rebalance_simple(&targets, &prices);
 
-        assert!(!portfolio.position(&s2).unwrap().is_flat(), "S2 has the largest drift and must trade");
-        assert!(!portfolio.position(&s1).unwrap().is_flat(), "S1 has the second-largest drift and must trade (truncated)");
+        assert!(
+            !portfolio.position(&s2).unwrap().is_flat(),
+            "S2 has the largest drift and must trade"
+        );
+        assert!(
+            !portfolio.position(&s1).unwrap().is_flat(),
+            "S1 has the second-largest drift and must trade (truncated)"
+        );
         assert!(
             portfolio.position(&s0).is_none_or(|p| p.is_flat()),
             "S0 has the smallest drift and must not trade once the budget is exhausted"
@@ -1778,7 +1831,10 @@ mod tests {
             15_000_00,
             "only S2's full $15,000 order should have executed"
         );
-        assert_eq!(portfolio.position(&s2).unwrap().quantity, Shares::from_whole(150));
+        assert_eq!(
+            portfolio.position(&s2).unwrap().quantity,
+            Shares::from_whole(150)
+        );
         assert!(
             portfolio.position(&s1).is_none_or(|p| p.is_flat()),
             "S1's truncated order falls below min_order_value and must be skipped"
@@ -1806,7 +1862,10 @@ mod tests {
             15_000_00,
             "trade-count cap must stop admission after S2, leaving notional budget unused"
         );
-        assert_eq!(portfolio.position(&s2).unwrap().quantity, Shares::from_whole(150));
+        assert_eq!(
+            portfolio.position(&s2).unwrap().quantity,
+            Shares::from_whole(150)
+        );
         assert!(portfolio.position(&s1).is_none_or(|p| p.is_flat()));
         assert!(portfolio.position(&s0).is_none_or(|p| p.is_flat()));
     }
@@ -1821,9 +1880,18 @@ mod tests {
         portfolio.rebalance_simple(&targets, &prices);
 
         assert_eq!(portfolio.last_rebalance_notional(), 30_000_00);
-        assert_eq!(portfolio.position(&s0).unwrap().quantity, Shares::from_whole(50));
-        assert_eq!(portfolio.position(&s1).unwrap().quantity, Shares::from_whole(100));
-        assert_eq!(portfolio.position(&s2).unwrap().quantity, Shares::from_whole(150));
+        assert_eq!(
+            portfolio.position(&s0).unwrap().quantity,
+            Shares::from_whole(50)
+        );
+        assert_eq!(
+            portfolio.position(&s1).unwrap().quantity,
+            Shares::from_whole(100)
+        );
+        assert_eq!(
+            portfolio.position(&s2).unwrap().quantity,
+            Shares::from_whole(150)
+        );
     }
 
     // --- determinism ---
