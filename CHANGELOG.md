@@ -5,12 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] — 0.18.0
+## [0.18.0] - 2026-09-05
 
-The crate version is bumped to `0.18.0` ahead of publication. 0.17.2 is on
-crates.io and the tree has carried breaking changes since; leaving the manifest
-at 0.17.2 meant two different APIs answering to one version number. Publishing
-is a separate, deliberate step — the heading gets its date then.
+The member crates move with the core because they now depend on nanobook 0.18
+and its fractional `Position.quantity`: nanobook-broker 0.8.1 to 0.9.0,
+nanobook-risk 0.6.4 to 0.7.0, nanobook-rebalancer 0.8.4 to 0.9.0. Their
+published predecessors still pin nanobook 0.17.
 
 **Breaking (nanobook 0.17.2 → 0.18.0):**
 
@@ -1283,7 +1283,8 @@ Initial release of nanobook - a deterministic limit order book and matching engi
 - Fixed-point price representation (avoids floating-point errors)
 - Deterministic via monotonic timestamps (not system clock)
 
-[Unreleased]: https://github.com/BoringQuantSystems/nanobook/compare/v0.17.2...HEAD
+[Unreleased]: https://github.com/BoringQuantSystems/nanobook/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/BoringQuantSystems/nanobook/compare/v0.17.2...v0.18.0
 [0.17.2]: https://github.com/BoringQuantSystems/nanobook/compare/v0.17.1...v0.17.2
 [0.17.1]: https://github.com/BoringQuantSystems/nanobook/compare/v0.17.0...v0.17.1
 [0.17.0]: https://github.com/BoringQuantSystems/nanobook/compare/v0.16.2...v0.17.0
