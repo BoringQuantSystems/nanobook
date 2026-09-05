@@ -2,17 +2,13 @@
   <img src="assets/nanobook-banner.png" alt="nanobook banner" width="900">
 </p>
 
-# nanobook
-
 [![CI](https://github.com/BoringQuantSystems/nanobook/actions/workflows/ci.yml/badge.svg)](https://github.com/BoringQuantSystems/nanobook/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/nanobook.svg)](https://crates.io/crates/nanobook)
 [![docs.rs](https://docs.rs/nanobook/badge.svg)](https://docs.rs/nanobook)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![cargo-deny](https://img.shields.io/badge/cargo--deny-audited-brightgreen)](https://github.com/BoringQuantSystems/nanobook/actions/workflows/ci.yml)
 
-**Rust execution layer for Python trading strategies.**
-
-nanobook is a small execution kernel for the part of a trading system that is
+`nanobook` is a small execution kernel for the part of a trading system that is
 easy to underestimate: state. Your Python code can keep doing research,
 signals, sizing, and scheduling. nanobook handles the execution mechanics around
 that strategy: portfolio accounting, transaction costs, stops, deterministic
