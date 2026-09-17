@@ -13,7 +13,7 @@ on:
     # runs under load, and :00 is the most contended minute of the hour.
     - cron: '17 6 * * 1'
   push:
-    branches: [main, dev]
+    branches: [main]
     # Dependency-graph inputs only. Source changes cannot introduce an
     # advisory, and re-auditing an unchanged lockfile on every push tells
     # us nothing the last run didn't.
