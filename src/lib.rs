@@ -183,7 +183,7 @@ pub mod volatility;
 
 // Re-export public API
 #[cfg(feature = "portfolio")]
-pub use backtest_bridge::{BarPrices, FillPolicy};
+pub use backtest_bridge::{BarPrices, FillPolicy, UnpricedHolding};
 pub use book::OrderBook;
 pub use error::ValidationError;
 pub use event::{ApplyResult, Event};

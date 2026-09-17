@@ -171,6 +171,26 @@ pub struct TearSheet {
     pub trade_analytics: TradeAnalytics,
 }
 
+/// A still-open lot with no positive price on the fill or close bar.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnpricedHolding {
+    pub period_index: usize,
+    pub symbol: Symbol,
+    /// True when the fill price map is missing the lot; false for the close map.
+    pub at_fill: bool,
+}
+
+impl std::fmt::Display for UnpricedHolding {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let place = if self.at_fill { "fill" } else { "close" };
+        write!(
+            f,
+            "unpriced holding {} at period {} ({place})",
+            self.symbol, self.period_index
+        )
+    }
+}
+
 pub struct BacktestBridgeResult {
     /// Per-period returns.
     pub returns: Vec<f64>,
@@ -188,6 +208,9 @@ pub struct BacktestBridgeResult {
     pub stop_events: Vec<BacktestStopEvent>,
     /// Rebalance indices skipped when the fill policy needs the next bar.
     pub skipped_rebalances: Vec<usize>,
+    /// Set when a held name has no positive price. Callers must treat this as
+    /// a hard error, not as a finished run.
+    pub unpriced_holding: Option<UnpricedHolding>,
 }
 
 /// Simulate portfolio returns from a pre-computed weight schedule.
@@ -398,6 +421,16 @@ pub fn backtest_weights_with_options(
             fill_policy,
             options.fill_schedule.as_deref(),
         ) {
+            if let Some(symbol) = portfolio.unpriced_holding(&fill_prices) {
+                return unpriced_result(
+                    initial_cash_cents,
+                    UnpricedHolding {
+                        period_index,
+                        symbol,
+                        at_fill: true,
+                    },
+                );
+            }
             portfolio.rebalance_simple(weights, &fill_prices);
             if windowed_budgets_active {
                 let orders = portfolio.last_rebalance_order_count();
@@ -419,6 +452,17 @@ pub fn backtest_weights_with_options(
                 cfg,
                 &mut stop_trackers,
                 &mut stop_events,
+            );
+        }
+
+        if let Some(symbol) = portfolio.unpriced_holding(&close_prices) {
+            return unpriced_result(
+                initial_cash_cents,
+                UnpricedHolding {
+                    period_index,
+                    symbol,
+                    at_fill: false,
+                },
             );
         }
 
@@ -448,6 +492,7 @@ pub fn backtest_weights_with_options(
         symbol_returns,
         stop_events,
         skipped_rebalances,
+        unpriced_holding: None,
     }
 }
 
@@ -706,6 +751,14 @@ fn empty_result(initial_cash_cents: i64) -> BacktestBridgeResult {
         symbol_returns: Vec::new(),
         stop_events: Vec::new(),
         skipped_rebalances: Vec::new(),
+        unpriced_holding: None,
+    }
+}
+
+fn unpriced_result(initial_cash_cents: i64, unpriced: UnpricedHolding) -> BacktestBridgeResult {
+    BacktestBridgeResult {
+        unpriced_holding: Some(unpriced),
+        ..empty_result(initial_cash_cents)
     }
 }
 
@@ -1382,6 +1435,78 @@ mod tests {
         assert!(result.skipped_rebalances.contains(&(n - 1)));
         assert_eq!(result.equity_curve.len(), n + 1);
         assert_eq!(result.returns.len(), n);
+        assert!(result.unpriced_holding.is_none());
+    }
+
+    #[test]
+    fn missing_close_price_for_held_name_is_unpriced() {
+        // Buy AAPL on bar 0; bar 1 has no AAPL. That is the UNH wipeout class.
+        let weights = vec![vec![(aapl(), 1.0)], vec![(msft(), 1.0)]];
+        let prices = vec![
+            vec![(aapl(), bar(100_00))],
+            vec![(msft(), bar(200_00))],
+        ];
+        let result = backtest_weights(
+            &weights,
+            &prices,
+            1_000_000_00,
+            CostModel::zero(),
+            FillPolicy::SignalBarClose,
+            252.0,
+            0.0,
+        );
+        let unpriced = result.unpriced_holding.expect("must refuse unpriced lot");
+        assert_eq!(unpriced.symbol, aapl());
+        assert_eq!(unpriced.period_index, 1);
+        assert!(unpriced.at_fill);
+        assert!(result.returns.is_empty());
+    }
+
+    #[test]
+    fn missing_fill_price_for_held_name_is_unpriced() {
+        let weights = vec![vec![(aapl(), 1.0)]; 3];
+        let prices = vec![
+            vec![(aapl(), bar(100_00))],
+            vec![(aapl(), bar(110_00))],
+            vec![(msft(), bar(200_00))],
+        ];
+        let result = backtest_weights(
+            &weights,
+            &prices,
+            1_000_000_00,
+            CostModel::zero(),
+            FillPolicy::NextBarOpen,
+            252.0,
+            0.0,
+        );
+        let unpriced = result.unpriced_holding.expect("must refuse unpriced fill");
+        assert_eq!(unpriced.symbol, aapl());
+        assert!(unpriced.at_fill);
+        assert_eq!(unpriced.period_index, 1);
+    }
+
+    #[test]
+    fn zero_equity_still_emits_one_return_per_period() {
+        // Priced wipeout (close goes to a positive tick then a true 0 is not
+        // representable as a missing name). After a -100% bar the calendar
+        // must keep its length: a later priced bar still records a return.
+        let weights = vec![vec![(aapl(), 1.0)]; 3];
+        let prices = vec![
+            vec![(aapl(), bar(100_00))],
+            vec![(aapl(), bar(1))],
+            vec![(aapl(), bar(1))],
+        ];
+        let result = backtest_weights(
+            &weights,
+            &prices,
+            1_000_00,
+            CostModel::zero(),
+            FillPolicy::SignalBarClose,
+            252.0,
+            0.0,
+        );
+        assert!(result.unpriced_holding.is_none());
+        assert_eq!(result.returns.len(), 3);
     }
 
     #[test]

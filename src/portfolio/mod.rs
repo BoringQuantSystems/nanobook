@@ -756,9 +756,31 @@ impl Portfolio {
         if self.prev_equity > 0 {
             let ret = equity.saturating_sub(self.prev_equity) as f64 / self.prev_equity as f64;
             self.returns.push(ret);
+        } else if !self.returns.is_empty() {
+            // Keep one return per call after the series starts. A later
+            // zero-equity bar is a recorded 0, not a dropped calendar slot.
+            self.returns.push(0.0);
         }
         self.equity_curve.push(equity);
         self.prev_equity = equity;
+    }
+
+    /// First still-open lot with no positive price in `prices`.
+    pub fn unpriced_holding(&self, prices: &[(Symbol, i64)]) -> Option<Symbol> {
+        let price_map: FxHashMap<Symbol, i64> = prices.iter().copied().collect();
+        self.unpriced_in_map(&price_map)
+    }
+
+    pub(crate) fn unpriced_in_map(&self, price_map: &FxHashMap<Symbol, i64>) -> Option<Symbol> {
+        self.positions.iter().find_map(|(sym, pos)| {
+            if pos.is_flat() {
+                return None;
+            }
+            match price_map.get(sym) {
+                Some(&px) if px > 0 => None,
+                _ => Some(*sym),
+            }
+        })
     }
 
     /// Take a snapshot of the portfolio state.

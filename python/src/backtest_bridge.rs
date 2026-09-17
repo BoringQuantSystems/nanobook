@@ -315,6 +315,10 @@ pub fn backtest_weights(
         )
     });
 
+    if let Some(unpriced) = result.unpriced_holding {
+        return Err(PyValueError::new_err(unpriced.to_string()));
+    }
+
     // Convert result to Python dict.
     let dict = PyDict::new(py);
     dict.set_item("returns", result.returns)?;
@@ -455,6 +459,7 @@ pub fn py_tear_sheet(
         symbol_returns,
         stop_events: Vec::new(),
         skipped_rebalances: Vec::new(),
+        unpriced_holding: None,
     };
     let sheet =
         py.detach(|| backtest_bridge::tear_sheet(&result, rolling_window, periods_per_year));
