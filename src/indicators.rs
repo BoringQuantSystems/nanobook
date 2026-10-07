@@ -42,6 +42,69 @@ pub fn ema(values: &[f64], period: usize) -> Vec<f64> {
     out
 }
 
+fn panel_shape(close: &[f64], n_names: usize) -> Option<(usize, usize)> {
+    if n_names == 0 || !close.len().is_multiple_of(n_names) {
+        return None;
+    }
+    Some((close.len() / n_names, n_names))
+}
+
+/// Panel EMA, one pass in time. `close[t * n_names + name]`. Same recurrence as [`ema`].
+pub fn ema_panel(close: &[f64], n_names: usize, period: usize) -> Vec<f64> {
+    let n = close.len();
+    let Some((n_time, n_names)) = panel_shape(close, n_names) else {
+        return vec![f64::NAN; n];
+    };
+    let mut out = vec![f64::NAN; n];
+    if n_time < period || period == 0 {
+        return out;
+    }
+    let mut state = vec![0.0_f64; n_names];
+    for t in 0..period {
+        let row = t * n_names;
+        for name in 0..n_names {
+            state[name] += close[row + name];
+        }
+    }
+    let p = period as f64;
+    let seed_row = (period - 1) * n_names;
+    for name in 0..n_names {
+        state[name] /= p;
+        out[seed_row + name] = state[name];
+    }
+    let multiplier = 2.0 / (period as f64 + 1.0);
+    for t in period..n_time {
+        let row = t * n_names;
+        for name in 0..n_names {
+            let prev = state[name];
+            let y = (close[row + name] - prev) * multiplier + prev;
+            state[name] = y;
+            out[row + name] = y;
+        }
+    }
+    out
+}
+
+/// Column-wise panel EMA (extract, then [`ema`]). Kept to bench against [`ema_panel`].
+pub fn ema_panel_by_column(close: &[f64], n_names: usize, period: usize) -> Vec<f64> {
+    let n = close.len();
+    let Some((n_time, n_names)) = panel_shape(close, n_names) else {
+        return vec![f64::NAN; n];
+    };
+    let mut out = vec![f64::NAN; n];
+    let mut col = vec![0.0_f64; n_time];
+    for name in 0..n_names {
+        for t in 0..n_time {
+            col[t] = close[t * n_names + name];
+        }
+        let ema_col = ema(&col, period);
+        for t in 0..n_time {
+            out[t * n_names + name] = ema_col[t];
+        }
+    }
+    out
+}
+
 /// Simple moving average.
 pub fn sma(values: &[f64], period: usize) -> Vec<f64> {
     let n = values.len();
@@ -56,6 +119,294 @@ pub fn sma(values: &[f64], period: usize) -> Vec<f64> {
     for i in period..n {
         window_sum += values[i] - values[i - period];
         out[i] = window_sum / period as f64;
+    }
+    out
+}
+
+/// Panel SMA, one pass in time. `close[t * n_names + name]`. Same window as [`sma`].
+pub fn sma_panel(close: &[f64], n_names: usize, period: usize) -> Vec<f64> {
+    let n = close.len();
+    let Some((n_time, n_names)) = panel_shape(close, n_names) else {
+        return vec![f64::NAN; n];
+    };
+    let mut out = vec![f64::NAN; n];
+    if n_time < period || period == 0 {
+        return out;
+    }
+    let mut sum = vec![0.0_f64; n_names];
+    for t in 0..period {
+        let row = t * n_names;
+        for name in 0..n_names {
+            sum[name] += close[row + name];
+        }
+    }
+    let p = period as f64;
+    let seed_row = (period - 1) * n_names;
+    for name in 0..n_names {
+        out[seed_row + name] = sum[name] / p;
+    }
+    for t in period..n_time {
+        let row = t * n_names;
+        let old = (t - period) * n_names;
+        for name in 0..n_names {
+            sum[name] += close[row + name] - close[old + name];
+            out[row + name] = sum[name] / p;
+        }
+    }
+    out
+}
+
+/// Column-wise panel SMA (extract, then [`sma`]). Kept to bench against [`sma_panel`].
+pub fn sma_panel_by_column(close: &[f64], n_names: usize, period: usize) -> Vec<f64> {
+    let n = close.len();
+    let Some((n_time, n_names)) = panel_shape(close, n_names) else {
+        return vec![f64::NAN; n];
+    };
+    let mut out = vec![f64::NAN; n];
+    let mut col = vec![0.0_f64; n_time];
+    for name in 0..n_names {
+        for t in 0..n_time {
+            col[t] = close[t * n_names + name];
+        }
+        let sma_col = sma(&col, period);
+        for t in 0..n_time {
+            out[t * n_names + name] = sma_col[t];
+        }
+    }
+    out
+}
+
+/// Panel RSI. Same Wilder recurrence as [`rsi`], one pass in time.
+pub fn rsi_panel(close: &[f64], n_names: usize, period: usize) -> Vec<f64> {
+    let n = close.len();
+    let Some((n_time, n_names)) = panel_shape(close, n_names) else {
+        return vec![f64::NAN; n];
+    };
+    let mut out = vec![f64::NAN; n];
+    if n_time <= period || period == 0 {
+        return out;
+    }
+    let mut avg_gain = vec![0.0_f64; n_names];
+    let mut avg_loss = vec![0.0_f64; n_names];
+    for t in 1..=period {
+        let row = t * n_names;
+        let prev = (t - 1) * n_names;
+        for name in 0..n_names {
+            let diff = close[row + name] - close[prev + name];
+            if diff > 0.0 {
+                avg_gain[name] += diff;
+            } else {
+                avg_loss[name] -= diff;
+            }
+        }
+    }
+    let p = period as f64;
+    let first = period * n_names;
+    for name in 0..n_names {
+        avg_gain[name] /= p;
+        avg_loss[name] /= p;
+        out[first + name] = rsi_from_avgs(avg_gain[name], avg_loss[name]);
+    }
+    for t in (period + 1)..n_time {
+        let row = t * n_names;
+        let prev = (t - 1) * n_names;
+        for name in 0..n_names {
+            let diff = close[row + name] - close[prev + name];
+            let gain = if diff > 0.0 { diff } else { 0.0 };
+            let loss = if diff < 0.0 { -diff } else { 0.0 };
+            avg_gain[name] = (avg_gain[name] * (p - 1.0) + gain) / p;
+            avg_loss[name] = (avg_loss[name] * (p - 1.0) + loss) / p;
+            out[row + name] = rsi_from_avgs(avg_gain[name], avg_loss[name]);
+        }
+    }
+    out
+}
+
+/// Panel MACD, one pass in time. Same TA-Lib EMA alignment as [`macd`]:
+/// fast EMA is seeded from `close[slow-fast..slow]`, not from `t=0`.
+pub fn macd_panel(
+    close: &[f64],
+    n_names: usize,
+    fast_period: usize,
+    slow_period: usize,
+    signal_period: usize,
+) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
+    let n = close.len();
+    let nan = vec![f64::NAN; n];
+    let Some((n_time, n_names)) = panel_shape(close, n_names) else {
+        return (nan.clone(), nan.clone(), nan);
+    };
+    if n_time < slow_period
+        || fast_period == 0
+        || slow_period == 0
+        || signal_period == 0
+        || fast_period >= slow_period
+    {
+        return (nan.clone(), nan.clone(), nan);
+    }
+    let offset = slow_period - fast_period;
+    let mut fast_state = vec![0.0_f64; n_names];
+    let mut slow_state = vec![0.0_f64; n_names];
+    for t in 0..slow_period {
+        let row = t * n_names;
+        for name in 0..n_names {
+            slow_state[name] += close[row + name];
+        }
+    }
+    for t in offset..slow_period {
+        let row = t * n_names;
+        for name in 0..n_names {
+            fast_state[name] += close[row + name];
+        }
+    }
+    let fast_p = fast_period as f64;
+    let slow_p = slow_period as f64;
+    for name in 0..n_names {
+        fast_state[name] /= fast_p;
+        slow_state[name] /= slow_p;
+    }
+    let fast_m = 2.0 / (fast_p + 1.0);
+    let slow_m = 2.0 / (slow_p + 1.0);
+    let sig_m = 2.0 / (signal_period as f64 + 1.0);
+    let slow_first = slow_period - 1;
+    let output_first = slow_first + signal_period - 1;
+    let mut macd_internal = vec![f64::NAN; n];
+    let seed_row = slow_first * n_names;
+    for name in 0..n_names {
+        macd_internal[seed_row + name] = fast_state[name] - slow_state[name];
+    }
+    for t in slow_period..n_time {
+        let row = t * n_names;
+        for name in 0..n_names {
+            let x = close[row + name];
+            fast_state[name] = (x - fast_state[name]) * fast_m + fast_state[name];
+            slow_state[name] = (x - slow_state[name]) * slow_m + slow_state[name];
+            macd_internal[row + name] = fast_state[name] - slow_state[name];
+        }
+    }
+    let mut macd_line = vec![f64::NAN; n];
+    let mut signal_line = vec![f64::NAN; n];
+    let mut hist = vec![f64::NAN; n];
+    if n_time <= output_first {
+        return (macd_line, signal_line, hist);
+    }
+    let mut sig_state = vec![0.0_f64; n_names];
+    for j in 0..signal_period {
+        let row = (slow_first + j) * n_names;
+        for name in 0..n_names {
+            sig_state[name] += macd_internal[row + name];
+        }
+    }
+    let sig_p = signal_period as f64;
+    let out_row = output_first * n_names;
+    for name in 0..n_names {
+        sig_state[name] /= sig_p;
+        let m = macd_internal[out_row + name];
+        macd_line[out_row + name] = m;
+        signal_line[out_row + name] = sig_state[name];
+        hist[out_row + name] = m - sig_state[name];
+    }
+    for t in (output_first + 1)..n_time {
+        let row = t * n_names;
+        for name in 0..n_names {
+            let m = macd_internal[row + name];
+            sig_state[name] = (m - sig_state[name]) * sig_m + sig_state[name];
+            macd_line[row + name] = m;
+            signal_line[row + name] = sig_state[name];
+            hist[row + name] = m - sig_state[name];
+        }
+    }
+    (macd_line, signal_line, hist)
+}
+
+/// Panel Bollinger, one pass in time. Middle is [`sma_panel`]; bands use
+/// [`rolling_std_pop`]’s Welford (`welford_mean_m2`), not cancelled `sum_sq`.
+pub fn bbands_panel(
+    close: &[f64],
+    n_names: usize,
+    period: usize,
+    num_std_up: f64,
+    num_std_dn: f64,
+) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
+    let n = close.len();
+    let nan = vec![f64::NAN; n];
+    let Some((n_time, n_names)) = panel_shape(close, n_names) else {
+        return (nan.clone(), nan.clone(), nan);
+    };
+    let middle = sma_panel(close, n_names, period);
+    let mut upper = vec![f64::NAN; n];
+    let mut lower = vec![f64::NAN; n];
+    if n_time < period || period == 0 {
+        return (upper, middle, lower);
+    }
+    let k = period as f64;
+    let mut window = vec![0.0_f64; period];
+    for t in (period - 1)..n_time {
+        let row = t * n_names;
+        for name in 0..n_names {
+            for j in 0..period {
+                let tt = t + 1 - period + j;
+                window[j] = close[tt * n_names + name];
+            }
+            let (_mean, m2) = crate::stats::welford_mean_m2(&window);
+            let std = (m2 / k).max(0.0).sqrt();
+            let mid = middle[row + name];
+            if !mid.is_nan() {
+                upper[row + name] = mid + num_std_up * std;
+                lower[row + name] = mid - num_std_dn * std;
+            }
+        }
+    }
+    (upper, middle, lower)
+}
+
+/// Panel ATR. Same Wilder TR recurrence as [`wilder_atr`], one pass in time.
+pub fn atr_panel(
+    high: &[f64],
+    low: &[f64],
+    close: &[f64],
+    n_names: usize,
+    period: usize,
+) -> Vec<f64> {
+    let n = close.len();
+    if high.len() != n || low.len() != n {
+        return vec![f64::NAN; n];
+    }
+    let Some((n_time, n_names)) = panel_shape(close, n_names) else {
+        return vec![f64::NAN; n];
+    };
+    let mut out = vec![f64::NAN; n];
+    if n_time <= period || period == 0 {
+        return out;
+    }
+    let mut atr_state = vec![0.0_f64; n_names];
+    for t in 1..=period {
+        let row = t * n_names;
+        let prev_close = (t - 1) * n_names;
+        for name in 0..n_names {
+            let hl = high[row + name] - low[row + name];
+            let hc = (high[row + name] - close[prev_close + name]).abs();
+            let lc = (low[row + name] - close[prev_close + name]).abs();
+            atr_state[name] += hl.max(hc).max(lc);
+        }
+    }
+    let p = period as f64;
+    let first = period * n_names;
+    for name in 0..n_names {
+        atr_state[name] /= p;
+        out[first + name] = atr_state[name];
+    }
+    for t in (period + 1)..n_time {
+        let row = t * n_names;
+        let prev_close = (t - 1) * n_names;
+        for name in 0..n_names {
+            let hl = high[row + name] - low[row + name];
+            let hc = (high[row + name] - close[prev_close + name]).abs();
+            let lc = (low[row + name] - close[prev_close + name]).abs();
+            let tr = hl.max(hc).max(lc);
+            atr_state[name] = (atr_state[name] * (p - 1.0) + tr) / p;
+            out[row + name] = atr_state[name];
+        }
     }
     out
 }
@@ -1512,6 +1863,238 @@ mod tests {
         assert_eq!(result[1], 1.5);
         assert!((result[2] - 2.5).abs() < 1e-12);
         assert!((result[3] - 3.5).abs() < 1e-12);
+    }
+
+    fn last_finite(xs: &[f64]) -> Option<f64> {
+        xs.iter().copied().rev().find(|x| x.is_finite())
+    }
+
+    #[test]
+    fn ema_panel_last_matches_one_d_ema() {
+        let n_time = 80_usize;
+        let n_names = 7_usize;
+        let mut close = vec![0.0_f64; n_time * n_names];
+        for t in 0..n_time {
+            for name in 0..n_names {
+                close[t * n_names + name] = 100.0 + (t as f64) * 0.1 + (name as f64);
+            }
+        }
+        for period in [8_usize, 12, 21, 26, 50] {
+            let panel = ema_panel(&close, n_names, period);
+            for name in 0..n_names {
+                let mut col = vec![0.0_f64; n_time];
+                for t in 0..n_time {
+                    col[t] = close[t * n_names + name];
+                }
+                let one_d = ema(&col, period);
+                let panel_last = last_finite(
+                    &(0..n_time)
+                        .map(|t| panel[t * n_names + name])
+                        .collect::<Vec<_>>(),
+                );
+                let one_d_last = last_finite(&one_d);
+                match (panel_last, one_d_last) {
+                    (Some(a), Some(b)) => assert!(
+                        (a - b).abs() <= 1e-6,
+                        "period={period} name={name}: {a} vs {b}"
+                    ),
+                    (None, None) => {}
+                    other => panic!("period={period} name={name}: {other:?}"),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn ema_panel_matches_by_column() {
+        let n_time = 80_usize;
+        let n_names = 7_usize;
+        let mut close = vec![0.0_f64; n_time * n_names];
+        for t in 0..n_time {
+            for name in 0..n_names {
+                close[t * n_names + name] = 100.0 + (t as f64) * 0.1 + (name as f64);
+            }
+        }
+        for period in [8_usize, 12, 21, 26, 50] {
+            let outer = ema_panel(&close, n_names, period);
+            let cols = ema_panel_by_column(&close, n_names, period);
+            for (a, b) in outer.iter().zip(cols.iter()) {
+                assert!(
+                    (a.is_nan() && b.is_nan()) || (a - b).abs() <= 1e-6,
+                    "period={period} {a} vs {b}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn sma_panel_last_matches_one_d_sma() {
+        let n_time = 80_usize;
+        let n_names = 7_usize;
+        let mut close = vec![0.0_f64; n_time * n_names];
+        for t in 0..n_time {
+            for name in 0..n_names {
+                close[t * n_names + name] = 100.0 + (t as f64) * 0.1 + (name as f64);
+            }
+        }
+        for period in [8_usize, 12, 21, 26, 50] {
+            let panel = sma_panel(&close, n_names, period);
+            for name in 0..n_names {
+                let mut col = vec![0.0_f64; n_time];
+                for t in 0..n_time {
+                    col[t] = close[t * n_names + name];
+                }
+                let one_d = sma(&col, period);
+                let panel_last = last_finite(
+                    &(0..n_time)
+                        .map(|t| panel[t * n_names + name])
+                        .collect::<Vec<_>>(),
+                );
+                let one_d_last = last_finite(&one_d);
+                match (panel_last, one_d_last) {
+                    (Some(a), Some(b)) => assert!(
+                        (a - b).abs() <= 1e-6,
+                        "period={period} name={name}: {a} vs {b}"
+                    ),
+                    (None, None) => {}
+                    other => panic!("period={period} name={name}: {other:?}"),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn sma_panel_matches_by_column() {
+        let n_time = 80_usize;
+        let n_names = 7_usize;
+        let mut close = vec![0.0_f64; n_time * n_names];
+        for t in 0..n_time {
+            for name in 0..n_names {
+                close[t * n_names + name] = 100.0 + (t as f64) * 0.1 + (name as f64);
+            }
+        }
+        for period in [8_usize, 12, 21, 26, 50] {
+            let outer = sma_panel(&close, n_names, period);
+            let cols = sma_panel_by_column(&close, n_names, period);
+            for (a, b) in outer.iter().zip(cols.iter()) {
+                assert!(
+                    (a.is_nan() && b.is_nan()) || (a - b).abs() <= 1e-6,
+                    "period={period} {a} vs {b}"
+                );
+            }
+        }
+    }
+
+    fn fill_panel(n_time: usize, n_names: usize) -> Vec<f64> {
+        let mut close = vec![0.0_f64; n_time * n_names];
+        for t in 0..n_time {
+            for name in 0..n_names {
+                close[t * n_names + name] = 100.0 + (t as f64) * 0.1 + (name as f64);
+            }
+        }
+        close
+    }
+
+    fn assert_last_close(
+        panel: &[f64],
+        one_d: &[f64],
+        n_time: usize,
+        n_names: usize,
+        name: usize,
+        tag: &str,
+    ) {
+        let panel_col: Vec<f64> = (0..n_time).map(|t| panel[t * n_names + name]).collect();
+        match (last_finite(&panel_col), last_finite(one_d)) {
+            (Some(a), Some(b)) => assert!((a - b).abs() <= 1e-6, "{tag} name={name}: {a} vs {b}"),
+            (None, None) => {}
+            other => panic!("{tag} name={name}: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rsi_panel_last_matches_one_d() {
+        let n_time = 80_usize;
+        let n_names = 7_usize;
+        let close = fill_panel(n_time, n_names);
+        for period in [8_usize, 12, 14, 21, 26] {
+            let panel = rsi_panel(&close, n_names, period);
+            for name in 0..n_names {
+                let col: Vec<f64> = (0..n_time).map(|t| close[t * n_names + name]).collect();
+                assert_last_close(
+                    &panel,
+                    &rsi(&col, period),
+                    n_time,
+                    n_names,
+                    name,
+                    &format!("rsi period={period}"),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn macd_panel_last_matches_one_d() {
+        let n_time = 80_usize;
+        let n_names = 5_usize;
+        let close = fill_panel(n_time, n_names);
+        for (fast, slow, signal) in [(12_usize, 26, 9), (8, 21, 5), (16, 26, 9)] {
+            let (pm, ps, ph) = macd_panel(&close, n_names, fast, slow, signal);
+            for name in 0..n_names {
+                let col: Vec<f64> = (0..n_time).map(|t| close[t * n_names + name]).collect();
+                let (m, s, h) = macd(&col, fast, slow, signal);
+                let tag = format!("macd {fast}/{slow}/{signal}");
+                assert_last_close(&pm, &m, n_time, n_names, name, &tag);
+                assert_last_close(&ps, &s, n_time, n_names, name, &tag);
+                assert_last_close(&ph, &h, n_time, n_names, name, &tag);
+            }
+        }
+    }
+
+    #[test]
+    fn bbands_panel_last_matches_one_d() {
+        let n_time = 80_usize;
+        let n_names = 5_usize;
+        let close = fill_panel(n_time, n_names);
+        for (period, std) in [(20_usize, 2.0), (14, 2.0), (50, 1.5)] {
+            let (pu, pm, pl) = bbands_panel(&close, n_names, period, std, std);
+            for name in 0..n_names {
+                let col: Vec<f64> = (0..n_time).map(|t| close[t * n_names + name]).collect();
+                let (u, m, l) = bbands(&col, period, std, std);
+                let tag = format!("bbands period={period} std={std}");
+                assert_last_close(&pu, &u, n_time, n_names, name, &tag);
+                assert_last_close(&pm, &m, n_time, n_names, name, &tag);
+                assert_last_close(&pl, &l, n_time, n_names, name, &tag);
+            }
+        }
+    }
+
+    #[test]
+    fn atr_panel_last_matches_one_d() {
+        let n_time = 80_usize;
+        let n_names = 5_usize;
+        let close = fill_panel(n_time, n_names);
+        let mut high = close.clone();
+        let mut low = close.clone();
+        for i in 0..close.len() {
+            high[i] += 1.0;
+            low[i] -= 1.0;
+        }
+        for period in [8_usize, 14, 21] {
+            let panel = atr_panel(&high, &low, &close, n_names, period);
+            for name in 0..n_names {
+                let c: Vec<f64> = (0..n_time).map(|t| close[t * n_names + name]).collect();
+                let h: Vec<f64> = (0..n_time).map(|t| high[t * n_names + name]).collect();
+                let l: Vec<f64> = (0..n_time).map(|t| low[t * n_names + name]).collect();
+                assert_last_close(
+                    &panel,
+                    &atr(&h, &l, &c, period),
+                    n_time,
+                    n_names,
+                    name,
+                    &format!("atr period={period}"),
+                );
+            }
+        }
     }
 
     #[test]
