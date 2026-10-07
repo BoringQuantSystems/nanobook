@@ -66,8 +66,16 @@ def sma(close, period):
     return py_sma(close, period)
 
 
+def sma_panel(close, n_names, period):
+    return py_sma_panel(close, n_names, period)
+
+
 def ema(close, period):
     return py_ema(close, period)
+
+
+def ema_panel(close, n_names, period):
+    return py_ema_panel(close, n_names, period)
 
 
 def rsi(close, period=14):

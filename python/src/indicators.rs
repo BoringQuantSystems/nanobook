@@ -8,11 +8,37 @@ pub fn py_sma(close: Vec<f64>, period: usize) -> Vec<f64> {
     indicators::sma(&close, period)
 }
 
+/// Panel SMA. `close` is a flat row-major time × names vector.
+#[pyfunction]
+#[pyo3(signature = (close, n_names, period))]
+pub fn py_sma_panel(close: Vec<f64>, n_names: usize, period: usize) -> Vec<f64> {
+    indicators::sma_panel(&close, n_names, period)
+}
+
+#[pyfunction]
+#[pyo3(signature = (close, n_names, period))]
+pub fn py_sma_panel_by_column(close: Vec<f64>, n_names: usize, period: usize) -> Vec<f64> {
+    indicators::sma_panel_by_column(&close, n_names, period)
+}
+
 /// Compute exponential moving average.
 #[pyfunction]
 #[pyo3(signature = (close, period))]
 pub fn py_ema(close: Vec<f64>, period: usize) -> Vec<f64> {
     indicators::ema(&close, period)
+}
+
+/// Panel EMA. `close` is a flat row-major time × names vector.
+#[pyfunction]
+#[pyo3(signature = (close, n_names, period))]
+pub fn py_ema_panel(close: Vec<f64>, n_names: usize, period: usize) -> Vec<f64> {
+    indicators::ema_panel(&close, n_names, period)
+}
+
+#[pyfunction]
+#[pyo3(signature = (close, n_names, period))]
+pub fn py_ema_panel_by_column(close: Vec<f64>, n_names: usize, period: usize) -> Vec<f64> {
+    indicators::ema_panel_by_column(&close, n_names, period)
 }
 
 /// Compute RSI (Relative Strength Index) using Wilder's smoothing.
@@ -34,6 +60,12 @@ pub fn py_ema(close: Vec<f64>, period: usize) -> Vec<f64> {
 #[pyo3(signature = (close, period=14))]
 pub fn py_rsi(close: Vec<f64>, period: usize) -> Vec<f64> {
     indicators::rsi(&close, period)
+}
+
+#[pyfunction]
+#[pyo3(signature = (close, n_names, period=14))]
+pub fn py_rsi_panel(close: Vec<f64>, n_names: usize, period: usize) -> Vec<f64> {
+    indicators::rsi_panel(&close, n_names, period)
 }
 
 /// Compute MACD (Moving Average Convergence Divergence).
@@ -64,6 +96,18 @@ pub fn py_macd(
     indicators::macd(&close, fast_period, slow_period, signal_period)
 }
 
+#[pyfunction]
+#[pyo3(signature = (close, n_names, fast_period=12, slow_period=26, signal_period=9))]
+pub fn py_macd_panel(
+    close: Vec<f64>,
+    n_names: usize,
+    fast_period: usize,
+    slow_period: usize,
+    signal_period: usize,
+) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
+    indicators::macd_panel(&close, n_names, fast_period, slow_period, signal_period)
+}
+
 /// Compute Bollinger Bands (SMA +/- k * standard deviation).
 ///
 /// Drop-in replacement for ``talib.BBANDS(close, period, nbdevup, nbdevdn)``.
@@ -90,6 +134,18 @@ pub fn py_bbands(
     num_std_dn: f64,
 ) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
     indicators::bbands(&close, period, num_std_up, num_std_dn)
+}
+
+#[pyfunction]
+#[pyo3(signature = (close, n_names, period=20, num_std_up=2.0, num_std_dn=2.0))]
+pub fn py_bbands_panel(
+    close: Vec<f64>,
+    n_names: usize,
+    period: usize,
+    num_std_up: f64,
+    num_std_dn: f64,
+) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
+    indicators::bbands_panel(&close, n_names, period, num_std_up, num_std_dn)
 }
 
 /// Explicit Bollinger Bands alias.
@@ -125,6 +181,18 @@ pub fn py_bollinger(
 #[pyo3(signature = (high, low, close, period=14))]
 pub fn py_atr(high: Vec<f64>, low: Vec<f64>, close: Vec<f64>, period: usize) -> Vec<f64> {
     indicators::wilder_atr(&high, &low, &close, period)
+}
+
+#[pyfunction]
+#[pyo3(signature = (high, low, close, n_names, period=14))]
+pub fn py_atr_panel(
+    high: Vec<f64>,
+    low: Vec<f64>,
+    close: Vec<f64>,
+    n_names: usize,
+    period: usize,
+) -> Vec<f64> {
+    indicators::atr_panel(&high, &low, &close, n_names, period)
 }
 
 /// Explicit Wilder ATR alias for callers distinguishing ATR variants.

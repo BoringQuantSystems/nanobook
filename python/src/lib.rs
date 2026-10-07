@@ -104,12 +104,20 @@ fn nanobook(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // v0.8 — Technical indicators (ta-lib replacements)
     m.add_function(wrap_pyfunction!(indicators::py_sma, m)?)?;
+    m.add_function(wrap_pyfunction!(indicators::py_sma_panel, m)?)?;
+    m.add_function(wrap_pyfunction!(indicators::py_sma_panel_by_column, m)?)?;
     m.add_function(wrap_pyfunction!(indicators::py_ema, m)?)?;
+    m.add_function(wrap_pyfunction!(indicators::py_ema_panel, m)?)?;
+    m.add_function(wrap_pyfunction!(indicators::py_ema_panel_by_column, m)?)?;
     m.add_function(wrap_pyfunction!(indicators::py_rsi, m)?)?;
+    m.add_function(wrap_pyfunction!(indicators::py_rsi_panel, m)?)?;
     m.add_function(wrap_pyfunction!(indicators::py_macd, m)?)?;
+    m.add_function(wrap_pyfunction!(indicators::py_macd_panel, m)?)?;
     m.add_function(wrap_pyfunction!(indicators::py_bbands, m)?)?;
+    m.add_function(wrap_pyfunction!(indicators::py_bbands_panel, m)?)?;
     m.add_function(wrap_pyfunction!(indicators::py_bollinger, m)?)?;
     m.add_function(wrap_pyfunction!(indicators::py_atr, m)?)?;
+    m.add_function(wrap_pyfunction!(indicators::py_atr_panel, m)?)?;
     m.add_function(wrap_pyfunction!(indicators::py_wilder_atr, m)?)?;
     m.add_function(wrap_pyfunction!(indicators::py_stoch, m)?)?;
     m.add_function(wrap_pyfunction!(indicators::py_stochf, m)?)?;
