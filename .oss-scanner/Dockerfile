@@ -22,21 +22,23 @@ COPY . /src
 WORKDIR /src
 
 # Rust workspace: engine, broker adapters, risk checks, rebalancer, Python binding crate.
-RUN cargo fetch \
-    && cargo build --workspace --all-targets --features "$FEATURES" \
-    && cargo build --features serde,itch --bin corpus-replay --bin itch-slice --bin lob \
-    && cargo test --workspace --features "$FEATURES" --no-run
+RUN cargo fetch --locked \
+    && cargo build --locked --workspace --all-targets --features "$FEATURES" \
+    && cargo build --locked --features serde,itch --bin corpus-replay --bin itch-slice --bin lob \
+    && cargo test --locked --workspace --features "$FEATURES" --no-run
 
 # Python package (maturin build of python/) with the test dependencies.
 RUN cd python && uv sync --python 3.13 --group dev
 
-# Fuzz targets (fuzz/) need a nightly toolchain and cargo-fuzz.
-RUN rustup toolchain install nightly --profile minimal \
-    && cargo +nightly install cargo-fuzz --locked \
-    && cd fuzz && cargo +nightly fuzz build
+# Fuzz targets (fuzz/) need a nightly toolchain and cargo-fuzz. The nightly is pinned
+# so that a broken nightly cannot break this build; move it forward on purpose.
+ENV FUZZ_TOOLCHAIN=nightly-2026-10-08
+RUN rustup toolchain install "$FUZZ_TOOLCHAIN" --profile minimal \
+    && cargo +"$FUZZ_TOOLCHAIN" install cargo-fuzz --locked \
+    && cd fuzz && cargo +"$FUZZ_TOOLCHAIN" fuzz build
 
 # Run the tests once so a broken image is visible in the build log. A failure does not stop the build.
-RUN cargo test --workspace --features "$FEATURES" || echo "WARNING: cargo test reported failures"
+RUN cargo test --locked --workspace --features "$FEATURES" || echo "WARNING: cargo test reported failures"
 RUN cd python && (uv run --offline python -m pytest tests/ -q --ignore=tests/reference || echo "WARNING: pytest reported failures")
 
 # From here on there is no network.

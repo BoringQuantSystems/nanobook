@@ -39,8 +39,9 @@ Trusted: the operator's own config files, environment, and API credentials.
 - Rust: `cargo test --workspace --features "$FEATURES"` (`$FEATURES` is set in the
   image). Broker tests use mocks (`broker/src/mock.rs`); no live account is needed.
 - Python: `cd python && uv run --offline python -m pytest tests/ -q`.
-- Fuzz (nightly, built in the image): `cd fuzz && cargo +nightly fuzz run fuzz_itch`,
-  `fuzz_submit`, `fuzz_execute_fill`.
+- Fuzz (built in the image with the nightly in `$FUZZ_TOOLCHAIN`):
+  `cd fuzz && cargo +$FUZZ_TOOLCHAIN fuzz run fuzz_itch` (also `fuzz_submit`,
+  `fuzz_execute_fill`).
 - Binaries in `target/debug/`: `lob`, `itch-slice`, `corpus-replay`, `rebalancer`.
 
 ## How we rate severity
@@ -59,5 +60,7 @@ Trusted: the operator's own config files, environment, and API credentials.
 
 ## Anything to leave alone
 - Performance of valid backtests, and large memory use for large but valid ITCH files.
-- The rebalancer's `--force` flag, which deliberately skips the trade-size limit.
+- The rebalancer's `--force` flag skips the interactive "Execute?" prompt, for cron use.
+  Skipping the prompt is intended. The risk limits must still hold with `--force`, so a
+  way around them with `--force` is in scope.
 - Paper-trading defaults in `config.toml.example`.
