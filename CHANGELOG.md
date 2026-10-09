@@ -26,6 +26,14 @@ nanobook-rebalancer 0.9.0 to 0.10.0.
 - README: a Disclaimer section. nanobook is not financial advice and not a
   broker; live orders are at the user's own risk.
 
+### Security
+
+- **`rustls` 0.23.42 → 0.23.45** (RUSTSEC-2026-0285, TLS 1.3 handshake
+  messages accepted across encryption levels), with `aws-lc-rs` 1.18.1,
+  `aws-lc-sys` 0.45.0 and `rustls-webpki` 0.103.15. `chacha20` moves from the
+  yanked 0.10.1 to 0.10.2. This changes the lock file, so it reaches the Python
+  wheels and release binaries; crates.io users resolve their own versions.
+
 ## [0.18.1] - 2026-09-17
 
 ### Fixed
