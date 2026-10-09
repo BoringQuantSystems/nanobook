@@ -120,3 +120,18 @@ def test_py_atr_panel_last_matches_py_atr() -> None:
         assert a is not None and b is not None
         assert abs(a - b) <= 1e-6
 
+
+
+def test_sma_panel_and_ema_panel_wrappers_match_py_functions() -> None:
+    n_time, n_names, close = _close_panel()
+    for period in (8, 21):
+        for wrapper, raw in (
+            (nanobook.sma_panel, nanobook.py_sma_panel),
+            (nanobook.ema_panel, nanobook.py_ema_panel),
+        ):
+            got = wrapper(close, n_names, period)
+            want = raw(close, n_names, period)
+            assert len(got) == n_time * n_names
+            assert _last_finite(got) is not None
+            for x, y in zip(got, want, strict=True):
+                assert x == y or (math.isnan(x) and math.isnan(y))
