@@ -68,10 +68,10 @@ pub fn ema_panel(close: &[f64], n_names: usize, period: usize) -> Vec<f64> {
     }
     let p = period as f64;
     let seed_row = (period - 1) * n_names;
-    for name in 0..n_names {
-        state[name] /= p;
-        out[seed_row + name] = state[name];
+    for s in &mut state {
+        *s /= p;
     }
+    out[seed_row..seed_row + n_names].copy_from_slice(&state);
     let multiplier = 2.0 / (period as f64 + 1.0);
     for t in period..n_time {
         let row = t * n_names;
@@ -344,9 +344,9 @@ pub fn bbands_panel(
     for t in (period - 1)..n_time {
         let row = t * n_names;
         for name in 0..n_names {
-            for j in 0..period {
+            for (j, w) in window.iter_mut().enumerate() {
                 let tt = t + 1 - period + j;
-                window[j] = close[tt * n_names + name];
+                *w = close[tt * n_names + name];
             }
             let (_mean, m2) = crate::stats::welford_mean_m2(&window);
             let std = (m2 / k).max(0.0).sqrt();
@@ -392,10 +392,10 @@ pub fn atr_panel(
     }
     let p = period as f64;
     let first = period * n_names;
-    for name in 0..n_names {
-        atr_state[name] /= p;
-        out[first + name] = atr_state[name];
+    for s in &mut atr_state {
+        *s /= p;
     }
+    out[first..first + n_names].copy_from_slice(&atr_state);
     for t in (period + 1)..n_time {
         let row = t * n_names;
         let prev_close = (t - 1) * n_names;
