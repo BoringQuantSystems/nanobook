@@ -1442,10 +1442,7 @@ mod tests {
     fn missing_close_price_for_held_name_is_unpriced() {
         // Buy AAPL on bar 0; bar 1 has no AAPL. That is the UNH wipeout class.
         let weights = vec![vec![(aapl(), 1.0)], vec![(msft(), 1.0)]];
-        let prices = vec![
-            vec![(aapl(), bar(100_00))],
-            vec![(msft(), bar(200_00))],
-        ];
+        let prices = vec![vec![(aapl(), bar(100_00))], vec![(msft(), bar(200_00))]];
         let result = backtest_weights(
             &weights,
             &prices,
