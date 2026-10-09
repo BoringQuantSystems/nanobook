@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.0] - 2026-10-09
+
+The member crates move with the core because they depend on nanobook 0.19:
+nanobook-broker 0.9.0 to 0.10.0, nanobook-risk 0.7.0 to 0.8.0,
+nanobook-rebalancer 0.9.0 to 0.10.0.
+
+### Added
+
+- **Panel indicators over a time-by-name close array.** `sma`, `ema`, `rsi`,
+  `macd`, `bbands` and `atr` compute every name of a row-major panel in one
+  call; the `*_by_column` variants walk one name at a time. The Python binding
+  exposes the `py_*_panel` functions and the `sma_panel` and `ema_panel`
+  wrappers. Tests check each panel column against the one-dimensional
+  indicator.
+- **License text in every published package.** nanobook-broker,
+  nanobook-risk and nanobook-rebalancer now ship `LICENSE`, and the Python
+  wheel records `License-File: LICENSE`. Earlier releases of those packages
+  carried only the SPDX identifier.
+- README: a Disclaimer section. nanobook is not financial advice and not a
+  broker; live orders are at the user's own risk.
+
 ## [0.18.1] - 2026-09-17
 
 ### Fixed

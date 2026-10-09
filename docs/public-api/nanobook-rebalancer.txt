@@ -22,10 +22,10 @@ impl nanobook_rebalancer::audit::Checkpoint
 pub fn nanobook_rebalancer::audit::Checkpoint::as_event_name(&self) -> &'static str
 pub fn nanobook_rebalancer::audit::Checkpoint::from_event_name(&str) -> core::option::Option<Self>
 impl core::clone::Clone for nanobook_rebalancer::audit::Checkpoint
-pub fn nanobook_rebalancer::audit::Checkpoint::clone(&self) -> nanobook_rebalancer::audit::Checkpoint
+pub fn nanobook_rebalancer::audit::Checkpoint::clone(&self) -> Self
 impl core::cmp::Eq for nanobook_rebalancer::audit::Checkpoint
 impl core::cmp::PartialEq for nanobook_rebalancer::audit::Checkpoint
-pub fn nanobook_rebalancer::audit::Checkpoint::eq(&self, &nanobook_rebalancer::audit::Checkpoint) -> bool
+pub fn nanobook_rebalancer::audit::Checkpoint::eq(&self, &Self) -> bool
 impl core::fmt::Debug for nanobook_rebalancer::audit::Checkpoint
 pub fn nanobook_rebalancer::audit::Checkpoint::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for nanobook_rebalancer::audit::Checkpoint
@@ -49,7 +49,7 @@ pub nanobook_rebalancer::audit::AuditEvent::sequence_number: core::option::Optio
 pub nanobook_rebalancer::audit::AuditEvent::ts: chrono::datetime::DateTime<chrono::offset::utc::Utc>
 pub nanobook_rebalancer::audit::AuditEvent::window_id: core::option::Option<alloc::string::String>
 impl core::clone::Clone for nanobook_rebalancer::audit::AuditEvent
-pub fn nanobook_rebalancer::audit::AuditEvent::clone(&self) -> nanobook_rebalancer::audit::AuditEvent
+pub fn nanobook_rebalancer::audit::AuditEvent::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_rebalancer::audit::AuditEvent
 pub fn nanobook_rebalancer::audit::AuditEvent::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for nanobook_rebalancer::audit::AuditEvent
@@ -155,9 +155,9 @@ pub nanobook_rebalancer::clock_skew::SkewResult::ForwardJump::duration: chrono::
 pub nanobook_rebalancer::clock_skew::SkewResult::ForwardJump::rate: f64
 pub nanobook_rebalancer::clock_skew::SkewResult::Ok
 impl core::clone::Clone for nanobook_rebalancer::clock_skew::SkewResult
-pub fn nanobook_rebalancer::clock_skew::SkewResult::clone(&self) -> nanobook_rebalancer::clock_skew::SkewResult
+pub fn nanobook_rebalancer::clock_skew::SkewResult::clone(&self) -> Self
 impl core::cmp::PartialEq for nanobook_rebalancer::clock_skew::SkewResult
-pub fn nanobook_rebalancer::clock_skew::SkewResult::eq(&self, &nanobook_rebalancer::clock_skew::SkewResult) -> bool
+pub fn nanobook_rebalancer::clock_skew::SkewResult::eq(&self, &Self) -> bool
 impl core::fmt::Debug for nanobook_rebalancer::clock_skew::SkewResult
 pub fn nanobook_rebalancer::clock_skew::SkewResult::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for nanobook_rebalancer::clock_skew::SkewResult
@@ -190,10 +190,10 @@ pub enum nanobook_rebalancer::config::AccountType
 pub nanobook_rebalancer::config::AccountType::Cash
 pub nanobook_rebalancer::config::AccountType::Margin
 impl core::clone::Clone for nanobook_rebalancer::config::AccountType
-pub fn nanobook_rebalancer::config::AccountType::clone(&self) -> nanobook_rebalancer::config::AccountType
+pub fn nanobook_rebalancer::config::AccountType::clone(&self) -> Self
 impl core::cmp::Eq for nanobook_rebalancer::config::AccountType
 impl core::cmp::PartialEq for nanobook_rebalancer::config::AccountType
-pub fn nanobook_rebalancer::config::AccountType::eq(&self, &nanobook_rebalancer::config::AccountType) -> bool
+pub fn nanobook_rebalancer::config::AccountType::eq(&self, &Self) -> bool
 impl core::fmt::Debug for nanobook_rebalancer::config::AccountType
 pub fn nanobook_rebalancer::config::AccountType::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for nanobook_rebalancer::config::AccountType
@@ -211,7 +211,7 @@ pub struct nanobook_rebalancer::config::AccountConfig
 pub nanobook_rebalancer::config::AccountConfig::account_type: nanobook_rebalancer::config::AccountType
 pub nanobook_rebalancer::config::AccountConfig::id: alloc::string::String
 impl core::clone::Clone for nanobook_rebalancer::config::AccountConfig
-pub fn nanobook_rebalancer::config::AccountConfig::clone(&self) -> nanobook_rebalancer::config::AccountConfig
+pub fn nanobook_rebalancer::config::AccountConfig::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_rebalancer::config::AccountConfig
 pub fn nanobook_rebalancer::config::AccountConfig::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<'de> serde_core::de::Deserialize<'de> for nanobook_rebalancer::config::AccountConfig
@@ -236,7 +236,7 @@ pub fn nanobook_rebalancer::config::Config::address(&self) -> alloc::string::Str
 pub fn nanobook_rebalancer::config::Config::audit_path(&self) -> std::path::PathBuf
 pub fn nanobook_rebalancer::config::Config::load(&std::path::Path) -> nanobook_rebalancer::error::Result<Self>
 impl core::clone::Clone for nanobook_rebalancer::config::Config
-pub fn nanobook_rebalancer::config::Config::clone(&self) -> nanobook_rebalancer::config::Config
+pub fn nanobook_rebalancer::config::Config::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_rebalancer::config::Config
 pub fn nanobook_rebalancer::config::Config::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<'de> serde_core::de::Deserialize<'de> for nanobook_rebalancer::config::Config
@@ -254,7 +254,7 @@ pub nanobook_rebalancer::config::ConnectionConfig::host: alloc::string::String
 pub nanobook_rebalancer::config::ConnectionConfig::port: u16
 pub nanobook_rebalancer::config::ConnectionConfig::timeout_secs: u64
 impl core::clone::Clone for nanobook_rebalancer::config::ConnectionConfig
-pub fn nanobook_rebalancer::config::ConnectionConfig::clone(&self) -> nanobook_rebalancer::config::ConnectionConfig
+pub fn nanobook_rebalancer::config::ConnectionConfig::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_rebalancer::config::ConnectionConfig
 pub fn nanobook_rebalancer::config::ConnectionConfig::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<'de> serde_core::de::Deserialize<'de> for nanobook_rebalancer::config::ConnectionConfig
@@ -271,7 +271,7 @@ pub nanobook_rebalancer::config::CostConfig::commission_min: f64
 pub nanobook_rebalancer::config::CostConfig::commission_per_share: f64
 pub nanobook_rebalancer::config::CostConfig::slippage_bps: u32
 impl core::clone::Clone for nanobook_rebalancer::config::CostConfig
-pub fn nanobook_rebalancer::config::CostConfig::clone(&self) -> nanobook_rebalancer::config::CostConfig
+pub fn nanobook_rebalancer::config::CostConfig::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_rebalancer::config::CostConfig
 pub fn nanobook_rebalancer::config::CostConfig::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<'de> serde_core::de::Deserialize<'de> for nanobook_rebalancer::config::CostConfig
@@ -290,7 +290,7 @@ pub nanobook_rebalancer::config::ExecutionConfig::order_interval_ms: u64
 pub nanobook_rebalancer::config::ExecutionConfig::order_timeout_secs: u64
 pub nanobook_rebalancer::config::ExecutionConfig::quote_staleness_threshold_sec: u64
 impl core::clone::Clone for nanobook_rebalancer::config::ExecutionConfig
-pub fn nanobook_rebalancer::config::ExecutionConfig::clone(&self) -> nanobook_rebalancer::config::ExecutionConfig
+pub fn nanobook_rebalancer::config::ExecutionConfig::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_rebalancer::config::ExecutionConfig
 pub fn nanobook_rebalancer::config::ExecutionConfig::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<'de> serde_core::de::Deserialize<'de> for nanobook_rebalancer::config::ExecutionConfig
@@ -305,7 +305,7 @@ impl core::panic::unwind_safe::UnwindSafe for nanobook_rebalancer::config::Execu
 pub struct nanobook_rebalancer::config::KillConfig
 pub nanobook_rebalancer::config::KillConfig::timeout_secs: u64
 impl core::clone::Clone for nanobook_rebalancer::config::KillConfig
-pub fn nanobook_rebalancer::config::KillConfig::clone(&self) -> nanobook_rebalancer::config::KillConfig
+pub fn nanobook_rebalancer::config::KillConfig::clone(&self) -> Self
 impl core::default::Default for nanobook_rebalancer::config::KillConfig
 pub fn nanobook_rebalancer::config::KillConfig::default() -> Self
 impl core::fmt::Debug for nanobook_rebalancer::config::KillConfig
@@ -325,7 +325,7 @@ pub nanobook_rebalancer::config::LoggingConfig::clock_skew_threshold_sec: i64
 pub nanobook_rebalancer::config::LoggingConfig::dir: alloc::string::String
 pub nanobook_rebalancer::config::LoggingConfig::max_jump_rate_sec_per_sec: f64
 impl core::clone::Clone for nanobook_rebalancer::config::LoggingConfig
-pub fn nanobook_rebalancer::config::LoggingConfig::clone(&self) -> nanobook_rebalancer::config::LoggingConfig
+pub fn nanobook_rebalancer::config::LoggingConfig::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_rebalancer::config::LoggingConfig
 pub fn nanobook_rebalancer::config::LoggingConfig::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<'de> serde_core::de::Deserialize<'de> for nanobook_rebalancer::config::LoggingConfig
@@ -345,7 +345,7 @@ pub nanobook_rebalancer::config::RiskConfig::max_short_pct: f64
 pub nanobook_rebalancer::config::RiskConfig::max_trade_usd: f64
 pub nanobook_rebalancer::config::RiskConfig::min_trade_usd: f64
 impl core::clone::Clone for nanobook_rebalancer::config::RiskConfig
-pub fn nanobook_rebalancer::config::RiskConfig::clone(&self) -> nanobook_rebalancer::config::RiskConfig
+pub fn nanobook_rebalancer::config::RiskConfig::clone(&self) -> Self
 impl core::default::Default for nanobook_rebalancer::config::RiskConfig
 pub fn nanobook_rebalancer::config::RiskConfig::default() -> Self
 impl core::fmt::Debug for nanobook_rebalancer::config::RiskConfig
@@ -366,10 +366,10 @@ pub nanobook_rebalancer::diff::Action::BuyCover
 pub nanobook_rebalancer::diff::Action::Sell
 pub nanobook_rebalancer::diff::Action::SellShort
 impl core::clone::Clone for nanobook_rebalancer::diff::Action
-pub fn nanobook_rebalancer::diff::Action::clone(&self) -> nanobook_rebalancer::diff::Action
+pub fn nanobook_rebalancer::diff::Action::clone(&self) -> Self
 impl core::cmp::Eq for nanobook_rebalancer::diff::Action
 impl core::cmp::PartialEq for nanobook_rebalancer::diff::Action
-pub fn nanobook_rebalancer::diff::Action::eq(&self, &nanobook_rebalancer::diff::Action) -> bool
+pub fn nanobook_rebalancer::diff::Action::eq(&self, &Self) -> bool
 impl core::fmt::Debug for nanobook_rebalancer::diff::Action
 pub fn nanobook_rebalancer::diff::Action::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for nanobook_rebalancer::diff::Action
@@ -391,7 +391,7 @@ pub nanobook_rebalancer::diff::CostEstimate::slippage_cents: i64
 impl nanobook_rebalancer::diff::CostEstimate
 pub fn nanobook_rebalancer::diff::CostEstimate::total_cents(&self) -> i64
 impl core::clone::Clone for nanobook_rebalancer::diff::CostEstimate
-pub fn nanobook_rebalancer::diff::CostEstimate::clone(&self) -> nanobook_rebalancer::diff::CostEstimate
+pub fn nanobook_rebalancer::diff::CostEstimate::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_rebalancer::diff::CostEstimate
 pub fn nanobook_rebalancer::diff::CostEstimate::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for nanobook_rebalancer::diff::CostEstimate
@@ -410,7 +410,7 @@ pub nanobook_rebalancer::diff::CurrentPosition::avg_cost_cents: i64
 pub nanobook_rebalancer::diff::CurrentPosition::quantity: i64
 pub nanobook_rebalancer::diff::CurrentPosition::symbol: nanobook::types::Symbol
 impl core::clone::Clone for nanobook_rebalancer::diff::CurrentPosition
-pub fn nanobook_rebalancer::diff::CurrentPosition::clone(&self) -> nanobook_rebalancer::diff::CurrentPosition
+pub fn nanobook_rebalancer::diff::CurrentPosition::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_rebalancer::diff::CurrentPosition
 pub fn nanobook_rebalancer::diff::CurrentPosition::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for nanobook_rebalancer::diff::CurrentPosition
@@ -432,7 +432,7 @@ pub nanobook_rebalancer::diff::RebalanceOrder::notional_cents: i64
 pub nanobook_rebalancer::diff::RebalanceOrder::shares: i64
 pub nanobook_rebalancer::diff::RebalanceOrder::symbol: nanobook::types::Symbol
 impl core::clone::Clone for nanobook_rebalancer::diff::RebalanceOrder
-pub fn nanobook_rebalancer::diff::RebalanceOrder::clone(&self) -> nanobook_rebalancer::diff::RebalanceOrder
+pub fn nanobook_rebalancer::diff::RebalanceOrder::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_rebalancer::diff::RebalanceOrder
 pub fn nanobook_rebalancer::diff::RebalanceOrder::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for nanobook_rebalancer::diff::RebalanceOrder
@@ -502,7 +502,7 @@ impl nanobook_rebalancer::execution::CronMode
 pub fn nanobook_rebalancer::execution::CronMode::is_enabled(&self) -> bool
 pub fn nanobook_rebalancer::execution::CronMode::new(u64) -> Self
 impl core::clone::Clone for nanobook_rebalancer::execution::CronMode
-pub fn nanobook_rebalancer::execution::CronMode::clone(&self) -> nanobook_rebalancer::execution::CronMode
+pub fn nanobook_rebalancer::execution::CronMode::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_rebalancer::execution::CronMode
 pub fn nanobook_rebalancer::execution::CronMode::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for nanobook_rebalancer::execution::CronMode
@@ -531,7 +531,7 @@ pub fn nanobook_rebalancer::execution::ShutdownFlag::is_requested(&self) -> bool
 pub fn nanobook_rebalancer::execution::ShutdownFlag::new() -> Self
 pub fn nanobook_rebalancer::execution::ShutdownFlag::request_shutdown(&self)
 impl core::clone::Clone for nanobook_rebalancer::execution::ShutdownFlag
-pub fn nanobook_rebalancer::execution::ShutdownFlag::clone(&self) -> nanobook_rebalancer::execution::ShutdownFlag
+pub fn nanobook_rebalancer::execution::ShutdownFlag::clone(&self) -> Self
 impl core::default::Default for nanobook_rebalancer::execution::ShutdownFlag
 pub fn nanobook_rebalancer::execution::ShutdownFlag::default() -> Self
 impl core::fmt::Debug for nanobook_rebalancer::execution::ShutdownFlag
@@ -563,10 +563,10 @@ pub enum nanobook_rebalancer::kill::KillWorkflow
 pub nanobook_rebalancer::kill::KillWorkflow::GracefulOnly
 pub nanobook_rebalancer::kill::KillWorkflow::TwoPhase
 impl core::clone::Clone for nanobook_rebalancer::kill::KillWorkflow
-pub fn nanobook_rebalancer::kill::KillWorkflow::clone(&self) -> nanobook_rebalancer::kill::KillWorkflow
+pub fn nanobook_rebalancer::kill::KillWorkflow::clone(&self) -> Self
 impl core::cmp::Eq for nanobook_rebalancer::kill::KillWorkflow
 impl core::cmp::PartialEq for nanobook_rebalancer::kill::KillWorkflow
-pub fn nanobook_rebalancer::kill::KillWorkflow::eq(&self, &nanobook_rebalancer::kill::KillWorkflow) -> bool
+pub fn nanobook_rebalancer::kill::KillWorkflow::eq(&self, &Self) -> bool
 impl core::fmt::Debug for nanobook_rebalancer::kill::KillWorkflow
 pub fn nanobook_rebalancer::kill::KillWorkflow::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for nanobook_rebalancer::kill::KillWorkflow
@@ -586,7 +586,7 @@ pub nanobook_rebalancer::kill::DanglingOrder::shares: i64
 pub nanobook_rebalancer::kill::DanglingOrder::symbol: alloc::string::String
 pub nanobook_rebalancer::kill::DanglingOrder::timestamp: chrono::datetime::DateTime<chrono::offset::utc::Utc>
 impl core::clone::Clone for nanobook_rebalancer::kill::DanglingOrder
-pub fn nanobook_rebalancer::kill::DanglingOrder::clone(&self) -> nanobook_rebalancer::kill::DanglingOrder
+pub fn nanobook_rebalancer::kill::DanglingOrder::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_rebalancer::kill::DanglingOrder
 pub fn nanobook_rebalancer::kill::DanglingOrder::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for nanobook_rebalancer::kill::DanglingOrder
@@ -604,10 +604,10 @@ pub nanobook_rebalancer::kill::ForcefulCancelReport::remaining_order_ids: alloc:
 impl nanobook_rebalancer::kill::ForcefulCancelReport
 pub fn nanobook_rebalancer::kill::ForcefulCancelReport::succeeded(&self) -> bool
 impl core::clone::Clone for nanobook_rebalancer::kill::ForcefulCancelReport
-pub fn nanobook_rebalancer::kill::ForcefulCancelReport::clone(&self) -> nanobook_rebalancer::kill::ForcefulCancelReport
+pub fn nanobook_rebalancer::kill::ForcefulCancelReport::clone(&self) -> Self
 impl core::cmp::Eq for nanobook_rebalancer::kill::ForcefulCancelReport
 impl core::cmp::PartialEq for nanobook_rebalancer::kill::ForcefulCancelReport
-pub fn nanobook_rebalancer::kill::ForcefulCancelReport::eq(&self, &nanobook_rebalancer::kill::ForcefulCancelReport) -> bool
+pub fn nanobook_rebalancer::kill::ForcefulCancelReport::eq(&self, &Self) -> bool
 impl core::fmt::Debug for nanobook_rebalancer::kill::ForcefulCancelReport
 pub fn nanobook_rebalancer::kill::ForcefulCancelReport::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for nanobook_rebalancer::kill::ForcefulCancelReport
@@ -645,7 +645,7 @@ pub nanobook_rebalancer::reconcile::ReconcileEntry::symbol: alloc::string::Strin
 pub nanobook_rebalancer::reconcile::ReconcileEntry::target_shares: i64
 pub nanobook_rebalancer::reconcile::ReconcileEntry::target_weight: f64
 impl core::clone::Clone for nanobook_rebalancer::reconcile::ReconcileEntry
-pub fn nanobook_rebalancer::reconcile::ReconcileEntry::clone(&self) -> nanobook_rebalancer::reconcile::ReconcileEntry
+pub fn nanobook_rebalancer::reconcile::ReconcileEntry::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_rebalancer::reconcile::ReconcileEntry
 pub fn nanobook_rebalancer::reconcile::ReconcileEntry::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for nanobook_rebalancer::reconcile::ReconcileEntry
@@ -661,7 +661,7 @@ pub struct nanobook_rebalancer::reconcile::ReconcileReport
 pub nanobook_rebalancer::reconcile::ReconcileReport::entries: alloc::vec::Vec<nanobook_rebalancer::reconcile::ReconcileEntry>
 pub nanobook_rebalancer::reconcile::ReconcileReport::tracking_error_pct: f64
 impl core::clone::Clone for nanobook_rebalancer::reconcile::ReconcileReport
-pub fn nanobook_rebalancer::reconcile::ReconcileReport::clone(&self) -> nanobook_rebalancer::reconcile::ReconcileReport
+pub fn nanobook_rebalancer::reconcile::ReconcileReport::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_rebalancer::reconcile::ReconcileReport
 pub fn nanobook_rebalancer::reconcile::ReconcileReport::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for nanobook_rebalancer::reconcile::ReconcileReport
@@ -706,7 +706,7 @@ pub nanobook_rebalancer::recovery::Discrepancy::PositionMismatch::broker_qty: i6
 pub nanobook_rebalancer::recovery::Discrepancy::PositionMismatch::expected_qty: i64
 pub nanobook_rebalancer::recovery::Discrepancy::PositionMismatch::symbol: alloc::string::String
 impl core::clone::Clone for nanobook_rebalancer::recovery::Discrepancy
-pub fn nanobook_rebalancer::recovery::Discrepancy::clone(&self) -> nanobook_rebalancer::recovery::Discrepancy
+pub fn nanobook_rebalancer::recovery::Discrepancy::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_rebalancer::recovery::Discrepancy
 pub fn nanobook_rebalancer::recovery::Discrepancy::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for nanobook_rebalancer::recovery::Discrepancy
@@ -726,10 +726,10 @@ pub nanobook_rebalancer::recovery::RecoveryAction::Restart
 pub nanobook_rebalancer::recovery::RecoveryAction::Resume
 pub nanobook_rebalancer::recovery::RecoveryAction::Rollback
 impl core::clone::Clone for nanobook_rebalancer::recovery::RecoveryAction
-pub fn nanobook_rebalancer::recovery::RecoveryAction::clone(&self) -> nanobook_rebalancer::recovery::RecoveryAction
+pub fn nanobook_rebalancer::recovery::RecoveryAction::clone(&self) -> Self
 impl core::cmp::Eq for nanobook_rebalancer::recovery::RecoveryAction
 impl core::cmp::PartialEq for nanobook_rebalancer::recovery::RecoveryAction
-pub fn nanobook_rebalancer::recovery::RecoveryAction::eq(&self, &nanobook_rebalancer::recovery::RecoveryAction) -> bool
+pub fn nanobook_rebalancer::recovery::RecoveryAction::eq(&self, &Self) -> bool
 impl core::fmt::Debug for nanobook_rebalancer::recovery::RecoveryAction
 pub fn nanobook_rebalancer::recovery::RecoveryAction::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for nanobook_rebalancer::recovery::RecoveryAction
@@ -749,7 +749,7 @@ pub struct nanobook_rebalancer::recovery::DiscrepancyReport
 pub nanobook_rebalancer::recovery::DiscrepancyReport::discrepancies: alloc::vec::Vec<nanobook_rebalancer::recovery::Discrepancy>
 pub nanobook_rebalancer::recovery::DiscrepancyReport::has_critical_issues: bool
 impl core::clone::Clone for nanobook_rebalancer::recovery::DiscrepancyReport
-pub fn nanobook_rebalancer::recovery::DiscrepancyReport::clone(&self) -> nanobook_rebalancer::recovery::DiscrepancyReport
+pub fn nanobook_rebalancer::recovery::DiscrepancyReport::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_rebalancer::recovery::DiscrepancyReport
 pub fn nanobook_rebalancer::recovery::DiscrepancyReport::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for nanobook_rebalancer::recovery::DiscrepancyReport
@@ -775,7 +775,7 @@ pub nanobook_rebalancer::recovery::RecoveredOrder::shares: i64
 pub nanobook_rebalancer::recovery::RecoveredOrder::submitted: bool
 pub nanobook_rebalancer::recovery::RecoveredOrder::symbol: nanobook::types::Symbol
 impl core::clone::Clone for nanobook_rebalancer::recovery::RecoveredOrder
-pub fn nanobook_rebalancer::recovery::RecoveredOrder::clone(&self) -> nanobook_rebalancer::recovery::RecoveredOrder
+pub fn nanobook_rebalancer::recovery::RecoveredOrder::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_rebalancer::recovery::RecoveredOrder
 pub fn nanobook_rebalancer::recovery::RecoveredOrder::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for nanobook_rebalancer::recovery::RecoveredOrder
@@ -818,7 +818,7 @@ impl nanobook_rebalancer::recovery::RecoveredState
 pub fn nanobook_rebalancer::recovery::RecoveredState::determine_recovery_action(&self) -> nanobook_rebalancer::recovery::RecoveryAction
 pub fn nanobook_rebalancer::recovery::RecoveredState::new() -> Self
 impl core::clone::Clone for nanobook_rebalancer::recovery::RecoveredState
-pub fn nanobook_rebalancer::recovery::RecoveredState::clone(&self) -> nanobook_rebalancer::recovery::RecoveredState
+pub fn nanobook_rebalancer::recovery::RecoveredState::clone(&self) -> Self
 impl core::default::Default for nanobook_rebalancer::recovery::RecoveredState
 pub fn nanobook_rebalancer::recovery::RecoveredState::default() -> Self
 impl core::fmt::Debug for nanobook_rebalancer::recovery::RecoveredState
@@ -850,7 +850,7 @@ pub nanobook_rebalancer::target::Constraints::max_leverage: core::option::Option
 pub nanobook_rebalancer::target::Constraints::max_position_pct: core::option::Option<f64>
 pub nanobook_rebalancer::target::Constraints::min_trade_usd: core::option::Option<f64>
 impl core::clone::Clone for nanobook_rebalancer::target::Constraints
-pub fn nanobook_rebalancer::target::Constraints::clone(&self) -> nanobook_rebalancer::target::Constraints
+pub fn nanobook_rebalancer::target::Constraints::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_rebalancer::target::Constraints
 pub fn nanobook_rebalancer::target::Constraints::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<'de> serde_core::de::Deserialize<'de> for nanobook_rebalancer::target::Constraints
@@ -865,9 +865,9 @@ impl core::panic::unwind_safe::UnwindSafe for nanobook_rebalancer::target::Const
 pub struct nanobook_rebalancer::target::TargetMetadata
 pub nanobook_rebalancer::target::TargetMetadata::id: alloc::string::String
 impl core::clone::Clone for nanobook_rebalancer::target::TargetMetadata
-pub fn nanobook_rebalancer::target::TargetMetadata::clone(&self) -> nanobook_rebalancer::target::TargetMetadata
+pub fn nanobook_rebalancer::target::TargetMetadata::clone(&self) -> Self
 impl core::default::Default for nanobook_rebalancer::target::TargetMetadata
-pub fn nanobook_rebalancer::target::TargetMetadata::default() -> nanobook_rebalancer::target::TargetMetadata
+pub fn nanobook_rebalancer::target::TargetMetadata::default() -> Self
 impl core::fmt::Debug for nanobook_rebalancer::target::TargetMetadata
 pub fn nanobook_rebalancer::target::TargetMetadata::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<'de> serde_core::de::Deserialize<'de> for nanobook_rebalancer::target::TargetMetadata
@@ -883,7 +883,7 @@ pub struct nanobook_rebalancer::target::TargetPosition
 pub nanobook_rebalancer::target::TargetPosition::symbol: alloc::string::String
 pub nanobook_rebalancer::target::TargetPosition::weight: f64
 impl core::clone::Clone for nanobook_rebalancer::target::TargetPosition
-pub fn nanobook_rebalancer::target::TargetPosition::clone(&self) -> nanobook_rebalancer::target::TargetPosition
+pub fn nanobook_rebalancer::target::TargetPosition::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_rebalancer::target::TargetPosition
 pub fn nanobook_rebalancer::target::TargetPosition::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<'de> serde_core::de::Deserialize<'de> for nanobook_rebalancer::target::TargetPosition
@@ -908,7 +908,7 @@ pub fn nanobook_rebalancer::target::TargetSpec::load(&std::path::Path) -> nanobo
 pub fn nanobook_rebalancer::target::TargetSpec::symbols(&self) -> alloc::vec::Vec<nanobook::types::Symbol>
 pub fn nanobook_rebalancer::target::TargetSpec::window_id(&self) -> alloc::string::String
 impl core::clone::Clone for nanobook_rebalancer::target::TargetSpec
-pub fn nanobook_rebalancer::target::TargetSpec::clone(&self) -> nanobook_rebalancer::target::TargetSpec
+pub fn nanobook_rebalancer::target::TargetSpec::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_rebalancer::target::TargetSpec
 pub fn nanobook_rebalancer::target::TargetSpec::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<'de> serde_core::de::Deserialize<'de> for nanobook_rebalancer::target::TargetSpec
@@ -928,10 +928,10 @@ pub nanobook_rebalancer::validator::ValidationIssue::location: core::option::Opt
 pub nanobook_rebalancer::validator::ValidationIssue::message: alloc::string::String
 pub nanobook_rebalancer::validator::ValidationIssue::suggestion: alloc::string::String
 impl core::clone::Clone for nanobook_rebalancer::validator::ValidationIssue
-pub fn nanobook_rebalancer::validator::ValidationIssue::clone(&self) -> nanobook_rebalancer::validator::ValidationIssue
+pub fn nanobook_rebalancer::validator::ValidationIssue::clone(&self) -> Self
 impl core::cmp::Eq for nanobook_rebalancer::validator::ValidationIssue
 impl core::cmp::PartialEq for nanobook_rebalancer::validator::ValidationIssue
-pub fn nanobook_rebalancer::validator::ValidationIssue::eq(&self, &nanobook_rebalancer::validator::ValidationIssue) -> bool
+pub fn nanobook_rebalancer::validator::ValidationIssue::eq(&self, &Self) -> bool
 impl core::fmt::Debug for nanobook_rebalancer::validator::ValidationIssue
 pub fn nanobook_rebalancer::validator::ValidationIssue::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for nanobook_rebalancer::validator::ValidationIssue

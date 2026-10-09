@@ -15,7 +15,7 @@ pub nanobook_risk::config::RiskConfig::min_trade_usd: f64
 impl nanobook_risk::config::RiskConfig
 pub fn nanobook_risk::config::RiskConfig::validate(&self) -> core::result::Result<(), alloc::string::String>
 impl core::clone::Clone for nanobook_risk::config::RiskConfig
-pub fn nanobook_risk::config::RiskConfig::clone(&self) -> nanobook_risk::config::RiskConfig
+pub fn nanobook_risk::config::RiskConfig::clone(&self) -> Self
 impl core::default::Default for nanobook_risk::config::RiskConfig
 pub fn nanobook_risk::config::RiskConfig::default() -> Self
 impl core::fmt::Debug for nanobook_risk::config::RiskConfig
@@ -33,10 +33,10 @@ pub mod nanobook_risk::error
 pub enum nanobook_risk::error::RiskError
 pub nanobook_risk::error::RiskError::InvalidConfig(alloc::string::String)
 impl core::clone::Clone for nanobook_risk::error::RiskError
-pub fn nanobook_risk::error::RiskError::clone(&self) -> nanobook_risk::error::RiskError
+pub fn nanobook_risk::error::RiskError::clone(&self) -> Self
 impl core::cmp::Eq for nanobook_risk::error::RiskError
 impl core::cmp::PartialEq for nanobook_risk::error::RiskError
-pub fn nanobook_risk::error::RiskError::eq(&self, &nanobook_risk::error::RiskError) -> bool
+pub fn nanobook_risk::error::RiskError::eq(&self, &Self) -> bool
 impl core::error::Error for nanobook_risk::error::RiskError
 impl core::fmt::Debug for nanobook_risk::error::RiskError
 pub fn nanobook_risk::error::RiskError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
@@ -56,10 +56,10 @@ pub nanobook_risk::report::RiskStatus::Fail
 pub nanobook_risk::report::RiskStatus::Pass
 pub nanobook_risk::report::RiskStatus::Warn
 impl core::clone::Clone for nanobook_risk::report::RiskStatus
-pub fn nanobook_risk::report::RiskStatus::clone(&self) -> nanobook_risk::report::RiskStatus
+pub fn nanobook_risk::report::RiskStatus::clone(&self) -> Self
 impl core::cmp::Eq for nanobook_risk::report::RiskStatus
 impl core::cmp::PartialEq for nanobook_risk::report::RiskStatus
-pub fn nanobook_risk::report::RiskStatus::eq(&self, &nanobook_risk::report::RiskStatus) -> bool
+pub fn nanobook_risk::report::RiskStatus::eq(&self, &Self) -> bool
 impl core::fmt::Debug for nanobook_risk::report::RiskStatus
 pub fn nanobook_risk::report::RiskStatus::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for nanobook_risk::report::RiskStatus
@@ -80,7 +80,7 @@ pub nanobook_risk::report::RiskCheck::detail: alloc::string::String
 pub nanobook_risk::report::RiskCheck::name: &'static str
 pub nanobook_risk::report::RiskCheck::status: nanobook_risk::report::RiskStatus
 impl core::clone::Clone for nanobook_risk::report::RiskCheck
-pub fn nanobook_risk::report::RiskCheck::clone(&self) -> nanobook_risk::report::RiskCheck
+pub fn nanobook_risk::report::RiskCheck::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_risk::report::RiskCheck
 pub fn nanobook_risk::report::RiskCheck::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for nanobook_risk::report::RiskCheck
@@ -98,7 +98,7 @@ impl nanobook_risk::report::RiskReport
 pub fn nanobook_risk::report::RiskReport::has_failures(&self) -> bool
 pub fn nanobook_risk::report::RiskReport::has_warnings(&self) -> bool
 impl core::clone::Clone for nanobook_risk::report::RiskReport
-pub fn nanobook_risk::report::RiskReport::clone(&self) -> nanobook_risk::report::RiskReport
+pub fn nanobook_risk::report::RiskReport::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_risk::report::RiskReport
 pub fn nanobook_risk::report::RiskReport::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for nanobook_risk::report::RiskReport
@@ -115,10 +115,10 @@ impl core::panic::unwind_safe::UnwindSafe for nanobook_risk::report::RiskReport
 pub enum nanobook_risk::RiskError
 pub nanobook_risk::RiskError::InvalidConfig(alloc::string::String)
 impl core::clone::Clone for nanobook_risk::error::RiskError
-pub fn nanobook_risk::error::RiskError::clone(&self) -> nanobook_risk::error::RiskError
+pub fn nanobook_risk::error::RiskError::clone(&self) -> Self
 impl core::cmp::Eq for nanobook_risk::error::RiskError
 impl core::cmp::PartialEq for nanobook_risk::error::RiskError
-pub fn nanobook_risk::error::RiskError::eq(&self, &nanobook_risk::error::RiskError) -> bool
+pub fn nanobook_risk::error::RiskError::eq(&self, &Self) -> bool
 impl core::error::Error for nanobook_risk::error::RiskError
 impl core::fmt::Debug for nanobook_risk::error::RiskError
 pub fn nanobook_risk::error::RiskError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
@@ -137,10 +137,10 @@ pub nanobook_risk::RiskStatus::Fail
 pub nanobook_risk::RiskStatus::Pass
 pub nanobook_risk::RiskStatus::Warn
 impl core::clone::Clone for nanobook_risk::report::RiskStatus
-pub fn nanobook_risk::report::RiskStatus::clone(&self) -> nanobook_risk::report::RiskStatus
+pub fn nanobook_risk::report::RiskStatus::clone(&self) -> Self
 impl core::cmp::Eq for nanobook_risk::report::RiskStatus
 impl core::cmp::PartialEq for nanobook_risk::report::RiskStatus
-pub fn nanobook_risk::report::RiskStatus::eq(&self, &nanobook_risk::report::RiskStatus) -> bool
+pub fn nanobook_risk::report::RiskStatus::eq(&self, &Self) -> bool
 impl core::fmt::Debug for nanobook_risk::report::RiskStatus
 pub fn nanobook_risk::report::RiskStatus::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for nanobook_risk::report::RiskStatus
@@ -161,7 +161,7 @@ pub nanobook_risk::RiskCheck::detail: alloc::string::String
 pub nanobook_risk::RiskCheck::name: &'static str
 pub nanobook_risk::RiskCheck::status: nanobook_risk::report::RiskStatus
 impl core::clone::Clone for nanobook_risk::report::RiskCheck
-pub fn nanobook_risk::report::RiskCheck::clone(&self) -> nanobook_risk::report::RiskCheck
+pub fn nanobook_risk::report::RiskCheck::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_risk::report::RiskCheck
 pub fn nanobook_risk::report::RiskCheck::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for nanobook_risk::report::RiskCheck
@@ -186,7 +186,7 @@ pub nanobook_risk::RiskConfig::min_trade_usd: f64
 impl nanobook_risk::config::RiskConfig
 pub fn nanobook_risk::config::RiskConfig::validate(&self) -> core::result::Result<(), alloc::string::String>
 impl core::clone::Clone for nanobook_risk::config::RiskConfig
-pub fn nanobook_risk::config::RiskConfig::clone(&self) -> nanobook_risk::config::RiskConfig
+pub fn nanobook_risk::config::RiskConfig::clone(&self) -> Self
 impl core::default::Default for nanobook_risk::config::RiskConfig
 pub fn nanobook_risk::config::RiskConfig::default() -> Self
 impl core::fmt::Debug for nanobook_risk::config::RiskConfig
@@ -207,7 +207,7 @@ pub fn nanobook_risk::RiskEngine::check_order(&self, &nanobook::types::Symbol, n
 pub fn nanobook_risk::RiskEngine::config(&self) -> &nanobook_risk::config::RiskConfig
 pub fn nanobook_risk::RiskEngine::new(nanobook_risk::config::RiskConfig) -> core::result::Result<Self, nanobook_risk::error::RiskError>
 impl core::clone::Clone for nanobook_risk::RiskEngine
-pub fn nanobook_risk::RiskEngine::clone(&self) -> nanobook_risk::RiskEngine
+pub fn nanobook_risk::RiskEngine::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_risk::RiskEngine
 pub fn nanobook_risk::RiskEngine::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for nanobook_risk::RiskEngine
@@ -223,7 +223,7 @@ impl nanobook_risk::report::RiskReport
 pub fn nanobook_risk::report::RiskReport::has_failures(&self) -> bool
 pub fn nanobook_risk::report::RiskReport::has_warnings(&self) -> bool
 impl core::clone::Clone for nanobook_risk::report::RiskReport
-pub fn nanobook_risk::report::RiskReport::clone(&self) -> nanobook_risk::report::RiskReport
+pub fn nanobook_risk::report::RiskReport::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_risk::report::RiskReport
 pub fn nanobook_risk::report::RiskReport::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for nanobook_risk::report::RiskReport

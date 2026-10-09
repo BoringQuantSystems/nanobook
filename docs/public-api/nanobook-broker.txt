@@ -15,9 +15,9 @@ pub fn nanobook_broker::binance::cache::BinanceOrderCache::load_from_disk(&std::
 pub fn nanobook_broker::binance::cache::BinanceOrderCache::new() -> Self
 pub fn nanobook_broker::binance::cache::BinanceOrderCache::save_to_disk(&self, &std::path::Path) -> core::result::Result<(), nanobook_broker::error::BrokerError>
 impl core::clone::Clone for nanobook_broker::binance::cache::BinanceOrderCache
-pub fn nanobook_broker::binance::cache::BinanceOrderCache::clone(&self) -> nanobook_broker::binance::cache::BinanceOrderCache
+pub fn nanobook_broker::binance::cache::BinanceOrderCache::clone(&self) -> Self
 impl core::default::Default for nanobook_broker::binance::cache::BinanceOrderCache
-pub fn nanobook_broker::binance::cache::BinanceOrderCache::default() -> nanobook_broker::binance::cache::BinanceOrderCache
+pub fn nanobook_broker::binance::cache::BinanceOrderCache::default() -> Self
 impl core::fmt::Debug for nanobook_broker::binance::cache::BinanceOrderCache
 pub fn nanobook_broker::binance::cache::BinanceOrderCache::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for nanobook_broker::binance::cache::BinanceOrderCache
@@ -61,10 +61,10 @@ pub nanobook_broker::binance::types::Discrepancy::PositionMismatch::broker_quant
 pub nanobook_broker::binance::types::Discrepancy::PositionMismatch::local_quantity: i64
 pub nanobook_broker::binance::types::Discrepancy::PositionMismatch::symbol: nanobook::types::Symbol
 impl core::clone::Clone for nanobook_broker::binance::types::Discrepancy
-pub fn nanobook_broker::binance::types::Discrepancy::clone(&self) -> nanobook_broker::binance::types::Discrepancy
+pub fn nanobook_broker::binance::types::Discrepancy::clone(&self) -> Self
 impl core::cmp::Eq for nanobook_broker::binance::types::Discrepancy
 impl core::cmp::PartialEq for nanobook_broker::binance::types::Discrepancy
-pub fn nanobook_broker::binance::types::Discrepancy::eq(&self, &nanobook_broker::binance::types::Discrepancy) -> bool
+pub fn nanobook_broker::binance::types::Discrepancy::eq(&self, &Self) -> bool
 impl core::fmt::Debug for nanobook_broker::binance::types::Discrepancy
 pub fn nanobook_broker::binance::types::Discrepancy::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for nanobook_broker::binance::types::Discrepancy
@@ -127,7 +127,7 @@ pub struct nanobook_broker::binance::types::DiscrepancyReport
 pub nanobook_broker::binance::types::DiscrepancyReport::discrepancies: alloc::vec::Vec<nanobook_broker::binance::types::Discrepancy>
 pub nanobook_broker::binance::types::DiscrepancyReport::has_critical_issues: bool
 impl core::clone::Clone for nanobook_broker::binance::types::DiscrepancyReport
-pub fn nanobook_broker::binance::types::DiscrepancyReport::clone(&self) -> nanobook_broker::binance::types::DiscrepancyReport
+pub fn nanobook_broker::binance::types::DiscrepancyReport::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_broker::binance::types::DiscrepancyReport
 pub fn nanobook_broker::binance::types::DiscrepancyReport::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for nanobook_broker::binance::types::DiscrepancyReport
@@ -193,9 +193,9 @@ pub nanobook_broker::binance::websocket::BinanceWebSocketEvent::AccountUpdate(na
 pub nanobook_broker::binance::websocket::BinanceWebSocketEvent::ExecutionReport(nanobook_broker::binance::websocket::ExecutionReport)
 pub nanobook_broker::binance::websocket::BinanceWebSocketEvent::Other(serde_json::value::Value)
 impl core::clone::Clone for nanobook_broker::binance::websocket::BinanceWebSocketEvent
-pub fn nanobook_broker::binance::websocket::BinanceWebSocketEvent::clone(&self) -> nanobook_broker::binance::websocket::BinanceWebSocketEvent
+pub fn nanobook_broker::binance::websocket::BinanceWebSocketEvent::clone(&self) -> Self
 impl core::cmp::PartialEq for nanobook_broker::binance::websocket::BinanceWebSocketEvent
-pub fn nanobook_broker::binance::websocket::BinanceWebSocketEvent::eq(&self, &nanobook_broker::binance::websocket::BinanceWebSocketEvent) -> bool
+pub fn nanobook_broker::binance::websocket::BinanceWebSocketEvent::eq(&self, &Self) -> bool
 impl core::fmt::Debug for nanobook_broker::binance::websocket::BinanceWebSocketEvent
 pub fn nanobook_broker::binance::websocket::BinanceWebSocketEvent::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for nanobook_broker::binance::websocket::BinanceWebSocketEvent
@@ -211,10 +211,10 @@ pub nanobook_broker::binance::websocket::ConnectionState::Connected
 pub nanobook_broker::binance::websocket::ConnectionState::Disconnected
 pub nanobook_broker::binance::websocket::ConnectionState::Reconnecting
 impl core::clone::Clone for nanobook_broker::binance::websocket::ConnectionState
-pub fn nanobook_broker::binance::websocket::ConnectionState::clone(&self) -> nanobook_broker::binance::websocket::ConnectionState
+pub fn nanobook_broker::binance::websocket::ConnectionState::clone(&self) -> Self
 impl core::cmp::Eq for nanobook_broker::binance::websocket::ConnectionState
 impl core::cmp::PartialEq for nanobook_broker::binance::websocket::ConnectionState
-pub fn nanobook_broker::binance::websocket::ConnectionState::eq(&self, &nanobook_broker::binance::websocket::ConnectionState) -> bool
+pub fn nanobook_broker::binance::websocket::ConnectionState::eq(&self, &Self) -> bool
 impl core::fmt::Debug for nanobook_broker::binance::websocket::ConnectionState
 pub fn nanobook_broker::binance::websocket::ConnectionState::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for nanobook_broker::binance::websocket::ConnectionState
@@ -230,9 +230,9 @@ pub struct nanobook_broker::binance::websocket::AccountUpdate
 pub nanobook_broker::binance::websocket::AccountUpdate::event_time: core::option::Option<u64>
 pub nanobook_broker::binance::websocket::AccountUpdate::raw: serde_json::value::Value
 impl core::clone::Clone for nanobook_broker::binance::websocket::AccountUpdate
-pub fn nanobook_broker::binance::websocket::AccountUpdate::clone(&self) -> nanobook_broker::binance::websocket::AccountUpdate
+pub fn nanobook_broker::binance::websocket::AccountUpdate::clone(&self) -> Self
 impl core::cmp::PartialEq for nanobook_broker::binance::websocket::AccountUpdate
-pub fn nanobook_broker::binance::websocket::AccountUpdate::eq(&self, &nanobook_broker::binance::websocket::AccountUpdate) -> bool
+pub fn nanobook_broker::binance::websocket::AccountUpdate::eq(&self, &Self) -> bool
 impl core::fmt::Debug for nanobook_broker::binance::websocket::AccountUpdate
 pub fn nanobook_broker::binance::websocket::AccountUpdate::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for nanobook_broker::binance::websocket::AccountUpdate
@@ -275,9 +275,9 @@ pub nanobook_broker::binance::websocket::ExecutionReport::order_status: core::op
 pub nanobook_broker::binance::websocket::ExecutionReport::raw: serde_json::value::Value
 pub nanobook_broker::binance::websocket::ExecutionReport::symbol: core::option::Option<alloc::string::String>
 impl core::clone::Clone for nanobook_broker::binance::websocket::ExecutionReport
-pub fn nanobook_broker::binance::websocket::ExecutionReport::clone(&self) -> nanobook_broker::binance::websocket::ExecutionReport
+pub fn nanobook_broker::binance::websocket::ExecutionReport::clone(&self) -> Self
 impl core::cmp::PartialEq for nanobook_broker::binance::websocket::ExecutionReport
-pub fn nanobook_broker::binance::websocket::ExecutionReport::eq(&self, &nanobook_broker::binance::websocket::ExecutionReport) -> bool
+pub fn nanobook_broker::binance::websocket::ExecutionReport::eq(&self, &Self) -> bool
 impl core::fmt::Debug for nanobook_broker::binance::websocket::ExecutionReport
 pub fn nanobook_broker::binance::websocket::ExecutionReport::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for nanobook_broker::binance::websocket::ExecutionReport
@@ -293,10 +293,10 @@ pub nanobook_broker::binance::ConnectionMode::Auto
 pub nanobook_broker::binance::ConnectionMode::Rest
 pub nanobook_broker::binance::ConnectionMode::WebSocket
 impl core::clone::Clone for nanobook_broker::binance::ConnectionMode
-pub fn nanobook_broker::binance::ConnectionMode::clone(&self) -> nanobook_broker::binance::ConnectionMode
+pub fn nanobook_broker::binance::ConnectionMode::clone(&self) -> Self
 impl core::cmp::Eq for nanobook_broker::binance::ConnectionMode
 impl core::cmp::PartialEq for nanobook_broker::binance::ConnectionMode
-pub fn nanobook_broker::binance::ConnectionMode::eq(&self, &nanobook_broker::binance::ConnectionMode) -> bool
+pub fn nanobook_broker::binance::ConnectionMode::eq(&self, &Self) -> bool
 impl core::fmt::Debug for nanobook_broker::binance::ConnectionMode
 pub fn nanobook_broker::binance::ConnectionMode::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for nanobook_broker::binance::ConnectionMode
@@ -322,10 +322,10 @@ pub nanobook_broker::binance::Discrepancy::PositionMismatch::broker_quantity: i6
 pub nanobook_broker::binance::Discrepancy::PositionMismatch::local_quantity: i64
 pub nanobook_broker::binance::Discrepancy::PositionMismatch::symbol: nanobook::types::Symbol
 impl core::clone::Clone for nanobook_broker::binance::types::Discrepancy
-pub fn nanobook_broker::binance::types::Discrepancy::clone(&self) -> nanobook_broker::binance::types::Discrepancy
+pub fn nanobook_broker::binance::types::Discrepancy::clone(&self) -> Self
 impl core::cmp::Eq for nanobook_broker::binance::types::Discrepancy
 impl core::cmp::PartialEq for nanobook_broker::binance::types::Discrepancy
-pub fn nanobook_broker::binance::types::Discrepancy::eq(&self, &nanobook_broker::binance::types::Discrepancy) -> bool
+pub fn nanobook_broker::binance::types::Discrepancy::eq(&self, &Self) -> bool
 impl core::fmt::Debug for nanobook_broker::binance::types::Discrepancy
 pub fn nanobook_broker::binance::types::Discrepancy::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for nanobook_broker::binance::types::Discrepancy
@@ -394,9 +394,9 @@ pub fn nanobook_broker::binance::cache::BinanceOrderCache::load_from_disk(&std::
 pub fn nanobook_broker::binance::cache::BinanceOrderCache::new() -> Self
 pub fn nanobook_broker::binance::cache::BinanceOrderCache::save_to_disk(&self, &std::path::Path) -> core::result::Result<(), nanobook_broker::error::BrokerError>
 impl core::clone::Clone for nanobook_broker::binance::cache::BinanceOrderCache
-pub fn nanobook_broker::binance::cache::BinanceOrderCache::clone(&self) -> nanobook_broker::binance::cache::BinanceOrderCache
+pub fn nanobook_broker::binance::cache::BinanceOrderCache::clone(&self) -> Self
 impl core::default::Default for nanobook_broker::binance::cache::BinanceOrderCache
-pub fn nanobook_broker::binance::cache::BinanceOrderCache::default() -> nanobook_broker::binance::cache::BinanceOrderCache
+pub fn nanobook_broker::binance::cache::BinanceOrderCache::default() -> Self
 impl core::fmt::Debug for nanobook_broker::binance::cache::BinanceOrderCache
 pub fn nanobook_broker::binance::cache::BinanceOrderCache::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for nanobook_broker::binance::cache::BinanceOrderCache
@@ -415,7 +415,7 @@ pub nanobook_broker::binance::CachedOrder::status: nanobook_broker::OrderState
 pub nanobook_broker::binance::CachedOrder::submitted_at: chrono::datetime::DateTime<chrono::offset::utc::Utc>
 pub nanobook_broker::binance::CachedOrder::symbol: nanobook::types::Symbol
 impl core::clone::Clone for nanobook_broker::binance::CachedOrder
-pub fn nanobook_broker::binance::CachedOrder::clone(&self) -> nanobook_broker::binance::CachedOrder
+pub fn nanobook_broker::binance::CachedOrder::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_broker::binance::CachedOrder
 pub fn nanobook_broker::binance::CachedOrder::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for nanobook_broker::binance::CachedOrder
@@ -429,7 +429,7 @@ pub struct nanobook_broker::binance::DiscrepancyReport
 pub nanobook_broker::binance::DiscrepancyReport::discrepancies: alloc::vec::Vec<nanobook_broker::binance::types::Discrepancy>
 pub nanobook_broker::binance::DiscrepancyReport::has_critical_issues: bool
 impl core::clone::Clone for nanobook_broker::binance::types::DiscrepancyReport
-pub fn nanobook_broker::binance::types::DiscrepancyReport::clone(&self) -> nanobook_broker::binance::types::DiscrepancyReport
+pub fn nanobook_broker::binance::types::DiscrepancyReport::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_broker::binance::types::DiscrepancyReport
 pub fn nanobook_broker::binance::types::DiscrepancyReport::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for nanobook_broker::binance::types::DiscrepancyReport
@@ -493,10 +493,10 @@ pub nanobook_broker::ibkr::client::CachedOrder::status: alloc::string::String
 pub nanobook_broker::ibkr::client::CachedOrder::submitted_at: std::time::Instant
 pub nanobook_broker::ibkr::client::CachedOrder::symbol: nanobook::types::Symbol
 impl core::clone::Clone for nanobook_broker::ibkr::client::CachedOrder
-pub fn nanobook_broker::ibkr::client::CachedOrder::clone(&self) -> nanobook_broker::ibkr::client::CachedOrder
+pub fn nanobook_broker::ibkr::client::CachedOrder::clone(&self) -> Self
 impl core::cmp::Eq for nanobook_broker::ibkr::client::CachedOrder
 impl core::cmp::PartialEq for nanobook_broker::ibkr::client::CachedOrder
-pub fn nanobook_broker::ibkr::client::CachedOrder::eq(&self, &nanobook_broker::ibkr::client::CachedOrder) -> bool
+pub fn nanobook_broker::ibkr::client::CachedOrder::eq(&self, &Self) -> bool
 impl core::fmt::Debug for nanobook_broker::ibkr::client::CachedOrder
 pub fn nanobook_broker::ibkr::client::CachedOrder::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for nanobook_broker::ibkr::client::CachedOrder
@@ -539,10 +539,10 @@ pub nanobook_broker::ibkr::client::OrderCallbackKey::filled_quantity: i64
 pub nanobook_broker::ibkr::client::OrderCallbackKey::order_id: i32
 pub nanobook_broker::ibkr::client::OrderCallbackKey::status: alloc::string::String
 impl core::clone::Clone for nanobook_broker::ibkr::client::OrderCallbackKey
-pub fn nanobook_broker::ibkr::client::OrderCallbackKey::clone(&self) -> nanobook_broker::ibkr::client::OrderCallbackKey
+pub fn nanobook_broker::ibkr::client::OrderCallbackKey::clone(&self) -> Self
 impl core::cmp::Eq for nanobook_broker::ibkr::client::OrderCallbackKey
 impl core::cmp::PartialEq for nanobook_broker::ibkr::client::OrderCallbackKey
-pub fn nanobook_broker::ibkr::client::OrderCallbackKey::eq(&self, &nanobook_broker::ibkr::client::OrderCallbackKey) -> bool
+pub fn nanobook_broker::ibkr::client::OrderCallbackKey::eq(&self, &Self) -> bool
 impl core::fmt::Debug for nanobook_broker::ibkr::client::OrderCallbackKey
 pub fn nanobook_broker::ibkr::client::OrderCallbackKey::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for nanobook_broker::ibkr::client::OrderCallbackKey
@@ -563,10 +563,10 @@ pub nanobook_broker::ibkr::orders::OrderOutcome::Failed
 pub nanobook_broker::ibkr::orders::OrderOutcome::Filled
 pub nanobook_broker::ibkr::orders::OrderOutcome::PartialFill
 impl core::clone::Clone for nanobook_broker::ibkr::orders::OrderOutcome
-pub fn nanobook_broker::ibkr::orders::OrderOutcome::clone(&self) -> nanobook_broker::ibkr::orders::OrderOutcome
+pub fn nanobook_broker::ibkr::orders::OrderOutcome::clone(&self) -> Self
 impl core::cmp::Eq for nanobook_broker::ibkr::orders::OrderOutcome
 impl core::cmp::PartialEq for nanobook_broker::ibkr::orders::OrderOutcome
-pub fn nanobook_broker::ibkr::orders::OrderOutcome::eq(&self, &nanobook_broker::ibkr::orders::OrderOutcome) -> bool
+pub fn nanobook_broker::ibkr::orders::OrderOutcome::eq(&self, &Self) -> bool
 impl core::fmt::Debug for nanobook_broker::ibkr::orders::OrderOutcome
 pub fn nanobook_broker::ibkr::orders::OrderOutcome::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for nanobook_broker::ibkr::orders::OrderOutcome
@@ -583,10 +583,10 @@ pub nanobook_broker::ibkr::orders::OrderCallbackKey::filled_quantity: i64
 pub nanobook_broker::ibkr::orders::OrderCallbackKey::order_id: i32
 pub nanobook_broker::ibkr::orders::OrderCallbackKey::status: alloc::string::String
 impl core::clone::Clone for nanobook_broker::ibkr::orders::OrderCallbackKey
-pub fn nanobook_broker::ibkr::orders::OrderCallbackKey::clone(&self) -> nanobook_broker::ibkr::orders::OrderCallbackKey
+pub fn nanobook_broker::ibkr::orders::OrderCallbackKey::clone(&self) -> Self
 impl core::cmp::Eq for nanobook_broker::ibkr::orders::OrderCallbackKey
 impl core::cmp::PartialEq for nanobook_broker::ibkr::orders::OrderCallbackKey
-pub fn nanobook_broker::ibkr::orders::OrderCallbackKey::eq(&self, &nanobook_broker::ibkr::orders::OrderCallbackKey) -> bool
+pub fn nanobook_broker::ibkr::orders::OrderCallbackKey::eq(&self, &Self) -> bool
 impl core::fmt::Debug for nanobook_broker::ibkr::orders::OrderCallbackKey
 pub fn nanobook_broker::ibkr::orders::OrderCallbackKey::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for nanobook_broker::ibkr::orders::OrderCallbackKey
@@ -607,7 +607,7 @@ pub nanobook_broker::ibkr::orders::OrderResult::order_id: i32
 pub nanobook_broker::ibkr::orders::OrderResult::status: nanobook_broker::ibkr::orders::OrderOutcome
 pub nanobook_broker::ibkr::orders::OrderResult::symbol: nanobook::types::Symbol
 impl core::clone::Clone for nanobook_broker::ibkr::orders::OrderResult
-pub fn nanobook_broker::ibkr::orders::OrderResult::clone(&self) -> nanobook_broker::ibkr::orders::OrderResult
+pub fn nanobook_broker::ibkr::orders::OrderResult::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_broker::ibkr::orders::OrderResult
 pub fn nanobook_broker::ibkr::orders::OrderResult::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for nanobook_broker::ibkr::orders::OrderResult
@@ -633,10 +633,10 @@ pub nanobook_broker::ibkr::ConnectionState::Connected
 pub nanobook_broker::ibkr::ConnectionState::Disconnected
 pub nanobook_broker::ibkr::ConnectionState::Reconnecting
 impl core::clone::Clone for nanobook_broker::ibkr::ConnectionState
-pub fn nanobook_broker::ibkr::ConnectionState::clone(&self) -> nanobook_broker::ibkr::ConnectionState
+pub fn nanobook_broker::ibkr::ConnectionState::clone(&self) -> Self
 impl core::cmp::Eq for nanobook_broker::ibkr::ConnectionState
 impl core::cmp::PartialEq for nanobook_broker::ibkr::ConnectionState
-pub fn nanobook_broker::ibkr::ConnectionState::eq(&self, &nanobook_broker::ibkr::ConnectionState) -> bool
+pub fn nanobook_broker::ibkr::ConnectionState::eq(&self, &Self) -> bool
 impl core::fmt::Debug for nanobook_broker::ibkr::ConnectionState
 pub fn nanobook_broker::ibkr::ConnectionState::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for nanobook_broker::ibkr::ConnectionState
@@ -662,10 +662,10 @@ pub nanobook_broker::ibkr::Discrepancy::PositionMismatch::broker_quantity: i64
 pub nanobook_broker::ibkr::Discrepancy::PositionMismatch::local_quantity: i64
 pub nanobook_broker::ibkr::Discrepancy::PositionMismatch::symbol: nanobook::types::Symbol
 impl core::clone::Clone for nanobook_broker::ibkr::Discrepancy
-pub fn nanobook_broker::ibkr::Discrepancy::clone(&self) -> nanobook_broker::ibkr::Discrepancy
+pub fn nanobook_broker::ibkr::Discrepancy::clone(&self) -> Self
 impl core::cmp::Eq for nanobook_broker::ibkr::Discrepancy
 impl core::cmp::PartialEq for nanobook_broker::ibkr::Discrepancy
-pub fn nanobook_broker::ibkr::Discrepancy::eq(&self, &nanobook_broker::ibkr::Discrepancy) -> bool
+pub fn nanobook_broker::ibkr::Discrepancy::eq(&self, &Self) -> bool
 impl core::fmt::Debug for nanobook_broker::ibkr::Discrepancy
 pub fn nanobook_broker::ibkr::Discrepancy::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for nanobook_broker::ibkr::Discrepancy
@@ -680,7 +680,7 @@ pub struct nanobook_broker::ibkr::DiscrepancyReport
 pub nanobook_broker::ibkr::DiscrepancyReport::discrepancies: alloc::vec::Vec<nanobook_broker::ibkr::Discrepancy>
 pub nanobook_broker::ibkr::DiscrepancyReport::has_critical_issues: bool
 impl core::clone::Clone for nanobook_broker::ibkr::DiscrepancyReport
-pub fn nanobook_broker::ibkr::DiscrepancyReport::clone(&self) -> nanobook_broker::ibkr::DiscrepancyReport
+pub fn nanobook_broker::ibkr::DiscrepancyReport::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_broker::ibkr::DiscrepancyReport
 pub fn nanobook_broker::ibkr::DiscrepancyReport::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for nanobook_broker::ibkr::DiscrepancyReport
@@ -725,7 +725,7 @@ pub nanobook_broker::mock::FillMode::ImmediateFull
 pub nanobook_broker::mock::FillMode::ImmediatePartial(f64)
 pub nanobook_broker::mock::FillMode::Reject
 impl core::clone::Clone for nanobook_broker::mock::FillMode
-pub fn nanobook_broker::mock::FillMode::clone(&self) -> nanobook_broker::mock::FillMode
+pub fn nanobook_broker::mock::FillMode::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_broker::mock::FillMode
 pub fn nanobook_broker::mock::FillMode::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for nanobook_broker::mock::FillMode
@@ -777,7 +777,7 @@ pub nanobook_broker::mock::RecordedOrder::quantity: u64
 pub nanobook_broker::mock::RecordedOrder::side: nanobook_broker::BrokerSide
 pub nanobook_broker::mock::RecordedOrder::symbol: nanobook::types::Symbol
 impl core::clone::Clone for nanobook_broker::mock::RecordedOrder
-pub fn nanobook_broker::mock::RecordedOrder::clone(&self) -> nanobook_broker::mock::RecordedOrder
+pub fn nanobook_broker::mock::RecordedOrder::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_broker::mock::RecordedOrder
 pub fn nanobook_broker::mock::RecordedOrder::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for nanobook_broker::mock::RecordedOrder
@@ -796,7 +796,7 @@ pub nanobook_broker::types::BrokerOrderType::StopLimit
 pub nanobook_broker::types::BrokerOrderType::StopLimit::limit: nanobook::types::Price
 pub nanobook_broker::types::BrokerOrderType::StopLimit::stop: nanobook::types::Price
 impl core::clone::Clone for nanobook_broker::BrokerOrderType
-pub fn nanobook_broker::BrokerOrderType::clone(&self) -> nanobook_broker::BrokerOrderType
+pub fn nanobook_broker::BrokerOrderType::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_broker::BrokerOrderType
 pub fn nanobook_broker::BrokerOrderType::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for nanobook_broker::BrokerOrderType
@@ -811,10 +811,10 @@ pub enum nanobook_broker::types::BrokerSide
 pub nanobook_broker::types::BrokerSide::Buy
 pub nanobook_broker::types::BrokerSide::Sell
 impl core::clone::Clone for nanobook_broker::BrokerSide
-pub fn nanobook_broker::BrokerSide::clone(&self) -> nanobook_broker::BrokerSide
+pub fn nanobook_broker::BrokerSide::clone(&self) -> Self
 impl core::cmp::Eq for nanobook_broker::BrokerSide
 impl core::cmp::PartialEq for nanobook_broker::BrokerSide
-pub fn nanobook_broker::BrokerSide::eq(&self, &nanobook_broker::BrokerSide) -> bool
+pub fn nanobook_broker::BrokerSide::eq(&self, &Self) -> bool
 impl core::fmt::Debug for nanobook_broker::BrokerSide
 pub fn nanobook_broker::BrokerSide::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for nanobook_broker::BrokerSide
@@ -834,10 +834,10 @@ pub nanobook_broker::types::OrderState::Pending
 pub nanobook_broker::types::OrderState::Rejected
 pub nanobook_broker::types::OrderState::Submitted
 impl core::clone::Clone for nanobook_broker::OrderState
-pub fn nanobook_broker::OrderState::clone(&self) -> nanobook_broker::OrderState
+pub fn nanobook_broker::OrderState::clone(&self) -> Self
 impl core::cmp::Eq for nanobook_broker::OrderState
 impl core::cmp::PartialEq for nanobook_broker::OrderState
-pub fn nanobook_broker::OrderState::eq(&self, &nanobook_broker::OrderState) -> bool
+pub fn nanobook_broker::OrderState::eq(&self, &Self) -> bool
 impl core::fmt::Debug for nanobook_broker::OrderState
 pub fn nanobook_broker::OrderState::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for nanobook_broker::OrderState
@@ -855,7 +855,7 @@ pub nanobook_broker::types::Account::cash_cents: i64
 pub nanobook_broker::types::Account::equity_cents: i64
 pub nanobook_broker::types::Account::gross_position_value_cents: i64
 impl core::clone::Clone for nanobook_broker::Account
-pub fn nanobook_broker::Account::clone(&self) -> nanobook_broker::Account
+pub fn nanobook_broker::Account::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_broker::Account
 pub fn nanobook_broker::Account::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for nanobook_broker::Account
@@ -869,10 +869,10 @@ pub struct nanobook_broker::types::BestQuote
 pub nanobook_broker::types::BestQuote::ask_cents: i64
 pub nanobook_broker::types::BestQuote::bid_cents: i64
 impl core::clone::Clone for nanobook_broker::BestQuote
-pub fn nanobook_broker::BestQuote::clone(&self) -> nanobook_broker::BestQuote
+pub fn nanobook_broker::BestQuote::clone(&self) -> Self
 impl core::cmp::Eq for nanobook_broker::BestQuote
 impl core::cmp::PartialEq for nanobook_broker::BestQuote
-pub fn nanobook_broker::BestQuote::eq(&self, &nanobook_broker::BestQuote) -> bool
+pub fn nanobook_broker::BestQuote::eq(&self, &Self) -> bool
 impl core::fmt::Debug for nanobook_broker::BestQuote
 pub fn nanobook_broker::BestQuote::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for nanobook_broker::BestQuote
@@ -891,7 +891,7 @@ pub nanobook_broker::types::BrokerOrder::quantity: u64
 pub nanobook_broker::types::BrokerOrder::side: nanobook_broker::BrokerSide
 pub nanobook_broker::types::BrokerOrder::symbol: nanobook::types::Symbol
 impl core::clone::Clone for nanobook_broker::BrokerOrder
-pub fn nanobook_broker::BrokerOrder::clone(&self) -> nanobook_broker::BrokerOrder
+pub fn nanobook_broker::BrokerOrder::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_broker::BrokerOrder
 pub fn nanobook_broker::BrokerOrder::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for nanobook_broker::BrokerOrder
@@ -908,7 +908,7 @@ pub nanobook_broker::types::BrokerOrderStatus::id: nanobook_broker::OrderId
 pub nanobook_broker::types::BrokerOrderStatus::remaining_quantity: u64
 pub nanobook_broker::types::BrokerOrderStatus::status: nanobook_broker::OrderState
 impl core::clone::Clone for nanobook_broker::BrokerOrderStatus
-pub fn nanobook_broker::BrokerOrderStatus::clone(&self) -> nanobook_broker::BrokerOrderStatus
+pub fn nanobook_broker::BrokerOrderStatus::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_broker::BrokerOrderStatus
 pub fn nanobook_broker::BrokerOrderStatus::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for nanobook_broker::BrokerOrderStatus
@@ -924,10 +924,10 @@ pub fn nanobook_broker::ClientOrderId::as_str(&self) -> &str
 pub fn nanobook_broker::ClientOrderId::derive(&str, &str, nanobook_broker::BrokerSide, u64) -> Self
 pub fn nanobook_broker::ClientOrderId::new(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, nanobook_broker::error::BrokerError>
 impl core::clone::Clone for nanobook_broker::ClientOrderId
-pub fn nanobook_broker::ClientOrderId::clone(&self) -> nanobook_broker::ClientOrderId
+pub fn nanobook_broker::ClientOrderId::clone(&self) -> Self
 impl core::cmp::Eq for nanobook_broker::ClientOrderId
 impl core::cmp::PartialEq for nanobook_broker::ClientOrderId
-pub fn nanobook_broker::ClientOrderId::eq(&self, &nanobook_broker::ClientOrderId) -> bool
+pub fn nanobook_broker::ClientOrderId::eq(&self, &Self) -> bool
 impl core::fmt::Debug for nanobook_broker::ClientOrderId
 pub fn nanobook_broker::ClientOrderId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for nanobook_broker::ClientOrderId
@@ -942,10 +942,10 @@ impl core::panic::unwind_safe::RefUnwindSafe for nanobook_broker::ClientOrderId
 impl core::panic::unwind_safe::UnwindSafe for nanobook_broker::ClientOrderId
 pub struct nanobook_broker::types::OrderId(pub u64)
 impl core::clone::Clone for nanobook_broker::OrderId
-pub fn nanobook_broker::OrderId::clone(&self) -> nanobook_broker::OrderId
+pub fn nanobook_broker::OrderId::clone(&self) -> Self
 impl core::cmp::Eq for nanobook_broker::OrderId
 impl core::cmp::PartialEq for nanobook_broker::OrderId
-pub fn nanobook_broker::OrderId::eq(&self, &nanobook_broker::OrderId) -> bool
+pub fn nanobook_broker::OrderId::eq(&self, &Self) -> bool
 impl core::fmt::Debug for nanobook_broker::OrderId
 pub fn nanobook_broker::OrderId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for nanobook_broker::OrderId
@@ -966,7 +966,7 @@ pub nanobook_broker::types::Position::quantity: i64
 pub nanobook_broker::types::Position::symbol: nanobook::types::Symbol
 pub nanobook_broker::types::Position::unrealized_pnl_cents: i64
 impl core::clone::Clone for nanobook_broker::Position
-pub fn nanobook_broker::Position::clone(&self) -> nanobook_broker::Position
+pub fn nanobook_broker::Position::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_broker::Position
 pub fn nanobook_broker::Position::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for nanobook_broker::Position
@@ -986,7 +986,7 @@ pub nanobook_broker::types::Quote::volume: u64
 impl nanobook_broker::Quote
 pub fn nanobook_broker::Quote::is_stale(&self, u64) -> bool
 impl core::clone::Clone for nanobook_broker::Quote
-pub fn nanobook_broker::Quote::clone(&self) -> nanobook_broker::Quote
+pub fn nanobook_broker::Quote::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_broker::Quote
 pub fn nanobook_broker::Quote::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for nanobook_broker::Quote
@@ -1046,7 +1046,7 @@ pub nanobook_broker::BrokerOrderType::StopLimit
 pub nanobook_broker::BrokerOrderType::StopLimit::limit: nanobook::types::Price
 pub nanobook_broker::BrokerOrderType::StopLimit::stop: nanobook::types::Price
 impl core::clone::Clone for nanobook_broker::BrokerOrderType
-pub fn nanobook_broker::BrokerOrderType::clone(&self) -> nanobook_broker::BrokerOrderType
+pub fn nanobook_broker::BrokerOrderType::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_broker::BrokerOrderType
 pub fn nanobook_broker::BrokerOrderType::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for nanobook_broker::BrokerOrderType
@@ -1061,10 +1061,10 @@ pub enum nanobook_broker::BrokerSide
 pub nanobook_broker::BrokerSide::Buy
 pub nanobook_broker::BrokerSide::Sell
 impl core::clone::Clone for nanobook_broker::BrokerSide
-pub fn nanobook_broker::BrokerSide::clone(&self) -> nanobook_broker::BrokerSide
+pub fn nanobook_broker::BrokerSide::clone(&self) -> Self
 impl core::cmp::Eq for nanobook_broker::BrokerSide
 impl core::cmp::PartialEq for nanobook_broker::BrokerSide
-pub fn nanobook_broker::BrokerSide::eq(&self, &nanobook_broker::BrokerSide) -> bool
+pub fn nanobook_broker::BrokerSide::eq(&self, &Self) -> bool
 impl core::fmt::Debug for nanobook_broker::BrokerSide
 pub fn nanobook_broker::BrokerSide::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for nanobook_broker::BrokerSide
@@ -1084,10 +1084,10 @@ pub nanobook_broker::OrderState::Pending
 pub nanobook_broker::OrderState::Rejected
 pub nanobook_broker::OrderState::Submitted
 impl core::clone::Clone for nanobook_broker::OrderState
-pub fn nanobook_broker::OrderState::clone(&self) -> nanobook_broker::OrderState
+pub fn nanobook_broker::OrderState::clone(&self) -> Self
 impl core::cmp::Eq for nanobook_broker::OrderState
 impl core::cmp::PartialEq for nanobook_broker::OrderState
-pub fn nanobook_broker::OrderState::eq(&self, &nanobook_broker::OrderState) -> bool
+pub fn nanobook_broker::OrderState::eq(&self, &Self) -> bool
 impl core::fmt::Debug for nanobook_broker::OrderState
 pub fn nanobook_broker::OrderState::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for nanobook_broker::OrderState
@@ -1105,7 +1105,7 @@ pub nanobook_broker::Account::cash_cents: i64
 pub nanobook_broker::Account::equity_cents: i64
 pub nanobook_broker::Account::gross_position_value_cents: i64
 impl core::clone::Clone for nanobook_broker::Account
-pub fn nanobook_broker::Account::clone(&self) -> nanobook_broker::Account
+pub fn nanobook_broker::Account::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_broker::Account
 pub fn nanobook_broker::Account::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for nanobook_broker::Account
@@ -1119,10 +1119,10 @@ pub struct nanobook_broker::BestQuote
 pub nanobook_broker::BestQuote::ask_cents: i64
 pub nanobook_broker::BestQuote::bid_cents: i64
 impl core::clone::Clone for nanobook_broker::BestQuote
-pub fn nanobook_broker::BestQuote::clone(&self) -> nanobook_broker::BestQuote
+pub fn nanobook_broker::BestQuote::clone(&self) -> Self
 impl core::cmp::Eq for nanobook_broker::BestQuote
 impl core::cmp::PartialEq for nanobook_broker::BestQuote
-pub fn nanobook_broker::BestQuote::eq(&self, &nanobook_broker::BestQuote) -> bool
+pub fn nanobook_broker::BestQuote::eq(&self, &Self) -> bool
 impl core::fmt::Debug for nanobook_broker::BestQuote
 pub fn nanobook_broker::BestQuote::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for nanobook_broker::BestQuote
@@ -1141,7 +1141,7 @@ pub nanobook_broker::BrokerOrder::quantity: u64
 pub nanobook_broker::BrokerOrder::side: nanobook_broker::BrokerSide
 pub nanobook_broker::BrokerOrder::symbol: nanobook::types::Symbol
 impl core::clone::Clone for nanobook_broker::BrokerOrder
-pub fn nanobook_broker::BrokerOrder::clone(&self) -> nanobook_broker::BrokerOrder
+pub fn nanobook_broker::BrokerOrder::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_broker::BrokerOrder
 pub fn nanobook_broker::BrokerOrder::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for nanobook_broker::BrokerOrder
@@ -1158,7 +1158,7 @@ pub nanobook_broker::BrokerOrderStatus::id: nanobook_broker::OrderId
 pub nanobook_broker::BrokerOrderStatus::remaining_quantity: u64
 pub nanobook_broker::BrokerOrderStatus::status: nanobook_broker::OrderState
 impl core::clone::Clone for nanobook_broker::BrokerOrderStatus
-pub fn nanobook_broker::BrokerOrderStatus::clone(&self) -> nanobook_broker::BrokerOrderStatus
+pub fn nanobook_broker::BrokerOrderStatus::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_broker::BrokerOrderStatus
 pub fn nanobook_broker::BrokerOrderStatus::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for nanobook_broker::BrokerOrderStatus
@@ -1174,10 +1174,10 @@ pub fn nanobook_broker::ClientOrderId::as_str(&self) -> &str
 pub fn nanobook_broker::ClientOrderId::derive(&str, &str, nanobook_broker::BrokerSide, u64) -> Self
 pub fn nanobook_broker::ClientOrderId::new(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, nanobook_broker::error::BrokerError>
 impl core::clone::Clone for nanobook_broker::ClientOrderId
-pub fn nanobook_broker::ClientOrderId::clone(&self) -> nanobook_broker::ClientOrderId
+pub fn nanobook_broker::ClientOrderId::clone(&self) -> Self
 impl core::cmp::Eq for nanobook_broker::ClientOrderId
 impl core::cmp::PartialEq for nanobook_broker::ClientOrderId
-pub fn nanobook_broker::ClientOrderId::eq(&self, &nanobook_broker::ClientOrderId) -> bool
+pub fn nanobook_broker::ClientOrderId::eq(&self, &Self) -> bool
 impl core::fmt::Debug for nanobook_broker::ClientOrderId
 pub fn nanobook_broker::ClientOrderId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for nanobook_broker::ClientOrderId
@@ -1192,10 +1192,10 @@ impl core::panic::unwind_safe::RefUnwindSafe for nanobook_broker::ClientOrderId
 impl core::panic::unwind_safe::UnwindSafe for nanobook_broker::ClientOrderId
 pub struct nanobook_broker::OrderId(pub u64)
 impl core::clone::Clone for nanobook_broker::OrderId
-pub fn nanobook_broker::OrderId::clone(&self) -> nanobook_broker::OrderId
+pub fn nanobook_broker::OrderId::clone(&self) -> Self
 impl core::cmp::Eq for nanobook_broker::OrderId
 impl core::cmp::PartialEq for nanobook_broker::OrderId
-pub fn nanobook_broker::OrderId::eq(&self, &nanobook_broker::OrderId) -> bool
+pub fn nanobook_broker::OrderId::eq(&self, &Self) -> bool
 impl core::fmt::Debug for nanobook_broker::OrderId
 pub fn nanobook_broker::OrderId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for nanobook_broker::OrderId
@@ -1216,7 +1216,7 @@ pub nanobook_broker::Position::quantity: i64
 pub nanobook_broker::Position::symbol: nanobook::types::Symbol
 pub nanobook_broker::Position::unrealized_pnl_cents: i64
 impl core::clone::Clone for nanobook_broker::Position
-pub fn nanobook_broker::Position::clone(&self) -> nanobook_broker::Position
+pub fn nanobook_broker::Position::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_broker::Position
 pub fn nanobook_broker::Position::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for nanobook_broker::Position
@@ -1236,7 +1236,7 @@ pub nanobook_broker::Quote::volume: u64
 impl nanobook_broker::Quote
 pub fn nanobook_broker::Quote::is_stale(&self, u64) -> bool
 impl core::clone::Clone for nanobook_broker::Quote
-pub fn nanobook_broker::Quote::clone(&self) -> nanobook_broker::Quote
+pub fn nanobook_broker::Quote::clone(&self) -> Self
 impl core::fmt::Debug for nanobook_broker::Quote
 pub fn nanobook_broker::Quote::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for nanobook_broker::Quote
