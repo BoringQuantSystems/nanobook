@@ -134,7 +134,7 @@ pip install nanobook
 
 ```toml
 [dependencies]
-nanobook = "0.10.0"
+nanobook = "0.19"
 ```
 
 **From source:**
@@ -370,7 +370,7 @@ MIT
 
 ```toml
 [dependencies]
-nanobook = "0.10.0"
+nanobook = "0.19"
 ```
 
 ```rust
@@ -606,7 +606,7 @@ Event types: `SubmitLimit`, `SubmitMarket`, `Cancel`, `Modify`.
 Disable for max performance:
 
 ```toml
-nanobook = { version = "0.10.0", default-features = false }
+nanobook = { version = "0.19", default-features = false }
 ```
 
 ---
