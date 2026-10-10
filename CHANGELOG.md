@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.1] - 2026-10-10
+
+nanobook-broker moves from 0.10.0 to 0.10.1 and the Python package from 0.19.0
+to 0.19.1. nanobook-risk and nanobook-rebalancer do not change and are not
+republished.
+
+### Added
+
+- **Disclaimer on the broker and Python package pages.** `broker/README.md`
+  and `python/README.md` now carry the disclaimer that the main README gained
+  in 0.19.0: no warranty, not financial advice, not a broker, and the broker
+  adapters and the rebalancer send real orders at the user's own risk. The
+  crates.io page of nanobook-broker and the PyPI page of nanobook show it from
+  this release on. The code and the public API do not change.
+
 ## [0.19.0] - 2026-10-09
 
 The member crates move with the core because they depend on nanobook 0.19:
@@ -1320,7 +1335,8 @@ Initial release of nanobook - a deterministic limit order book and matching engi
 - Fixed-point price representation (avoids floating-point errors)
 - Deterministic via monotonic timestamps (not system clock)
 
-[Unreleased]: https://github.com/BoringQuantSystems/nanobook/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/BoringQuantSystems/nanobook/compare/v0.19.1...HEAD
+[0.19.1]: https://github.com/BoringQuantSystems/nanobook/compare/v0.19.0...v0.19.1
 [0.18.0]: https://github.com/BoringQuantSystems/nanobook/compare/v0.17.2...v0.18.0
 [0.17.2]: https://github.com/BoringQuantSystems/nanobook/compare/v0.17.1...v0.17.2
 [0.17.1]: https://github.com/BoringQuantSystems/nanobook/compare/v0.17.0...v0.17.1

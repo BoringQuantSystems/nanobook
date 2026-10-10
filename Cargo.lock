@@ -1241,7 +1241,7 @@ dependencies = [
 
 [[package]]
 name = "nanobook"
-version = "0.19.0"
+version = "0.19.1"
 dependencies = [
  "criterion",
  "memmap2",
@@ -1258,7 +1258,7 @@ dependencies = [
 
 [[package]]
 name = "nanobook-broker"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "chrono",
  "futures-util",
@@ -1281,7 +1281,7 @@ dependencies = [
 
 [[package]]
 name = "nanobook-python"
-version = "0.19.0"
+version = "0.19.1"
 dependencies = [
  "nanobook",
  "nanobook-broker",
