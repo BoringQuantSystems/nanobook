@@ -617,8 +617,6 @@ fn test_audit_log_validity_after_crash() {
 /// This verifies that recovery completes in reasonable time.
 #[test]
 fn test_recovery_time_typical_scenarios() {
-    let start = std::time::Instant::now();
-
     let dir = tempdir().unwrap();
     let audit_path = dir.path().join("audit.jsonl");
     let workdir = dir.path();
@@ -673,7 +671,8 @@ fn test_recovery_time_typical_scenarios() {
         .unwrap();
     }
 
-    // Recover state
+    // Recover state. The timer covers recovery only, not the log setup above.
+    let start = std::time::Instant::now();
     let (state, _action) = reconstruct_state(&audit_path).unwrap();
 
     let elapsed = start.elapsed();
