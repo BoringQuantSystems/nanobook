@@ -1337,6 +1337,8 @@ Initial release of nanobook - a deterministic limit order book and matching engi
 
 [Unreleased]: https://github.com/BoringQuantSystems/nanobook/compare/v0.19.1...HEAD
 [0.19.1]: https://github.com/BoringQuantSystems/nanobook/compare/v0.19.0...v0.19.1
+[0.19.0]: https://github.com/BoringQuantSystems/nanobook/compare/v0.18.1...v0.19.0
+[0.18.1]: https://github.com/BoringQuantSystems/nanobook/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/BoringQuantSystems/nanobook/compare/v0.17.2...v0.18.0
 [0.17.2]: https://github.com/BoringQuantSystems/nanobook/compare/v0.17.1...v0.17.2
 [0.17.1]: https://github.com/BoringQuantSystems/nanobook/compare/v0.17.0...v0.17.1
