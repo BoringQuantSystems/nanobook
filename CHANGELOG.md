@@ -448,6 +448,21 @@ Breaking-change release driven by an audit of the portfolio backtester (`nanotra
 
 - nanotrade 0.6.0 bumps the `nanobook` pin to `>=0.16,<0.17` and rewrites `calc/nb_backtest.py:run_backtest_nb` to call the new binding. No other Python callers exist.
 
+## [0.15.2] - 2026-05-18 - Public documentation
+
+Documentation-only tag. The `v0.15.2` and `v0.15.1` tags point to the same
+commit (`1d559f2`), and the package versions in that commit are 0.15.1. No 0.15.2
+package exists on crates.io or PyPI.
+
+### Added
+
+- **Public documentation set**: Versioning policy, ubiquitous language, event-log schema, API-surface audit, public API baselines, oracle design, ITCH replay learnings, portfolio parity learnings, and unsafe-code audit summary.
+- **Operations documentation index**: `docs/README.md` plus public rebalancer operations docs for write-ahead audit logging, warm restart, graceful shutdown, kill switch, and operations hardening.
+
+### Changed
+
+- **Operations docs**: Public pages under `docs/operations/` replaced the internal phase documents.
+
 ## [0.15.1] - 2026-05-17 - Ops Hardening & Optimization
 
 This patch release bundles the post-v0.15 reliability work, Python cleanup, and the simplify/optimization pass across the workspace. It keeps behavior stable while making rebalancer execution safer and several hot paths leaner.
