@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.2] - 2026-10-12
+
+nanobook and the Python package move from 0.19.1 to 0.19.2, nanobook-risk from
+0.8.0 to 0.8.1, and nanobook-rebalancer from 0.10.0 to 0.10.1. nanobook-broker
+does not change and is not republished. The library code and the public API do
+not change.
+
+### Added
+
+- **READMEs for nanobook-risk and nanobook-rebalancer.** `risk/README.md` and
+  `rebalancer/README.md` describe each crate and carry the disclaimer of the
+  main README. The crates.io pages of both crates showed only the one-line
+  package description and no disclaimer; they show the READMEs from this
+  release on.
+
+### Fixed
+
+- **Install snippets in the README.** Three snippets in `README.md` still said
+  `nanobook = "0.10.0"`. They now say `nanobook = "0.19"`, and the crates.io
+  page shows the new lines.
+- **`test_recovery_time_typical_scenarios` timed the file setup.** The timer
+  started before the test wrote its temporary audit log, so the 1 s limit also
+  covered the file writes. A Windows CI runner took 1.55 s. The timer now starts
+  just before `reconstruct_state`, and the 1 s limit is unchanged.
+- **Changelog gaps.** The changelog had no section for 0.15.2 and no compare
+  links for 0.18.1 and 0.19.0. It now has both.
+
 ## [0.19.1] - 2026-10-10
 
 nanobook-broker moves from 0.10.0 to 0.10.1 and the Python package from 0.19.0
@@ -1350,7 +1377,8 @@ Initial release of nanobook - a deterministic limit order book and matching engi
 - Fixed-point price representation (avoids floating-point errors)
 - Deterministic via monotonic timestamps (not system clock)
 
-[Unreleased]: https://github.com/BoringQuantSystems/nanobook/compare/v0.19.1...HEAD
+[Unreleased]: https://github.com/BoringQuantSystems/nanobook/compare/v0.19.2...HEAD
+[0.19.2]: https://github.com/BoringQuantSystems/nanobook/compare/v0.19.1...v0.19.2
 [0.19.1]: https://github.com/BoringQuantSystems/nanobook/compare/v0.19.0...v0.19.1
 [0.19.0]: https://github.com/BoringQuantSystems/nanobook/compare/v0.18.1...v0.19.0
 [0.18.1]: https://github.com/BoringQuantSystems/nanobook/compare/v0.18.0...v0.18.1
