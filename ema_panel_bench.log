@@ -1,0 +1,2 @@
+T=2000 N=200 period=21 py_ema_loop=0.032289 s ema_by_column=0.021955 s ema_panel=0.015883 s py_sma_loop=0.028227 s sma_by_column=0.018199 s sma_panel=0.015084 s
+T=2000 N=1000 period=21 py_ema_loop=0.102702 s ema_by_column=0.110957 s ema_panel=0.061968 s py_sma_loop=0.113836 s sma_by_column=0.071590 s sma_panel=0.064270 s
