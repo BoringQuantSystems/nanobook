@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.3] - 2026-10-31
+
+nanobook and the Python package move from 0.19.2 to 0.19.3, and
+nanobook-rebalancer from 0.10.1 to 0.10.2. nanobook-broker and nanobook-risk do
+not change and are not republished. The library code and the public API do not
+change.
+
+### Security
+
+- **Dependency updates for RustSec advisories.** The lock file now pins
+  quinn-proto 0.11.19 (RUSTSEC-2026-0338 to RUSTSEC-2026-0342), rustls 0.23.46
+  (RUSTSEC-2026-0346 to RUSTSEC-2026-0349), rustls-webpki 0.103.16
+  (RUSTSEC-2026-0382), webpki-root-certs 1.0.11 (RUSTSEC-2026-0383), ctutils
+  0.4.7 (RUSTSEC-2026-0385) and tokio 1.54.1 (RUSTSEC-2026-0386). The Python
+  wheels and the default builds of the crates do not contain these packages.
+  Only nanobook-broker built with the `binance` feature uses them. Users of that
+  feature get the fixed versions when they update their own lock file.
+
+### Fixed
+
+- **Windows timing in the nanobook-rebalancer tests.**
+  `test_recovery_time_realistic_order_counts` timed the writing of its audit
+  log together with the recovery. It now times only the recovery. The limit is
+  unchanged.
+
 ## [0.19.2] - 2026-10-12
 
 nanobook and the Python package move from 0.19.1 to 0.19.2, nanobook-risk from
@@ -1377,7 +1402,8 @@ Initial release of nanobook - a deterministic limit order book and matching engi
 - Fixed-point price representation (avoids floating-point errors)
 - Deterministic via monotonic timestamps (not system clock)
 
-[Unreleased]: https://github.com/BoringQuantSystems/nanobook/compare/v0.19.2...HEAD
+[Unreleased]: https://github.com/BoringQuantSystems/nanobook/compare/v0.19.3...HEAD
+[0.19.3]: https://github.com/BoringQuantSystems/nanobook/compare/v0.19.2...v0.19.3
 [0.19.2]: https://github.com/BoringQuantSystems/nanobook/compare/v0.19.1...v0.19.2
 [0.19.1]: https://github.com/BoringQuantSystems/nanobook/compare/v0.19.0...v0.19.1
 [0.19.0]: https://github.com/BoringQuantSystems/nanobook/compare/v0.18.1...v0.19.0
