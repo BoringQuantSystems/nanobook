@@ -1,5 +1,7 @@
 name: Dependabot auto-merge
-on:
+# zizmor: workflow_run is required here. It runs with a write token after CI,
+# checks out no PR code, and acts only on dependabot/ branches.
+on:  # zizmor: ignore[dangerous-triggers]
   workflow_run:
     workflows:
 
@@ -46,10 +48,12 @@ jobs:
         id: check-status
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea  # v7.0.1
         if: steps.find-pr.outputs.pr_number != ''
+        env:
+          PR_HEAD_SHA: ${{ steps.find-pr.outputs.head_sha }}
         with:
           script: |
             const headSha = context.payload.workflow_run.head_sha;
-            if (headSha !== '${{ steps.find-pr.outputs.head_sha }}') {
+            if (headSha !== process.env.PR_HEAD_SHA) {
               core.setOutput('status', 'stale');
               return;
             }
