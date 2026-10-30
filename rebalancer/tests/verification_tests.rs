@@ -460,8 +460,6 @@ fn test_recovery_time_realistic_order_counts() {
         let audit_path = dir.path().join("audit.jsonl");
         let workdir = dir.path();
 
-        let start = std::time::Instant::now();
-
         // Create audit log with many orders
         {
             let mut log = AuditLog::open_in(&audit_path, workdir).unwrap();
@@ -527,9 +525,10 @@ fn test_recovery_time_realistic_order_counts() {
             .unwrap();
         }
 
-        // Recover state
+        // Time only the recovery. Building the log fsyncs every checkpoint,
+        // which is slow and variable on shared Windows runners.
+        let start = std::time::Instant::now();
         let (state, _action) = reconstruct_state(&audit_path).unwrap();
-
         let elapsed = start.elapsed();
 
         // Verify recovery completed
