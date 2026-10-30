@@ -77,6 +77,30 @@ jobs:
             const commitStatuses = [...latest.values()];
             let allSuccess = true;
             let hasPending = false;
+            // Every listed CI workflow that runs on this SHA must finish with
+            // success. GitHub creates all runs of one push at once (queued), so
+            // when the first one finishes the others already show here. A
+            // workflow with a path filter that skips this PR has no run and is
+            // not waited for.
+            const ciFiles = ["audit.yml", "ci.yml", "oracle.yml"];
+            const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              head_sha: headSha,
+              per_page: 100
+            });
+            for (const file of ciFiles) {
+              // The list is newest first: the first match is the latest run.
+              const run = runs.find(r => (r.path || "").split("@")[0] === `.github/workflows/${file}`);
+              if (!run) {
+                continue;
+              }
+              if (run.status !== 'completed') {
+                hasPending = true;
+              } else if (run.conclusion !== 'success') {
+                allSuccess = false;
+              }
+            }
             for (const run of checkRuns) {
               // Count only CI jobs. Review bots (CodeRabbit, cubic) add check
               // runs that can stay in_progress for a long time; nothing
