@@ -1,6 +1,6 @@
 [package]
 name = "nanobook-rebalancer"
-version = "0.10.1"
+version = "0.10.2"
 edition = "2024"
 rust-version = "1.88"
 description = "Target-weight rebalancer for Interactive Brokers with risk checks and audit logs"
