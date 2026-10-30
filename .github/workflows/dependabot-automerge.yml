@@ -38,7 +38,8 @@ jobs:
               state: 'open'
             });
             if (pulls.length === 0) {
-              core.setFailed('No open PR found for branch');
+              // Another run already merged it, or the PR was closed.
+              core.info('No open PR for this branch; nothing to do.');
               return;
             }
             const pr = pulls[0];
@@ -121,8 +122,10 @@ jobs:
               if (status.state === 'success') {
                 continue;
               }
+              // An external status that is still pending (Codecov posts its
+              // own) must not hold the PR: nothing would start this workflow
+              // again. A finished failure or error still blocks the merge.
               if (status.state === 'pending') {
-                hasPending = true;
                 continue;
               }
               allSuccess = false;
@@ -145,13 +148,25 @@ jobs:
         with:
           script: |
             const prNumber = Number(process.env.PR_NUMBER);
-            await github.rest.pulls.merge({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: prNumber,
-              sha: process.env.HEAD_SHA,
-              merge_method: 'squash'
-            });
+            try {
+              await github.rest.pulls.merge({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: prNumber,
+                sha: process.env.HEAD_SHA,
+                merge_method: 'squash'
+              });
+            } catch (error) {
+              // Two CI workflows can finish together; the second run then
+              // finds the PR merged already. Go on to the CI dispatch.
+              const { data: pr } = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: prNumber
+              });
+              if (!pr.merged) throw error;
+              core.info(`PR #${prNumber} was merged by another run.`);
+            }
             try {
               await github.rest.git.deleteRef({
                 owner: context.repo.owner,
