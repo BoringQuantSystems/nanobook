@@ -1,0 +1,32 @@
+version: 2
+updates:
+
+  - package-ecosystem: "uv"
+    directory: "/"
+    open-pull-requests-limit: 5
+    schedule:
+      interval: monthly
+    groups:
+      uv-updates:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "cargo"
+    directory: "/"
+    open-pull-requests-limit: 5
+    schedule:
+      interval: monthly
+    groups:
+      cargo-updates:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/.github/workflows"
+    open-pull-requests-limit: 5
+    schedule:
+      interval: monthly
+    groups:
+      github-actions-updates:
+        patterns:
+          - "*"

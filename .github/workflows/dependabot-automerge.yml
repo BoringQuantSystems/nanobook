@@ -1,0 +1,129 @@
+name: Dependabot auto-merge
+on:
+  workflow_run:
+    workflows:
+
+      - "Security audit"
+
+      - "OCaml Oracle Differential Testing"
+
+      - "CI"
+
+    types: [completed]
+permissions:
+  contents: write
+  pull-requests: write
+  checks: read
+  statuses: read
+jobs:
+  auto-merge:
+    if: >
+      github.event.workflow_run.actor.login == 'dependabot[bot]' &&
+      startsWith(github.event.workflow_run.head_branch, 'dependabot/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Find the open PR for the head branch
+        id: find-pr
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea  # v7.0.1
+        with:
+          script: |
+            const { data: pulls } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              head: `${context.repo.owner}:${context.payload.workflow_run.head_branch}`,
+              state: 'open'
+            });
+            if (pulls.length === 0) {
+              core.setFailed('No open PR found for branch');
+              return;
+            }
+            const pr = pulls[0];
+            core.setOutput('pr_number', pr.number);
+            core.setOutput('head_sha', pr.head.sha);
+      - name: Check all checks on the head SHA
+        id: check-status
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea  # v7.0.1
+        if: steps.find-pr.outputs.pr_number != ''
+        with:
+          script: |
+            const headSha = context.payload.workflow_run.head_sha;
+            if (headSha !== '${{ steps.find-pr.outputs.head_sha }}') {
+              core.setOutput('status', 'stale');
+              return;
+            }
+            const checkRuns = await github.paginate(github.rest.checks.listForRef, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: headSha,
+              per_page: 100
+            });
+            const allStatuses = await github.paginate(github.rest.repos.listCommitStatusesForRef, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: headSha,
+              per_page: 100
+            });
+            // The list is newest first: keep the first status seen per context.
+            const latest = new Map();
+            for (const status of allStatuses) {
+              if (!latest.has(status.context)) latest.set(status.context, status);
+            }
+            const commitStatuses = [...latest.values()];
+            let allSuccess = true;
+            let hasPending = false;
+            for (const run of checkRuns) {
+              // Count only CI jobs. Review bots (CodeRabbit, cubic) add check
+              // runs that can stay in_progress for a long time; nothing
+              // re-triggers this workflow, so the PR would never merge.
+              if (run.app?.slug !== 'github-actions') {
+                continue;
+              }
+              if (run.conclusion === 'success' || run.conclusion === 'skipped' || run.conclusion === 'neutral') {
+                continue;
+              }
+              if (run.status === 'in_progress' || run.status === 'queued' || run.status === 'requested') {
+                hasPending = true;
+                continue;
+              }
+              allSuccess = false;
+            }
+            for (const status of commitStatuses) {
+              if (status.state === 'success') {
+                continue;
+              }
+              if (status.state === 'pending') {
+                hasPending = true;
+                continue;
+              }
+              allSuccess = false;
+            }
+            if (hasPending) {
+              core.setOutput('status', 'pending');
+              return;
+            }
+            if (!allSuccess) {
+              core.setOutput('status', 'failure');
+              return;
+            }
+            core.setOutput('status', 'success');
+      - name: Merge the PR
+        if: steps.check-status.outputs.status == 'success'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea  # v7.0.1
+        env:
+          PR_NUMBER: ${{ steps.find-pr.outputs.pr_number }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        with:
+          script: |
+            const prNumber = Number(process.env.PR_NUMBER);
+            await github.rest.pulls.merge({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+              sha: process.env.HEAD_SHA,
+              merge_method: 'squash'
+            });
+            await github.rest.git.deleteRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: `heads/${context.payload.workflow_run.head_branch}`
+            });
