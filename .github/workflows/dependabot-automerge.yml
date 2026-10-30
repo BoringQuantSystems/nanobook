@@ -5,9 +5,9 @@ on:
 
       - "Security audit"
 
-      - "OCaml Oracle Differential Testing"
-
       - "CI"
+
+      - "OCaml Oracle Differential Testing"
 
     types: [completed]
 permissions:
@@ -15,9 +15,11 @@ permissions:
   pull-requests: write
   checks: read
   statuses: read
+  actions: write
 jobs:
   auto-merge:
     if: >
+      github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.actor.login == 'dependabot[bot]' &&
       startsWith(github.event.workflow_run.head_branch, 'dependabot/')
     runs-on: ubuntu-latest
@@ -122,8 +124,34 @@ jobs:
               sha: process.env.HEAD_SHA,
               merge_method: 'squash'
             });
-            await github.rest.git.deleteRef({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              ref: `heads/${context.payload.workflow_run.head_branch}`
-            });
+            try {
+              await github.rest.git.deleteRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `heads/${context.payload.workflow_run.head_branch}`
+              });
+            } catch (error) {
+              // GitHub already deleted the branch (auto-delete on merge).
+              if (error.status === 404 || error.status === 422) {
+                core.info(`Branch already deleted: ${error.message}`);
+              } else {
+                throw error;
+              }
+            }
+            // A merge made with GITHUB_TOKEN starts no push workflow, so
+            // start CI on the default branch by hand. A failure here must
+            // not fail the merge run.
+            const ciFiles = ["audit.yml", "ci.yml", "oracle.yml"];
+            const defaultBranch = context.payload.repository.default_branch;
+            for (const file of ciFiles) {
+              try {
+                await github.rest.actions.createWorkflowDispatch({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  workflow_id: file,
+                  ref: defaultBranch
+                });
+              } catch (error) {
+                core.warning(`Could not dispatch ${file} on ${defaultBranch}: ${error.message}`);
+              }
+            }

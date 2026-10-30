@@ -8,6 +8,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 # Default to least privilege (I1). Jobs that need more (e.g.,
 # writing to the repo) must override at job scope. CI is read-only
