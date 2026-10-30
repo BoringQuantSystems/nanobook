@@ -26,8 +26,10 @@ use ibapi::accounts::types::AccountGroup;
 use ibapi::accounts::{AccountSummaryResult, PositionUpdate};
 use ibapi::client::blocking::Client;
 use ibapi::contracts::Contract;
-use ibapi::market_data::realtime::{TickType, TickTypes};
+use ibapi::contracts::tick_types::TickType;
+use ibapi::market_data::realtime::TickTypes;
 use ibapi::orders::Orders;
+use ibapi::subscriptions::SubscriptionItem;
 use log::{debug, info, warn};
 use nanobook::Symbol;
 
@@ -42,6 +44,27 @@ use super::market_data::best_quote_from_quote;
 use super::orders::{
     self, broker_order_status_from_ibkr_parts, broker_order_status_from_order_data,
 };
+
+/// Unwrap one item of a blocking subscription.
+///
+/// Data passes through. A non-fatal IB notice is logged and yields `None`.
+/// A stream error fails the call, so a dropped stream never returns a
+/// truncated result as if it were complete.
+pub(crate) fn subscription_data<T>(
+    item: Result<SubscriptionItem<T>, ibapi::Error>,
+    what: &str,
+) -> Result<Option<T>, BrokerError> {
+    match item {
+        Ok(SubscriptionItem::Data(data)) => Ok(Some(data)),
+        Ok(SubscriptionItem::Notice(notice)) => {
+            debug!("IBKR {what} notice: {notice:?}");
+            Ok(None)
+        }
+        Err(e) => Err(BrokerError::Connection(format!(
+            "{what} stream failed: {e}"
+        ))),
+    }
+}
 
 /// Locally tracked order submitted by this IBKR client instance.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -337,7 +360,10 @@ impl IbkrClient {
             .map_err(|e| BrokerError::Connection(format!("failed to request positions: {e}")))?;
 
         let mut positions = Vec::new();
-        for update in subscription {
+        for item in subscription {
+            let Some(update) = subscription_data(item, "positions")? else {
+                continue;
+            };
             match update {
                 PositionUpdate::Position(pos) => {
                     let symbol_str = pos.contract.symbol.to_string();
@@ -379,7 +405,10 @@ impl IbkrClient {
             .map_err(|e| BrokerError::Connection(format!("failed to request open orders: {e}")))?;
 
         let mut statuses = HashMap::new();
-        for update in subscription {
+        for item in subscription {
+            let Some(update) = subscription_data(item, "open orders")? else {
+                continue;
+            };
             match update {
                 Orders::OrderData(order_data) => {
                     let status = broker_order_status_from_order_data(&order_data)?;
@@ -388,19 +417,16 @@ impl IbkrClient {
                 Orders::OrderStatus(order_status) => {
                     let status = broker_order_status_from_ibkr_parts(
                         order_status.order_id,
-                        &order_status.status,
+                        order_status.status.as_str(),
                         order_status.filled,
                         order_status.remaining,
-                        order_status.average_fill_price,
+                        order_status.average_fill_price.unwrap_or(0.0),
                     )?;
                     self.update_cached_order_status(
                         order_status.order_id,
-                        order_status.status.clone(),
+                        order_status.status.as_str().to_owned(),
                     )?;
                     statuses.insert(status.id.0, status);
-                }
-                Orders::Notice(notice) => {
-                    debug!("IBKR open-orders notice: {notice:?}");
                 }
             }
         }
@@ -421,7 +447,10 @@ impl IbkrClient {
         let mut cash = 0.0_f64;
         let mut buying_power = 0.0_f64;
 
-        for result in subscription {
+        for item in subscription {
+            let Some(result) = subscription_data(item, "account summary")? else {
+                continue;
+            };
             match result {
                 AccountSummaryResult::Summary(s) => {
                     debug!("Account: {}={} {}", s.tag, s.value, s.currency);
@@ -482,7 +511,10 @@ impl IbkrClient {
         let mut ask = None;
         let mut last = None;
 
-        for tick in subscription {
+        for item in subscription {
+            let Some(tick) = subscription_data(item, "market data")? else {
+                continue;
+            };
             match tick {
                 TickTypes::Price(price_tick) => match price_tick.tick_type {
                     TickType::Bid => bid = Some(price_tick.price),

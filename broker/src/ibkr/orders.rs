@@ -77,8 +77,11 @@ use ibapi::client::blocking::Client;
 use ibapi::contracts::Contract;
 #[cfg(not(feature = "strict-market-reject"))]
 use ibapi::orders::order_builder::market_order;
-use ibapi::orders::order_builder::{limit_order, stop, stop_limit};
-use ibapi::orders::{Action as IbAction, CancelOrder, Order, OrderData, PlaceOrder};
+use ibapi::orders::order_builder::{limit_order, stop};
+use ibapi::orders::{
+    Action as IbAction, CancelOrder, Order, OrderData, OrderStatusKind, PlaceOrder,
+};
+use ibapi::subscriptions::SubscriptionItem;
 use log::{debug, info, warn};
 
 use crate::error::BrokerError;
@@ -136,7 +139,7 @@ pub fn broker_order_status_from_order_data(
 ) -> Result<BrokerOrderStatus, BrokerError> {
     broker_order_status_from_ibkr_parts(
         order_data.order_id,
-        &order_data.order_state.status,
+        order_data.order_state.status.as_str(),
         0.0,
         order_data.order.total_quantity,
         0.0,
@@ -282,6 +285,20 @@ fn encode_ibkr_order(
     }
 }
 
+/// Build a stop-limit order. `ibapi` 5 removed `order_builder::stop_limit`
+/// (its two same-typed price arguments were easy to swap); this keeps the
+/// same fields: `aux_price` is the stop trigger, `limit_price` the limit.
+fn stop_limit(action: IbAction, quantity: f64, limit_price: f64, stop_price: f64) -> Order {
+    Order {
+        action,
+        order_type: "STP LMT".to_owned(),
+        total_quantity: quantity,
+        limit_price: Some(limit_price),
+        aux_price: Some(stop_price),
+        ..Order::default()
+    }
+}
+
 /// Submit an order via the IBKR API. Returns the broker-assigned OrderId.
 pub fn submit_order(
     client: &Client,
@@ -411,7 +428,7 @@ pub fn execute_limit_order(
     let mut commission = 0.0_f64;
     let mut final_status = OrderOutcome::Failed;
 
-    for response in subscription {
+    for item in subscription {
         if start.elapsed() > timeout {
             warn!("Order {order_id} timed out after {}s", timeout.as_secs());
             match cancel_order(client, order_id) {
@@ -442,13 +459,38 @@ pub fn execute_limit_order(
             break;
         }
 
+        let response = match item {
+            Ok(SubscriptionItem::Data(response)) => response,
+            Ok(SubscriptionItem::Notice(notice)) => {
+                // Same filter as the former `PlaceOrder::Message` arm: errors and system codes.
+                if notice.code < 0 || notice.code >= 2000 {
+                    warn!("Order {order_id} error {}: {}", notice.code, notice.message);
+                    if is_disconnect_code(notice.code) {
+                        return Err(connection_lost(order_id, filled, notice.code));
+                    }
+                }
+                continue;
+            }
+            Err(e) => {
+                // A stream error ends the subscription. A connectivity notice is a
+                // lost connection; anything else falls through to the early-end check below.
+                warn!("Order {order_id} stream error: {e}");
+                if let ibapi::Error::Notice(notice) = &e
+                    && is_disconnect_code(notice.code)
+                {
+                    return Err(connection_lost(order_id, filled, notice.code));
+                }
+                break;
+            }
+        };
+
         match response {
             PlaceOrder::OrderStatus(status) => {
                 // Check for duplicate callbacks if dedup cache is provided
                 if let Some(cache) = dedup_cache {
                     let key = OrderCallbackKey {
                         order_id,
-                        status: status.status.clone(),
+                        status: status.status.as_str().to_owned(),
                         filled_quantity: status.filled.round() as i64,
                     };
 
@@ -475,7 +517,9 @@ pub fn execute_limit_order(
                     if is_duplicate {
                         debug!(
                             "Skipping duplicate OrderStatus for order {}: status={}, filled={}",
-                            order_id, status.status, status.filled
+                            order_id,
+                            status.status.as_str(),
+                            status.filled
                         );
                         continue; // Skip processing this duplicate
                     }
@@ -483,15 +527,17 @@ pub fn execute_limit_order(
 
                 debug!(
                     "Order {order_id} status: {} filled={} remaining={}",
-                    status.status, status.filled, status.remaining
+                    status.status.as_str(),
+                    status.filled,
+                    status.remaining
                 );
                 filled = status.filled;
-                avg_price = status.average_fill_price;
+                avg_price = status.average_fill_price.unwrap_or(0.0);
 
-                if status.status == "Filled" {
+                if status.status == OrderStatusKind::Filled {
                     final_status = OrderOutcome::Filled;
                     break;
-                } else if status.status == "Cancelled" {
+                } else if status.status == OrderStatusKind::Cancelled {
                     final_status = if filled > 0.0 {
                         OrderOutcome::PartialFill
                     } else {
@@ -509,21 +555,6 @@ pub fn execute_limit_order(
             PlaceOrder::CommissionReport(comm) => {
                 commission = comm.commission;
                 debug!("Commission: ${:.4}", commission);
-            }
-            PlaceOrder::Message(notice) if notice.code < 0 || notice.code >= 2000 => {
-                warn!("Order {order_id} error {}: {}", notice.code, notice.message);
-                // Detect disconnect errors (IBKR error code 1100, 1101, 1102)
-                if notice.code == 1100 || notice.code == 1101 || notice.code == 1102 {
-                    warn!(
-                        "AUDIT: Connection lost during order {order_id} execution (filled={})",
-                        filled
-                    );
-                    // Return ConnectionLost error with partial fill state
-                    return Err(BrokerError::ConnectionLost {
-                        order_id,
-                        filled_quantity: filled.round() as i64,
-                    });
-                }
             }
             _ => {}
         }
@@ -600,44 +631,30 @@ pub fn cancel_order(client: &Client, order_id: i32) -> Result<(), BrokerError> {
     );
     match client.cancel_order(order_id, "") {
         Ok(subscription) => {
-            for response in subscription {
+            for item in subscription {
+                let response = match item {
+                    Ok(SubscriptionItem::Data(response)) => response,
+                    Ok(SubscriptionItem::Notice(notice)) => {
+                        if let Some(rejected) = cancel_notice_rejection(order_id, &notice.message) {
+                            return Err(rejected);
+                        }
+                        continue;
+                    }
+                    Err(e) => return cancel_failed(order_id, &e),
+                };
                 match response {
                     CancelOrder::OrderStatus(s) => {
-                        debug!("Cancel status for {order_id}: {}", s.status);
+                        debug!("Cancel status for {order_id}: {}", s.status.as_str());
                         // Order is already cancelled or filled - cancel is moot
-                        if s.status == "Cancelled" || s.status == "Filled" {
+                        if s.status == OrderStatusKind::Cancelled
+                            || s.status == OrderStatusKind::Filled
+                        {
                             info!(
                                 "AUDIT: Cancel confirmed for order {} (status: {})",
-                                order_id, s.status
+                                order_id,
+                                s.status.as_str()
                             );
                             return Ok(());
-                        }
-                    }
-                    CancelOrder::Notice(notice) => {
-                        debug!("Cancel notice for {order_id}: {}", notice.message);
-                        // Parse for explicit cancel rejection
-                        // IBKR error codes indicating rejection:
-                        // - 102: Order cancelled
-                        // - 201: Order rejected
-                        // - 202: Order cancelled - reason
-                        // - 1100: Connectivity between IB and TWS has been lost
-                        // - 460: Error reading request
-                        // We look for messages that indicate the order cannot be cancelled
-                        let msg = notice.message.to_lowercase();
-                        if msg.contains("cannot cancel")
-                            || msg.contains("already filled")
-                            || msg.contains("order completed")
-                            || msg.contains("no such order")
-                        {
-                            // Audit log: cancel rejection
-                            info!(
-                                "AUDIT: Cancel rejected for order {} - reason: {}",
-                                order_id, notice.message
-                            );
-                            return Err(BrokerError::CancelReject {
-                                order_id,
-                                reason: notice.message,
-                            });
                         }
                     }
                 }
@@ -645,25 +662,65 @@ pub fn cancel_order(client: &Client, order_id: i32) -> Result<(), BrokerError> {
             info!("AUDIT: Cancel request sent for order {}", order_id);
             Ok(())
         }
-        Err(e) => {
-            warn!("Failed to cancel order {order_id}: {e}");
-            // If the error indicates the order is already complete, treat as success
-            let err_msg = e.to_string().to_lowercase();
-            if err_msg.contains("already filled")
-                || err_msg.contains("order completed")
-                || err_msg.contains("no such order")
-            {
-                info!(
-                    "AUDIT: Cancel moot for order {} (already completed)",
-                    order_id
-                );
-                return Ok(());
-            }
-            Err(BrokerError::Order(format!(
-                "failed to cancel order {order_id}: {e}"
-            )))
-        }
+        Err(e) => cancel_failed(order_id, &e),
     }
+}
+
+/// IBKR error codes 1100, 1101 and 1102 report a lost or restored connection.
+fn is_disconnect_code(code: i32) -> bool {
+    matches!(code, 1100..=1102)
+}
+
+fn connection_lost(order_id: i32, filled: f64, code: i32) -> BrokerError {
+    warn!(
+        "AUDIT: Connection lost during order {order_id} execution (code {code}, filled={filled})"
+    );
+    BrokerError::ConnectionLost {
+        order_id,
+        filled_quantity: filled.round() as i64,
+    }
+}
+
+/// Map a cancel-stream error to a result. An error saying the order is
+/// already complete means the cancel is moot and counts as success.
+fn cancel_failed(order_id: i32, e: &ibapi::Error) -> Result<(), BrokerError> {
+    warn!("Failed to cancel order {order_id}: {e}");
+    let err_msg = e.to_string().to_lowercase();
+    if err_msg.contains("already filled")
+        || err_msg.contains("order completed")
+        || err_msg.contains("no such order")
+    {
+        info!(
+            "AUDIT: Cancel moot for order {} (already completed)",
+            order_id
+        );
+        return Ok(());
+    }
+    Err(BrokerError::Order(format!(
+        "failed to cancel order {order_id}: {e}"
+    )))
+}
+
+/// Look for a notice message that says the order cannot be cancelled.
+///
+/// IBKR error codes indicating rejection: 102 (order cancelled), 201 (order
+/// rejected), 202 (order cancelled, with reason), 1100 (connectivity lost),
+/// 460 (error reading request).
+fn cancel_notice_rejection(order_id: i32, message: &str) -> Option<BrokerError> {
+    debug!("Cancel notice for {order_id}: {message}");
+    let msg = message.to_lowercase();
+    if msg.contains("cannot cancel")
+        || msg.contains("already filled")
+        || msg.contains("order completed")
+        || msg.contains("no such order")
+    {
+        info!("AUDIT: Cancel rejected for order {order_id} - reason: {message}");
+        return Some(BrokerError::CancelReject {
+            order_id,
+            reason: message.to_owned(),
+        });
+    }
+    None
 }
 
 /// Reconcile order state when cancel is rejected.
