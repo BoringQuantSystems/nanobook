@@ -1,0 +1,62 @@
+version: 2
+updates:
+
+  - package-ecosystem: "cargo"
+    directory: "/"
+    open-pull-requests-limit: 5
+    schedule:
+      interval: monthly
+    groups:
+      cargo-updates:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    open-pull-requests-limit: 5
+    schedule:
+      interval: monthly
+    groups:
+      github-actions-updates:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "pip"
+    directory: "/examples/itch-replay"
+    open-pull-requests-limit: 5
+    schedule:
+      interval: monthly
+    groups:
+      pip-examples-itch-replay-updates:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "pip"
+    directory: "/examples/momentum-backtest"
+    open-pull-requests-limit: 5
+    schedule:
+      interval: monthly
+    groups:
+      pip-examples-momentum-backtest-updates:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "pip"
+    directory: "/tests/parity"
+    open-pull-requests-limit: 5
+    schedule:
+      interval: monthly
+    groups:
+      pip-tests-parity-updates:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "uv"
+    directory: "/python"
+    open-pull-requests-limit: 5
+    schedule:
+      interval: monthly
+    groups:
+      uv-python-updates:
+        patterns:
+          - "*"
