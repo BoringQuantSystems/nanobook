@@ -136,10 +136,12 @@ jobs:
               });
             } catch (error) {
               // GitHub already deleted the branch (auto-delete on merge).
+              // Any other error must not skip the CI dispatch below: the PR
+              // is merged already.
               if (error.status === 404 || error.status === 422) {
                 core.info(`Branch already deleted: ${error.message}`);
               } else {
-                throw error;
+                core.warning(`Branch delete failed: ${error.message}`);
               }
             }
             // A merge made with GITHUB_TOKEN starts no push workflow, so
