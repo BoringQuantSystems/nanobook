@@ -424,7 +424,9 @@ pub fn execute_limit_order(
 
     let start = Instant::now();
     let mut filled = 0.0_f64;
-    let mut avg_price = 0.0_f64;
+    // Last average fill price IB reported (a positive number). Kept when a later
+    // status carries none.
+    let mut avg_price: Option<f64> = None;
     let mut commission = 0.0_f64;
     let mut final_status = OrderOutcome::Failed;
     // True once the loop saw a final status for the order: filled, cancelled,
@@ -551,7 +553,9 @@ pub fn execute_limit_order(
                     status.remaining
                 );
                 filled = status.filled;
-                avg_price = status.average_fill_price.unwrap_or(0.0);
+                if let Some(price) = reported_fill_price(status.average_fill_price) {
+                    avg_price = Some(price);
+                }
 
                 if status.status == OrderStatusKind::Filled {
                     final_status = OrderOutcome::Filled;
@@ -587,6 +591,16 @@ pub fn execute_limit_order(
     if let Some(err) = unfinished_order_error(order_id, filled, terminal) {
         return Err(err);
     }
+
+    // Never publish a fill at price 0: with shares filled and no price from IB
+    // the result is unknown, so report it for reconciliation.
+    let Some(avg_price) = fill_price(filled, avg_price) else {
+        warn!("AUDIT: Order {order_id} filled={filled} but IB sent no average fill price");
+        return Err(BrokerError::ConnectionLost {
+            order_id,
+            filled_quantity: filled.round() as i64,
+        });
+    };
 
     let result = OrderResult {
         symbol,
@@ -758,6 +772,22 @@ fn cancel_failed(order_id: i32, message: &str) -> Result<CancelOutcome, BrokerEr
         CancelText::NoSuchOrder | CancelText::Other => Err(BrokerError::Order(format!(
             "failed to cancel order {order_id}: {message}"
         ))),
+    }
+}
+
+/// An average fill price IB reported, if it is a usable one. IB sends 0 or
+/// nothing when there is no fill.
+pub(crate) fn reported_fill_price(price: Option<f64>) -> Option<f64> {
+    price.filter(|p| p.is_finite() && *p > 0.0)
+}
+
+/// The fill price to publish. `None` when shares filled and no price is known.
+/// With no fill the price is 0 by definition.
+pub(crate) fn fill_price(filled: f64, known: Option<f64>) -> Option<f64> {
+    match known {
+        Some(price) => Some(price),
+        None if filled > 0.0 => None,
+        None => Some(0.0),
     }
 }
 
@@ -1130,6 +1160,19 @@ mod tests {
             }) => assert_eq!(filled_quantity, 40),
             other => panic!("expected ConnectionLost, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn fill_price_is_never_zero_for_a_fill() {
+        assert_eq!(reported_fill_price(Some(101.5)), Some(101.5));
+        assert_eq!(reported_fill_price(Some(0.0)), None);
+        assert_eq!(reported_fill_price(Some(f64::NAN)), None);
+        assert_eq!(reported_fill_price(None), None);
+        // A known price survives; an unknown price with shares filled is None.
+        assert_eq!(fill_price(10.0, Some(101.5)), Some(101.5));
+        assert_eq!(fill_price(10.0, None), None);
+        // No fill: price 0 is correct.
+        assert_eq!(fill_price(0.0, None), Some(0.0));
     }
 
     #[test]

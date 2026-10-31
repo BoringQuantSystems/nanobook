@@ -420,7 +420,16 @@ impl IbkrClient {
                         order_status.status.as_str(),
                         order_status.filled,
                         order_status.remaining,
-                        order_status.average_fill_price.unwrap_or(0.0),
+                        orders::fill_price(
+                            order_status.filled,
+                            orders::reported_fill_price(order_status.average_fill_price),
+                        )
+                        .ok_or_else(|| {
+                            BrokerError::Order(format!(
+                                "order {} has fills but IB sent no average fill price",
+                                order_status.order_id
+                            ))
+                        })?,
                     )?;
                     self.update_cached_order_status(
                         order_status.order_id,
