@@ -45,9 +45,21 @@ use super::orders::{
     self, broker_order_status_from_ibkr_parts, broker_order_status_from_order_data,
 };
 
+/// Fail a query whose stream ended without its end marker: the data is incomplete.
+pub(crate) fn require_end_marker(seen: bool, what: &str) -> Result<(), BrokerError> {
+    if seen {
+        Ok(())
+    } else {
+        Err(BrokerError::Connection(format!(
+            "{what} stream ended before its end marker; data is incomplete"
+        )))
+    }
+}
+
 /// Unwrap one item of a blocking subscription.
 ///
-/// Data passes through. A non-fatal IB notice is logged and yields `None`.
+/// Data passes through. An informational IB notice (warning, farm status) is
+/// logged and yields `None`. An error notice fails the call.
 /// A stream error fails the call, so a dropped stream never returns a
 /// truncated result as if it were complete.
 pub(crate) fn subscription_data<T>(
@@ -57,6 +69,12 @@ pub(crate) fn subscription_data<T>(
     match item {
         Ok(SubscriptionItem::Data(data)) => Ok(Some(data)),
         Ok(SubscriptionItem::Notice(notice)) => {
+            if notice.is_error() {
+                return Err(BrokerError::Connection(format!(
+                    "{what} request failed: IB error {}: {}",
+                    notice.code, notice.message
+                )));
+            }
             debug!("IBKR {what} notice: {notice:?}");
             Ok(None)
         }
@@ -360,6 +378,7 @@ impl IbkrClient {
             .map_err(|e| BrokerError::Connection(format!("failed to request positions: {e}")))?;
 
         let mut positions = Vec::new();
+        let mut seen_end = false;
         for item in subscription {
             let Some(update) = subscription_data(item, "positions")? else {
                 continue;
@@ -386,9 +405,13 @@ impl IbkrClient {
                         warn!("Skipping symbol '{symbol_str}' (> 8 bytes)");
                     }
                 }
-                PositionUpdate::PositionEnd => break,
+                PositionUpdate::PositionEnd => {
+                    seen_end = true;
+                    break;
+                }
             }
         }
+        require_end_marker(seen_end, "positions")?;
 
         // Demoted to debug in S7: the position count is a coarse
         // signal of account activity and shouldn't appear in
@@ -455,6 +478,7 @@ impl IbkrClient {
         let mut equity = 0.0_f64;
         let mut cash = 0.0_f64;
         let mut buying_power = 0.0_f64;
+        let mut seen_end = false;
 
         for item in subscription {
             let Some(result) = subscription_data(item, "account summary")? else {
@@ -480,9 +504,13 @@ impl IbkrClient {
                         _ => {}
                     }
                 }
-                AccountSummaryResult::End => break,
+                AccountSummaryResult::End => {
+                    seen_end = true;
+                    break;
+                }
             }
         }
+        require_end_marker(seen_end, "account summary")?;
 
         let account = Account {
             equity_cents: f64_cents_checked(equity, "ibkr NetLiquidation")?,
@@ -519,6 +547,7 @@ impl IbkrClient {
         let mut bid = None;
         let mut ask = None;
         let mut last = None;
+        let mut seen_end = false;
 
         for item in subscription {
             let Some(tick) = subscription_data(item, "market data")? else {
@@ -537,10 +566,14 @@ impl IbkrClient {
                     TickType::Last => last = Some(ps.price),
                     _ => {}
                 },
-                TickTypes::SnapshotEnd => break,
+                TickTypes::SnapshotEnd => {
+                    seen_end = true;
+                    break;
+                }
                 _ => {}
             }
         }
+        require_end_marker(seen_end, "market data snapshot")?;
 
         let bid_cents = bid
             .map(|b| f64_cents_checked(b, "ibkr tick.bid"))
@@ -600,5 +633,52 @@ impl IbkrClient {
             prices.push((sym, mid));
         }
         Ok(prices)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn notice(code: i32) -> Result<SubscriptionItem<i32>, ibapi::Error> {
+        Ok(SubscriptionItem::Notice(ibapi::Notice {
+            request_id: Some(1),
+            code,
+            message: "test".into(),
+            error_time: None,
+            advanced_order_reject_json: String::new(),
+        }))
+    }
+
+    #[test]
+    fn subscription_data_passes_data_and_informational_notices() {
+        assert_eq!(
+            subscription_data(Ok(SubscriptionItem::Data(5)), "t").unwrap(),
+            Some(5)
+        );
+        // 2104: market data farm connection is OK.
+        assert_eq!(subscription_data(notice(2104), "t").unwrap(), None);
+    }
+
+    #[test]
+    fn subscription_data_fails_on_error_notice_and_stream_error() {
+        // 321: server error validating the request.
+        assert!(matches!(
+            subscription_data(notice(321), "t"),
+            Err(BrokerError::Connection(_))
+        ));
+        assert!(matches!(
+            subscription_data::<i32>(Err(ibapi::Error::ConnectionReset), "t"),
+            Err(BrokerError::Connection(_))
+        ));
+    }
+
+    #[test]
+    fn missing_end_marker_is_an_error() {
+        assert!(require_end_marker(true, "t").is_ok());
+        assert!(matches!(
+            require_end_marker(false, "t"),
+            Err(BrokerError::Connection(_))
+        ));
     }
 }
