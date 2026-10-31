@@ -52,14 +52,14 @@
 //! - `AUDIT: Cancel attempt for order {id} at {timestamp}` - before sending cancel request
 //! - `AUDIT: Cancel rejected for order {id} - reason: {reason}` - when broker rejects cancel
 //! - `AUDIT: Cancel confirmed for order {id} (status: {status})` - when cancel accepted
-//! - `AUDIT: Cancel moot for order {id} (already completed)` - when order already filled/cancelled
+//! - `AUDIT: Cancel moot for order {id} (already filled)` - when the order filled before the cancel reached IB
 //! - `AUDIT: Reconciling order {id} after cancel reject - reason: {reason}` - reconciliation attempt
 //! - `AUDIT: Order {id} reconciled as FILLED (cancel rejected due to fill race)` - reconciliation success
 //! - `AUDIT: Order {id} state uncertain after cancel reject - manual review recommended` - uncertain state
 //!
 //! Disconnect-related audit logs:
 //! - `AUDIT: Connection lost during order {id} execution (code {code}, filled={filled})` - explicit disconnect error
-//! - `AUDIT: Subscription terminated early for order {id} (filled={filled}) - likely silent disconnect` - silent disconnect
+//! - `AUDIT: Subscription terminated early for order {id} (filled={filled}) - state unknown` - status stream ended without a final status; returned as `ConnectionLost`
 //! - `AUDIT: Reconciling order {id} after disconnect - symbol={symbol}, pre_disconnect_filled={pre}, expected_total={total}` - reconciliation attempt
 //! - `AUDIT: Order {id} reconciled as PARTIAL_FILL (filled={filled}, remainder={remainder}) - remainder NOT resubmitted` - reconciliation success
 //! - `AUDIT: Order {id} no additional fills detected during disconnect (filled={filled})` - no additional fills
@@ -621,7 +621,8 @@ pub fn execute_limit_order(
 
 /// Cancel an order by ID.
 ///
-/// Returns `Ok(())` if the cancel is accepted or the order is already cancelled/filled.
+/// Returns `Ok(())` if the cancel is accepted, or the order had already filled or cancelled.
+/// Other failures, including `no such order`, are errors.
 /// Returns `Err(BrokerError::CancelReject)` if the broker explicitly rejects the cancel request.
 ///
 /// # Cancel Reject Race Condition
@@ -643,7 +644,7 @@ pub fn execute_limit_order(
 /// - Cancel attempts (before sending request) - format: "AUDIT: Cancel attempt for order {id} at {timestamp}"
 /// - Cancel rejections (when broker rejects the cancel) - format: "AUDIT: Cancel rejected for order {id} - reason: {reason}"
 /// - Cancel confirmations (when cancel is accepted) - format: "AUDIT: Cancel confirmed for order {id} (status: {status})"
-/// - Cancel moot (when order already completed) - format: "AUDIT: Cancel moot for order {id} (already completed)"
+/// - Cancel moot (when the order filled first) - format: "AUDIT: Cancel moot for order {id} (already filled)"
 ///
 /// These logs capture the order_id, timestamp, and reason to enable tracking of
 /// cancel/fill race conditions and post-mortem analysis.
