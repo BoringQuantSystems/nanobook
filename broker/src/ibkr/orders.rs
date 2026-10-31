@@ -427,6 +427,9 @@ pub fn execute_limit_order(
     let mut avg_price = 0.0_f64;
     let mut commission = 0.0_f64;
     let mut final_status = OrderOutcome::Failed;
+    // True once the loop saw a final status for the order: filled, cancelled,
+    // cancel confirmed, or rejected by IB.
+    let mut terminal = false;
 
     for item in subscription {
         if start.elapsed() > timeout {
@@ -444,6 +447,7 @@ pub fn execute_limit_order(
                     {
                         // Order filled before cancel reached broker - treat as filled
                         final_status = OrderOutcome::Filled;
+                        terminal = true;
                         break;
                     }
                 }
@@ -456,6 +460,7 @@ pub fn execute_limit_order(
             } else {
                 OrderOutcome::Cancelled
             };
+            terminal = true;
             break;
         }
 
@@ -481,6 +486,10 @@ pub fn execute_limit_order(
                     && classify_notice(notice.code) == NoticeAction::ConnectionLost
                 {
                     return Err(connection_lost(order_id, filled, notice.code));
+                }
+                if classify_stream_error(&e) == StreamEnd::Rejected && filled == 0.0 {
+                    final_status = OrderOutcome::Failed;
+                    terminal = true;
                 }
                 break;
             }
@@ -538,6 +547,7 @@ pub fn execute_limit_order(
 
                 if status.status == OrderStatusKind::Filled {
                     final_status = OrderOutcome::Filled;
+                    terminal = true;
                     break;
                 } else if status.status == OrderStatusKind::Cancelled {
                     final_status = if filled > 0.0 {
@@ -545,6 +555,7 @@ pub fn execute_limit_order(
                     } else {
                         OrderOutcome::Cancelled
                     };
+                    terminal = true;
                     break;
                 }
             }
@@ -562,21 +573,11 @@ pub fn execute_limit_order(
         }
     }
 
-    // Detect silent disconnect: if loop terminated without final status and not timeout
-    // This can happen when the connection drops without an explicit error message
-    if final_status == OrderOutcome::Failed && start.elapsed() < timeout {
-        // Subscription terminated early without explicit error - likely silent disconnect
-        warn!(
-            "AUDIT: Subscription terminated early for order {order_id} (filled={}) - likely silent disconnect",
-            filled
-        );
-        if filled > 0.0 {
-            // Partial fill occurred before silent disconnect
-            return Err(BrokerError::ConnectionLost {
-                order_id,
-                filled_quantity: filled.round() as i64,
-            });
-        }
+    // The status stream ended without a final status (dropped connection, stream
+    // error, closed subscription). The order may still be live at IB, so report
+    // it as an error and let the caller reconcile. Never report it as Failed.
+    if let Some(err) = unfinished_order_error(order_id, filled, terminal) {
+        return Err(err);
     }
 
     let result = OrderResult {
@@ -666,6 +667,37 @@ pub fn cancel_order(client: &Client, order_id: i32) -> Result<(), BrokerError> {
         }
         Err(e) => cancel_failed(order_id, &e),
     }
+}
+
+/// How an order status stream that carried an error ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StreamEnd {
+    /// IB rejected the order (order-rejection notice): the order is not live.
+    Rejected,
+    /// Any other error: the order state is unknown.
+    Lost,
+}
+
+fn classify_stream_error(e: &ibapi::Error) -> StreamEnd {
+    match e {
+        ibapi::Error::Notice(notice) if notice.is_order_rejection() => StreamEnd::Rejected,
+        _ => StreamEnd::Lost,
+    }
+}
+
+/// The error for an order whose status stream ended before a final status.
+/// `None` when the loop saw a final status.
+fn unfinished_order_error(order_id: i32, filled: f64, terminal: bool) -> Option<BrokerError> {
+    if terminal {
+        return None;
+    }
+    warn!(
+        "AUDIT: Subscription terminated early for order {order_id} (filled={filled}) - state unknown"
+    );
+    Some(BrokerError::ConnectionLost {
+        order_id,
+        filled_quantity: filled.round() as i64,
+    })
 }
 
 /// What the order loop does with a notice code.
@@ -1002,6 +1034,52 @@ mod tests {
         assert_eq!(ib_order.total_quantity, 10.0);
         assert_eq!(ib_order.aux_price, Some(182.50));
         assert_eq!(ib_order.limit_price, None);
+    }
+
+    fn notice_error(code: i32) -> ibapi::Error {
+        ibapi::Error::Notice(ibapi::Notice {
+            request_id: Some(1),
+            code,
+            message: "test".into(),
+            error_time: None,
+            advanced_order_reject_json: String::new(),
+        })
+    }
+
+    #[test]
+    fn classify_stream_error_separates_rejection_from_unknown() {
+        // 201: order rejected.
+        assert_eq!(
+            classify_stream_error(&notice_error(201)),
+            StreamEnd::Rejected
+        );
+        // Connectivity lost and a plain I/O-style error leave the order state unknown.
+        assert_eq!(classify_stream_error(&notice_error(1100)), StreamEnd::Lost);
+        assert_eq!(
+            classify_stream_error(&ibapi::Error::ConnectionReset),
+            StreamEnd::Lost
+        );
+    }
+
+    #[test]
+    fn unfinished_order_is_an_error_even_with_zero_fill() {
+        assert!(unfinished_order_error(7, 0.0, true).is_none());
+        match unfinished_order_error(7, 0.0, false) {
+            Some(BrokerError::ConnectionLost {
+                order_id,
+                filled_quantity,
+            }) => {
+                assert_eq!(order_id, 7);
+                assert_eq!(filled_quantity, 0);
+            }
+            other => panic!("expected ConnectionLost, got {other:?}"),
+        }
+        match unfinished_order_error(7, 40.0, false) {
+            Some(BrokerError::ConnectionLost {
+                filled_quantity, ..
+            }) => assert_eq!(filled_quantity, 40),
+            other => panic!("expected ConnectionLost, got {other:?}"),
+        }
     }
 
     #[test]
