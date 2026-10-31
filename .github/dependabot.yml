@@ -10,6 +10,11 @@ updates:
       cargo-updates:
         patterns:
           - "*"
+    ignore:
+      # uuid 1.27.0 and later declare rust-version 1.89; the workspace MSRV is 1.88
+      # (CI job "Test (ubuntu-latest, Rust 1.88)"). Lift this when the MSRV moves to 1.89.
+      - dependency-name: "uuid"
+        versions: [">=1.27.0"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
