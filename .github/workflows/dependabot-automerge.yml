@@ -103,17 +103,14 @@ jobs:
               }
             }
             for (const run of checkRuns) {
-              // Count only CI jobs. Review bots (CodeRabbit, cubic) add check
-              // runs that can stay in_progress for a long time; nothing
-              // re-triggers this workflow, so the PR would never merge.
-              if (run.app?.slug !== 'github-actions') {
-                continue;
-              }
               if (run.conclusion === 'success' || run.conclusion === 'skipped' || run.conclusion === 'neutral') {
                 continue;
               }
-              if (run.status === 'in_progress' || run.status === 'queued' || run.status === 'requested') {
-                hasPending = true;
+              if (run.status !== 'completed') {
+                // Review bots (CodeRabbit, cubic) can stay in progress for a
+                // long time and nothing re-triggers this workflow: wait only
+                // for CI jobs. A finished failure from any app still blocks.
+                if (run.app?.slug === 'github-actions') hasPending = true;
                 continue;
               }
               allSuccess = false;
