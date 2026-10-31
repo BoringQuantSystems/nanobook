@@ -58,7 +58,7 @@
 //! - `AUDIT: Order {id} state uncertain after cancel reject - manual review recommended` - uncertain state
 //!
 //! Disconnect-related audit logs:
-//! - `AUDIT: Connection lost during order {id} execution (filled={filled})` - explicit disconnect error
+//! - `AUDIT: Connection lost during order {id} execution (code {code}, filled={filled})` - explicit disconnect error
 //! - `AUDIT: Subscription terminated early for order {id} (filled={filled}) - likely silent disconnect` - silent disconnect
 //! - `AUDIT: Reconciling order {id} after disconnect - symbol={symbol}, pre_disconnect_filled={pre}, expected_total={total}` - reconciliation attempt
 //! - `AUDIT: Order {id} reconciled as PARTIAL_FILL (filled={filled}, remainder={remainder}) - remainder NOT resubmitted` - reconciliation success
@@ -462,12 +462,14 @@ pub fn execute_limit_order(
         let response = match item {
             Ok(SubscriptionItem::Data(response)) => response,
             Ok(SubscriptionItem::Notice(notice)) => {
-                // Same filter as the former `PlaceOrder::Message` arm: errors and system codes.
-                if notice.code < 0 || notice.code >= 2000 {
-                    warn!("Order {order_id} error {}: {}", notice.code, notice.message);
-                    if is_disconnect_code(notice.code) {
+                match classify_notice(notice.code) {
+                    NoticeAction::ConnectionLost => {
                         return Err(connection_lost(order_id, filled, notice.code));
                     }
+                    NoticeAction::Warn => {
+                        warn!("Order {order_id} error {}: {}", notice.code, notice.message);
+                    }
+                    NoticeAction::Ignore => {}
                 }
                 continue;
             }
@@ -476,7 +478,7 @@ pub fn execute_limit_order(
                 // lost connection; anything else falls through to the early-end check below.
                 warn!("Order {order_id} stream error: {e}");
                 if let ibapi::Error::Notice(notice) = &e
-                    && is_disconnect_code(notice.code)
+                    && classify_notice(notice.code) == NoticeAction::ConnectionLost
                 {
                     return Err(connection_lost(order_id, filled, notice.code));
                 }
@@ -666,9 +668,28 @@ pub fn cancel_order(client: &Client, order_id: i32) -> Result<(), BrokerError> {
     }
 }
 
-/// IBKR error codes 1100, 1101 and 1102 report a lost or restored connection.
-fn is_disconnect_code(code: i32) -> bool {
-    matches!(code, 1100..=1102)
+/// What the order loop does with a notice code.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NoticeAction {
+    /// Informational: farm status, warnings, 1102.
+    Ignore,
+    /// Log a warning and keep waiting.
+    Warn,
+    /// The connection to IB was lost or its data was lost: stop and report it.
+    ConnectionLost,
+}
+
+/// Classify an IB notice code.
+///
+/// 1100 (connectivity lost) and 1101 (restored, data lost) stop the order
+/// loop. 1102 (restored, data kept) does not. The connection codes are checked
+/// before the warn range because 1100 and 1101 fall below 2000.
+fn classify_notice(code: i32) -> NoticeAction {
+    match code {
+        1100 | 1101 => NoticeAction::ConnectionLost,
+        c if !(0..2000).contains(&c) => NoticeAction::Warn,
+        _ => NoticeAction::Ignore,
+    }
 }
 
 fn connection_lost(order_id: i32, filled: f64, code: i32) -> BrokerError {
@@ -981,6 +1002,24 @@ mod tests {
         assert_eq!(ib_order.total_quantity, 10.0);
         assert_eq!(ib_order.aux_price, Some(182.50));
         assert_eq!(ib_order.limit_price, None);
+    }
+
+    #[test]
+    fn classify_notice_connection_codes() {
+        assert_eq!(classify_notice(1100), NoticeAction::ConnectionLost);
+        assert_eq!(classify_notice(1101), NoticeAction::ConnectionLost);
+        // 1102: connectivity restored, data maintained. The order is still live.
+        assert_eq!(classify_notice(1102), NoticeAction::Ignore);
+    }
+
+    #[test]
+    fn classify_notice_ranges() {
+        assert_eq!(classify_notice(-1), NoticeAction::Warn);
+        assert_eq!(classify_notice(2104), NoticeAction::Warn);
+        assert_eq!(classify_notice(2000), NoticeAction::Warn);
+        assert_eq!(classify_notice(0), NoticeAction::Ignore);
+        assert_eq!(classify_notice(399), NoticeAction::Ignore);
+        assert_eq!(classify_notice(1999), NoticeAction::Ignore);
     }
 
     #[test]
