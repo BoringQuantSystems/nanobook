@@ -434,33 +434,41 @@ pub fn execute_limit_order(
     for item in subscription {
         if start.elapsed() > timeout {
             warn!("Order {order_id} timed out after {}s", timeout.as_secs());
-            match cancel_order(client, order_id) {
-                Ok(()) => {}
+            match cancel_order_outcome(client, order_id) {
+                Ok(CancelOutcome::Cancelled) => {
+                    final_status = if filled > 0.0 {
+                        OrderOutcome::PartialFill
+                    } else {
+                        OrderOutcome::Cancelled
+                    };
+                    terminal = true;
+                }
+                Ok(CancelOutcome::Filled) => {
+                    // The order filled before the cancel reached IB.
+                    filled = filled.max(quantity);
+                    final_status = OrderOutcome::Filled;
+                    terminal = true;
+                }
+                Ok(CancelOutcome::Requested) => {
+                    warn!("Cancel for order {order_id} sent but not confirmed - state unknown");
+                }
                 Err(BrokerError::CancelReject {
                     order_id: oid,
                     reason,
                 }) => {
                     debug!("Cancel rejected (order may have filled): {reason}");
-                    // Reconcile order state to handle fill/cancel race condition
-                    if let Ok(is_filled) = reconcile_filled_order(oid, &reason)
-                        && is_filled
-                    {
-                        // Order filled before cancel reached broker - treat as filled
+                    if let Ok(true) = reconcile_filled_order(oid, &reason) {
+                        filled = filled.max(quantity);
                         final_status = OrderOutcome::Filled;
                         terminal = true;
-                        break;
                     }
                 }
                 Err(e) => {
                     warn!("Cancel failed: {e}");
                 }
             }
-            final_status = if filled > 0.0 {
-                OrderOutcome::PartialFill
-            } else {
-                OrderOutcome::Cancelled
-            };
-            terminal = true;
+            // Not terminal: the order may still be live. The check after the loop
+            // reports it as an error instead of Cancelled.
             break;
         }
 
@@ -626,46 +634,130 @@ pub fn execute_limit_order(
 /// These logs capture the order_id, timestamp, and reason to enable tracking of
 /// cancel/fill race conditions and post-mortem analysis.
 pub fn cancel_order(client: &Client, order_id: i32) -> Result<(), BrokerError> {
+    cancel_order_outcome(client, order_id).map(|_| ())
+}
+
+/// How a cancel request ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CancelOutcome {
+    /// IB confirmed the order is cancelled.
+    Cancelled,
+    /// The order filled before the cancel reached IB.
+    Filled,
+    /// The request was sent and the stream ended with no confirmation.
+    Requested,
+}
+
+/// What a cancel notice or error message says about the order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CancelText {
+    /// The order already filled: the cancel is moot and the order is a fill.
+    AlreadyFilled,
+    /// IB does not know the order: the cancel failed and the order state is unknown.
+    NoSuchOrder,
+    /// IB refused the cancel.
+    CannotCancel,
+    /// Nothing that decides the outcome.
+    Other,
+}
+
+fn classify_cancel_text(message: &str) -> CancelText {
+    let msg = message.to_lowercase();
+    if msg.contains("already filled") || msg.contains("order completed") {
+        CancelText::AlreadyFilled
+    } else if msg.contains("no such order") {
+        CancelText::NoSuchOrder
+    } else if msg.contains("cannot cancel") {
+        CancelText::CannotCancel
+    } else {
+        CancelText::Other
+    }
+}
+
+/// Send a cancel and report how it ended. See [`cancel_order`].
+fn cancel_order_outcome(client: &Client, order_id: i32) -> Result<CancelOutcome, BrokerError> {
     // Audit log: cancel attempt
     info!(
         "AUDIT: Cancel attempt for order {} at {:?}",
         order_id,
         std::time::SystemTime::now()
     );
-    match client.cancel_order(order_id, "") {
-        Ok(subscription) => {
-            for item in subscription {
-                let response = match item {
-                    Ok(SubscriptionItem::Data(response)) => response,
-                    Ok(SubscriptionItem::Notice(notice)) => {
-                        if let Some(rejected) = cancel_notice_rejection(order_id, &notice.message) {
-                            return Err(rejected);
-                        }
-                        continue;
+    let subscription = match client.cancel_order(order_id, "") {
+        Ok(subscription) => subscription,
+        Err(e) => return cancel_failed(order_id, &e.to_string()),
+    };
+    for item in subscription {
+        let response = match item {
+            Ok(SubscriptionItem::Data(response)) => response,
+            Ok(SubscriptionItem::Notice(notice)) => {
+                debug!("Cancel notice for {order_id}: {}", notice.message);
+                match classify_cancel_text(&notice.message) {
+                    CancelText::AlreadyFilled => {
+                        info!(
+                            "AUDIT: Cancel moot for order {order_id} (already filled): {}",
+                            notice.message
+                        );
+                        return Ok(CancelOutcome::Filled);
                     }
-                    Err(e) => return cancel_failed(order_id, &e),
-                };
-                match response {
-                    CancelOrder::OrderStatus(s) => {
-                        debug!("Cancel status for {order_id}: {}", s.status.as_str());
-                        // Order is already cancelled or filled - cancel is moot
-                        if s.status == OrderStatusKind::Cancelled
-                            || s.status == OrderStatusKind::Filled
-                        {
-                            info!(
-                                "AUDIT: Cancel confirmed for order {} (status: {})",
-                                order_id,
-                                s.status.as_str()
-                            );
-                            return Ok(());
-                        }
+                    CancelText::NoSuchOrder => {
+                        return cancel_failed(order_id, &notice.message);
                     }
+                    CancelText::CannotCancel => {
+                        info!(
+                            "AUDIT: Cancel rejected for order {} - reason: {}",
+                            order_id, notice.message
+                        );
+                        return Err(BrokerError::CancelReject {
+                            order_id,
+                            reason: notice.message,
+                        });
+                    }
+                    CancelText::Other => continue,
                 }
             }
-            info!("AUDIT: Cancel request sent for order {}", order_id);
-            Ok(())
+            Err(e) => return cancel_failed(order_id, &e.to_string()),
+        };
+        match response {
+            CancelOrder::OrderStatus(s) => {
+                debug!("Cancel status for {order_id}: {}", s.status.as_str());
+                if s.status == OrderStatusKind::Cancelled {
+                    info!(
+                        "AUDIT: Cancel confirmed for order {} (status: {})",
+                        order_id,
+                        s.status.as_str()
+                    );
+                    return Ok(CancelOutcome::Cancelled);
+                }
+                if s.status == OrderStatusKind::Filled {
+                    info!(
+                        "AUDIT: Cancel moot for order {} (status: {})",
+                        order_id,
+                        s.status.as_str()
+                    );
+                    return Ok(CancelOutcome::Filled);
+                }
+            }
         }
-        Err(e) => cancel_failed(order_id, &e),
+    }
+    info!("AUDIT: Cancel request sent for order {}", order_id);
+    Ok(CancelOutcome::Requested)
+}
+
+/// Map a failed cancel request to a result, by what its message says.
+fn cancel_failed(order_id: i32, message: &str) -> Result<CancelOutcome, BrokerError> {
+    warn!("Failed to cancel order {order_id}: {message}");
+    match classify_cancel_text(message) {
+        CancelText::AlreadyFilled => {
+            info!("AUDIT: Cancel moot for order {order_id} (already filled)");
+            Ok(CancelOutcome::Filled)
+        }
+        CancelText::CannotCancel => Err(BrokerError::CancelReject {
+            order_id,
+            reason: message.to_owned(),
+        }),
+        CancelText::NoSuchOrder | CancelText::Other => Err(BrokerError::Order(format!(
+            "failed to cancel order {order_id}: {message}"
+        ))),
     }
 }
 
@@ -732,48 +824,6 @@ fn connection_lost(order_id: i32, filled: f64, code: i32) -> BrokerError {
         order_id,
         filled_quantity: filled.round() as i64,
     }
-}
-
-/// Map a cancel-stream error to a result. An error saying the order is
-/// already complete means the cancel is moot and counts as success.
-fn cancel_failed(order_id: i32, e: &ibapi::Error) -> Result<(), BrokerError> {
-    warn!("Failed to cancel order {order_id}: {e}");
-    let err_msg = e.to_string().to_lowercase();
-    if err_msg.contains("already filled")
-        || err_msg.contains("order completed")
-        || err_msg.contains("no such order")
-    {
-        info!(
-            "AUDIT: Cancel moot for order {} (already completed)",
-            order_id
-        );
-        return Ok(());
-    }
-    Err(BrokerError::Order(format!(
-        "failed to cancel order {order_id}: {e}"
-    )))
-}
-
-/// Look for a notice message that says the order cannot be cancelled.
-///
-/// IBKR error codes indicating rejection: 102 (order cancelled), 201 (order
-/// rejected), 202 (order cancelled, with reason), 1100 (connectivity lost),
-/// 460 (error reading request).
-fn cancel_notice_rejection(order_id: i32, message: &str) -> Option<BrokerError> {
-    debug!("Cancel notice for {order_id}: {message}");
-    let msg = message.to_lowercase();
-    if msg.contains("cannot cancel")
-        || msg.contains("already filled")
-        || msg.contains("order completed")
-        || msg.contains("no such order")
-    {
-        info!("AUDIT: Cancel rejected for order {order_id} - reason: {message}");
-        return Some(BrokerError::CancelReject {
-            order_id,
-            reason: message.to_owned(),
-        });
-    }
-    None
 }
 
 /// Reconcile order state when cancel is rejected.
@@ -1080,6 +1130,49 @@ mod tests {
             }) => assert_eq!(filled_quantity, 40),
             other => panic!("expected ConnectionLost, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn classify_cancel_text_decides_fill_and_failure() {
+        assert_eq!(
+            classify_cancel_text("Order already filled"),
+            CancelText::AlreadyFilled
+        );
+        assert_eq!(
+            classify_cancel_text("ORDER COMPLETED"),
+            CancelText::AlreadyFilled
+        );
+        assert_eq!(
+            classify_cancel_text("No such order"),
+            CancelText::NoSuchOrder
+        );
+        assert_eq!(
+            classify_cancel_text("Cannot cancel: exchange closed"),
+            CancelText::CannotCancel
+        );
+        assert_eq!(classify_cancel_text("Order Canceled"), CancelText::Other);
+    }
+
+    #[test]
+    fn cancel_failed_never_reports_unknown_order_as_cancelled() {
+        // A fill phrase is a fill.
+        assert_eq!(
+            cancel_failed(5, "order already filled").unwrap(),
+            CancelOutcome::Filled
+        );
+        // "No such order" is a failed cancel: the order state is unknown.
+        assert!(matches!(
+            cancel_failed(5, "No such order"),
+            Err(BrokerError::Order(_))
+        ));
+        assert!(matches!(
+            cancel_failed(5, "cannot cancel"),
+            Err(BrokerError::CancelReject { order_id: 5, .. })
+        ));
+        assert!(matches!(
+            cancel_failed(5, "socket closed"),
+            Err(BrokerError::Order(_))
+        ));
     }
 
     #[test]
