@@ -23,4 +23,4 @@ numpy = "0.29"
 serde_json = "1"
 
 [build-dependencies]
-pyo3-build-config = "0.29"
+pyo3-build-config = "0.30"
