@@ -2,7 +2,7 @@
 # "python" is not an installable PyPI package.
 
 # Build dependencies for local nanobook package
-maturin==1.15.0
+maturin==1.16.0
 
 # The nanobook package is built locally from ../python
 # No additional runtime dependencies needed for report.py
