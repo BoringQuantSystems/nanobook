@@ -30,7 +30,7 @@ Issues = "https://github.com/BoringQuantSystems/nanobook/issues"
 
 [dependency-groups]
 dev = [
-    "hypothesis==6.170.12",
+    "hypothesis==6.170.13",
     "numpy==2.4.6",
     "pandas==3.1.0",
     "pytest==9.2.0",
