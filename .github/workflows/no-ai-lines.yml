@@ -1,6 +1,7 @@
 # Fails when a pull request or a push to main carries an AI session link,
-# an AI co-author line or a "generated with" line. The pattern is the same
-# as tools/no-ai-lines/check.sh; test_check.py asserts the two copies match.
+# an AI co-author line or a "generated with" line, in the PR title, the PR
+# body or any commit message. A pull request with more than 250 commits
+# fails, because the API lists at most 250 and the rest cannot be checked.
 name: no-ai-lines
 
 on:
@@ -25,17 +26,22 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
-          banned='claude-session:|claude\.ai/code|co-authored-by:.*(claude|anthropic|copilot|cursor|grok|gemini|openai|codex)|generated (with|by) .*(claude|ai\b)|🤖'
+          banned='claude-session:|claude\.ai/code|co-authored-by:.*(claude|anthropic|copilot|cursor|grok|gemini|openai|codex|chatgpt|gpt|aider|devin|windsurf|deepseek|qwen|kimi)|generated (with|by) .*(claude|ai\b)|🤖'
           fail=0
           check() {
-            if printf '%s\n' "$2" | grep -qiE "$banned"; then
+            if grep -qiE "$banned" <<< "$2"; then
               echo "::error::AI line found in $1"
               echo "Matched in $1:"
-              printf '%s\n' "$2" | grep -iE "$banned" | sed 's/^/  /'
+              grep -iE "$banned" <<< "$2" | sed 's/^/  /'
               fail=1
             fi
           }
           if [ "$EVENT_NAME" = pull_request ]; then
+            total=$(jq -r '.pull_request.commits // 0' "$GITHUB_EVENT_PATH")
+            if [ "$total" -gt 250 ]; then
+              echo "::error::This pull request has $total commits. The API lists at most 250, so the commits could not all be checked."
+              exit 1
+            fi
             check "PR title" "$(jq -r '.pull_request.title // ""' "$GITHUB_EVENT_PATH")"
             check "PR body" "$(jq -r '.pull_request.body // ""' "$GITHUB_EVENT_PATH")"
             gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/commits" \
