@@ -1,0 +1,56 @@
+# Fails when a pull request or a push to main carries an AI session link,
+# an AI co-author line or a "generated with" line. The pattern is the same
+# as tools/no-ai-lines/check.sh; test_check.py asserts the two copies match.
+name: no-ai-lines
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for AI lines
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          banned='claude-session:|claude\.ai/code|co-authored-by:.*(claude|anthropic|copilot|cursor|grok|gemini|openai|codex)|generated (with|by) .*(claude|ai\b)|🤖'
+          fail=0
+          check() {
+            if printf '%s\n' "$2" | grep -qiE "$banned"; then
+              echo "::error::AI line found in $1"
+              echo "Matched in $1:"
+              printf '%s\n' "$2" | grep -iE "$banned" | sed 's/^/  /'
+              fail=1
+            fi
+          }
+          if [ "$EVENT_NAME" = pull_request ]; then
+            check "PR title" "$(jq -r '.pull_request.title // ""' "$GITHUB_EVENT_PATH")"
+            check "PR body" "$(jq -r '.pull_request.body // ""' "$GITHUB_EVENT_PATH")"
+            gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/commits" \
+              --jq '.[] | [.sha, (.commit.message | @base64)] | @tsv' > commits.tsv
+            while IFS=$'\t' read -r sha msg; do
+              check "commit $sha" "$(printf '%s' "$msg" | base64 -d)"
+            done < commits.tsv
+          else
+            jq -r '.commits[] | [.id, (.message | @base64)] | @tsv' "$GITHUB_EVENT_PATH" > commits.tsv
+            while IFS=$'\t' read -r sha msg; do
+              check "commit $sha" "$(printf '%s' "$msg" | base64 -d)"
+            done < commits.tsv
+          fi
+          if [ "$fail" -ne 0 ]; then
+            echo "Fix: remove the AI lines. Edit the PR title or body, or rewrite the commit message (git commit --amend, or git rebase -r with reword) and force-push the branch."
+            exit 1
+          fi
+          echo "No AI lines found."
