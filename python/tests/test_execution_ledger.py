@@ -1,6 +1,8 @@
+# SPDX-License-Identifier: MIT
 """Actual fills and cash reconciliation through the compiled binding."""
 
 import struct
+from typing import Any
 
 import nanobook
 import pytest
@@ -14,11 +16,13 @@ METRICS = (
 )
 
 
-def bar(price):
+def bar(price: int) -> nanobook.BarPrices:
+    """Build a bar with the same price for every field."""
     return nanobook.BarPrices(open=price, high=price, low=price, close=price)
 
 
-def bits(value):
+def bits(value: Any) -> Any:
+    """Replace nested floats with their exact binary representations."""
     if isinstance(value, float):
         return struct.pack("!d", value)
     if isinstance(value, dict):
@@ -28,7 +32,8 @@ def bits(value):
     return value
 
 
-def assert_legacy_equal(off, on):
+def assert_legacy_equal(off: dict[str, Any], on: dict[str, Any]) -> None:
+    """Check that recording preserves every legacy result exactly."""
     assert off.keys() == on.keys()
     for key in off.keys() - {"executions", "cash_snapshots", "metrics"}:
         assert bits(off[key]) == bits(on[key]), key
@@ -41,11 +46,17 @@ def assert_legacy_equal(off, on):
     assert off["cash_snapshots"] is None
 
 
-def trunc_div(value, denominator):
+def trunc_div(value: int, denominator: int) -> int:
+    """Divide integers with truncation toward zero."""
     return (1 if value >= 0 else -1) * (abs(value) // denominator)
 
 
-def assert_reconciles(result, prices, cost):
+def assert_reconciles(
+    result: dict[str, Any],
+    prices: list[list[tuple[str, nanobook.BarPrices]]],
+    cost: nanobook.CostModel,
+) -> None:
+    """Reconcile fills with costs, cash, equity, and period holdings."""
     records = result["executions"]
     cash = result["initial_cash"]
     assert len(result["cash_snapshots"]) == len(result["returns"]) == len(result["holdings"])
@@ -90,7 +101,8 @@ def assert_reconciles(result, prices, cost):
 @pytest.mark.parametrize("step", [SCALE, 1_000])
 @pytest.mark.parametrize("policy_name", ["SignalBarClose", "NextBarOpen", "NextBarTypical"])
 @pytest.mark.parametrize("with_cost", [False, True])
-def test_parity_and_reconciliation(step, policy_name, with_cost):
+def test_parity_and_reconciliation(step: int, policy_name: str, with_cost: bool) -> None:
+    """Check recording parity across sizing steps, fill policies, and costs."""
     weights = [[("AAA", 1.0)], [("AAA", 0.4), ("BBB", 0.5)], [],
                [("BBB", 1.0)], [("AAA", 0.6), ("BBB", 0.3)]]
     prices = [[("AAA", bar(p)), ("BBB", bar(2 * p))] for p in [333, 350, 310, 320, 340]]
@@ -109,7 +121,8 @@ def test_parity_and_reconciliation(step, policy_name, with_cost):
         assert all(r["period_index"] < 4 for r in on["executions"])
 
 
-def test_trimmed_buy_records_filled_quantity_and_legacy_positional_calls():
+def test_trimmed_buy_records_filled_quantity_and_legacy_positional_calls() -> None:
+    """Check trimmed fills and compatibility with legacy positional calls."""
     cost = nanobook.CostModel(10.0, 100.0, 75)
     prices = [[("AAA", bar(100))]]
     args = ([[("AAA", 1.0)]], prices, 1_000, cost,
@@ -134,7 +147,8 @@ def test_trimmed_buy_records_filled_quantity_and_legacy_positional_calls():
 
 
 @pytest.mark.parametrize("stop_key", ["fixed_stop_pct", "trailing_stop_pct"])
-def test_stop_exit_and_reentry(stop_key):
+def test_stop_exit_and_reentry(stop_key: str) -> None:
+    """Check stop-exit recording and subsequent rebalance reentry."""
     prices = [[("AAA", bar(p))] for p in [100, 120, 80, 100]]
     args = ([[("AAA", 1.0)]] * 4, prices, 10_000,
             nanobook.CostModel.zero(), nanobook.FillPolicy.SignalBarClose)
@@ -151,7 +165,8 @@ def test_stop_exit_and_reentry(stop_key):
 
 
 @pytest.mark.parametrize("weights", [[], [[("AAA", 0.0)]], [[("AAA", 1.0)]], [[("AAA", -0.5)]]])
-def test_empty_and_rejected_fills(weights):
+def test_empty_and_rejected_fills(weights: list[list[tuple[str, float]]]) -> None:
+    """Check that empty schedules and rejected fills leave an empty ledger."""
     prices = [[("AAA", bar(10))]] * len(weights)
     cost = nanobook.CostModel(min_commission=200)
     args = (weights, prices, 100, cost, nanobook.FillPolicy.SignalBarClose)

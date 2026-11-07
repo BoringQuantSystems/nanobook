@@ -43,8 +43,10 @@ use rustc_hash::FxHashMap;
 /// Why a successful fill was executed.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ExecutionKind {
+    /// Fill made while rebalancing to target weights.
     #[default]
     Rebalance,
+    /// Fill made to close a position after a stop triggers.
     StopExit,
 }
 
@@ -57,15 +59,25 @@ pub enum ExecutionKind {
 /// Cash delta is the actual cash change, including costs and cash saturation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExecutionRecord {
+    /// Zero-based fill sequence in engine execution order across the run.
     pub sequence: u64,
+    /// Index into the backtest weight and price schedules.
     pub period_index: usize,
+    /// Reason the fill was executed.
     pub kind: ExecutionKind,
+    /// Symbol whose position was filled.
     pub symbol: Symbol,
+    /// Signed micro-shares actually filled after any affordability trim.
     pub quantity: Shares,
+    /// Effective price in cents per share after slippage rounding.
     pub price: i64,
+    /// Absolute fill notional in cents, truncated and clamped for the cost model.
     pub notional: i64,
+    /// Transaction cost in cents charged for this fill.
     pub cost: i64,
+    /// Actual signed cash change in cents, including costs and saturation.
     pub cash_delta: i64,
+    /// Cash balance in cents immediately after the fill.
     pub cash_after: i64,
 }
 
@@ -233,15 +245,18 @@ impl Portfolio {
         }
     }
 
+    /// Enable a fresh ledger for successful fills.
     pub(crate) fn enable_execution_recording(&mut self) {
         self.executions = Some(Vec::new());
     }
 
+    /// Tag subsequent fills with their backtest period and execution reason.
     pub(crate) fn set_execution_context(&mut self, period_index: usize, kind: ExecutionKind) {
         self.execution_period_index = period_index;
         self.execution_kind = kind;
     }
 
+    /// Take the recorded fills, leaving execution recording disabled.
     pub(crate) fn take_executions(&mut self) -> Option<Vec<ExecutionRecord>> {
         self.executions.take()
     }
@@ -982,9 +997,9 @@ impl Portfolio {
             .or_insert_with(|| Position::new(symbol));
         pos.apply_fill(qty, effective_price);
 
+        let cash_before = self.cash;
+        self.cash = self.cash.saturating_sub(cash_delta.saturating_add(cost));
         if let Some(executions) = &mut self.executions {
-            let cash_before = self.cash;
-            self.cash = self.cash.saturating_sub(cash_delta.saturating_add(cost));
             executions.push(ExecutionRecord {
                 sequence: executions.len() as u64,
                 period_index: self.execution_period_index,
@@ -997,8 +1012,6 @@ impl Portfolio {
                 cash_delta: self.cash - cash_before,
                 cash_after: self.cash,
             });
-        } else {
-            self.cash = self.cash.saturating_sub(cash_delta.saturating_add(cost));
         }
         debug_assert!(self.cash >= 0);
     }
