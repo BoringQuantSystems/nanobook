@@ -51,3 +51,5 @@ docs/solutions/v0.15-kill-gate-evaluation.md
 
 # bv (beads viewer) local config and caches
 .bv/
+.jac
+/AGENTS.md
