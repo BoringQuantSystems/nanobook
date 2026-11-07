@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- Added opt-in backtest execution records through Rust's `BacktestBridgeOptions.record_executions` and Python's `record_executions=True`. Results include `initial_cash`, actual `executions` (including stop exits and trimmed buys), and period-close `cash_snapshots`. Quantity is signed raw micro-shares (1 share = 1,000,000; positive buys, negative sells), with Python `side` (`buy`/`sell`); price is effective cents per share; all other monetary fields are cents. Notional truncates toward zero after scaling and clamps to i64; cash fields reflect actual balance changes, including saturation. Ledgers are `None` by default and empty for enabled empty/rejected runs. Existing calls and financial calculations are unchanged. The Python stubs for `backtest_weights` now match the runtime signature.
+
 ## [0.19.3] - 2026-10-31
 
 nanobook and the Python package move from 0.19.2 to 0.19.3, and

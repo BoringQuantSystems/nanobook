@@ -40,6 +40,35 @@ pub use strategy::{BacktestResult, EqualWeight, Strategy, run_backtest};
 use crate::types::Symbol;
 use rustc_hash::FxHashMap;
 
+/// Why a successful fill was executed.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ExecutionKind {
+    #[default]
+    Rebalance,
+    StopExit,
+}
+
+/// An actual fill, in engine execution order.
+///
+/// Quantity is signed micro-shares (`Shares::SCALE` per share). Price is the
+/// effective cents per share after slippage rounding. All other monetary
+/// fields are cents. Notional is `abs(quantity * price) / Shares::SCALE`,
+/// truncated toward zero and clamped to i64, as used by the cost model.
+/// Cash delta is the actual cash change, including costs and cash saturation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExecutionRecord {
+    pub sequence: u64,
+    pub period_index: usize,
+    pub kind: ExecutionKind,
+    pub symbol: Symbol,
+    pub quantity: Shares,
+    pub price: i64,
+    pub notional: i64,
+    pub cost: i64,
+    pub cash_delta: i64,
+    pub cash_after: i64,
+}
+
 /// Serde helper for `FxHashMap<Symbol, Position>` — serializes as `Vec<(Symbol, Position)>`.
 #[cfg(feature = "serde")]
 mod serde_positions {
@@ -151,6 +180,13 @@ pub struct Portfolio {
     /// filled because cash was insufficient. Cumulative; not persisted.
     #[cfg_attr(feature = "serde", serde(skip, default))]
     trimmed_shortfall_cents: i64,
+    /// Transient run ledger: absent unless explicitly enabled by the bridge.
+    #[cfg_attr(feature = "serde", serde(skip, default))]
+    executions: Option<Vec<ExecutionRecord>>,
+    #[cfg_attr(feature = "serde", serde(skip, default))]
+    execution_period_index: usize,
+    #[cfg_attr(feature = "serde", serde(skip, default))]
+    execution_kind: ExecutionKind,
 }
 
 /// Serde default for `Portfolio::quantity_step`: whole shares, so JSON saved
@@ -191,7 +227,23 @@ impl Portfolio {
             last_rebalance_notional: 0,
             trimmed_fill_count: 0,
             trimmed_shortfall_cents: 0,
+            executions: None,
+            execution_period_index: 0,
+            execution_kind: ExecutionKind::Rebalance,
         }
+    }
+
+    pub(crate) fn enable_execution_recording(&mut self) {
+        self.executions = Some(Vec::new());
+    }
+
+    pub(crate) fn set_execution_context(&mut self, period_index: usize, kind: ExecutionKind) {
+        self.execution_period_index = period_index;
+        self.execution_kind = kind;
+    }
+
+    pub(crate) fn take_executions(&mut self) -> Option<Vec<ExecutionRecord>> {
+        self.executions.take()
     }
 
     /// Builder-style variant of [`Portfolio::new`] with an explicit sizing step
@@ -930,7 +982,24 @@ impl Portfolio {
             .or_insert_with(|| Position::new(symbol));
         pos.apply_fill(qty, effective_price);
 
-        self.cash = self.cash.saturating_sub(cash_delta.saturating_add(cost));
+        if let Some(executions) = &mut self.executions {
+            let cash_before = self.cash;
+            self.cash = self.cash.saturating_sub(cash_delta.saturating_add(cost));
+            executions.push(ExecutionRecord {
+                sequence: executions.len() as u64,
+                period_index: self.execution_period_index,
+                kind: self.execution_kind,
+                symbol,
+                quantity: qty,
+                price: effective_price,
+                notional,
+                cost,
+                cash_delta: self.cash - cash_before,
+                cash_after: self.cash,
+            });
+        } else {
+            self.cash = self.cash.saturating_sub(cash_delta.saturating_add(cost));
+        }
         debug_assert!(self.cash >= 0);
     }
 }
@@ -1071,6 +1140,164 @@ pub struct PortfolioSnapshot {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn assert_execution_cash_and_positions(portfolio: &Portfolio, initial_cash: i64) {
+        let mut cash = initial_cash;
+        let mut quantities = FxHashMap::<Symbol, i64>::default();
+        for (sequence, record) in portfolio.executions.as_ref().unwrap().iter().enumerate() {
+            assert_eq!(record.sequence, sequence as u64);
+            assert!(!record.quantity.is_zero());
+            let signed_notional = (record.quantity.raw() as i128 * record.price as i128
+                / Shares::SCALE as i128) as i64;
+            assert_eq!(record.notional, signed_notional.abs());
+            assert_eq!(
+                record.cost,
+                portfolio.cost_model.compute_cost(record.notional)
+            );
+            assert_eq!(record.cash_delta, -signed_notional - record.cost);
+            cash += record.cash_delta;
+            assert_eq!(record.cash_after, cash);
+            *quantities.entry(record.symbol).or_default() += record.quantity.raw();
+        }
+        assert_eq!(cash, portfolio.cash());
+        for (symbol, position) in portfolio.positions() {
+            assert_eq!(
+                quantities.remove(symbol).unwrap_or(0),
+                position.quantity.raw()
+            );
+        }
+        assert!(quantities.is_empty());
+    }
+
+    fn assert_recording_preserves_portfolio(off: &Portfolio, on: &Portfolio) {
+        assert_eq!(off.cash(), on.cash());
+        assert_eq!(off.equity_curve(), on.equity_curve());
+        assert_eq!(
+            off.returns()
+                .iter()
+                .map(|v| v.to_bits())
+                .collect::<Vec<_>>(),
+            on.returns().iter().map(|v| v.to_bits()).collect::<Vec<_>>()
+        );
+        assert_eq!(off.trimmed_fill_count(), on.trimmed_fill_count());
+        assert_eq!(off.trimmed_shortfall_cents(), on.trimmed_shortfall_cents());
+        assert_eq!(off.positions.len(), on.positions.len());
+        for (symbol, position) in off.positions() {
+            let recorded = on.position(symbol).unwrap();
+            assert_eq!(position.quantity, recorded.quantity);
+            assert_eq!(position.avg_entry_price, recorded.avg_entry_price);
+            assert_eq!(position.realized_pnl, recorded.realized_pnl);
+            assert_eq!(position.total_cost, recorded.total_cost);
+        }
+        assert!(off.executions.is_none());
+    }
+
+    #[test]
+    fn execution_records_preserve_fills_and_reconcile_trimmed_quantities() {
+        let symbol = Symbol::new("AAA");
+        for step in [Shares::SCALE, 1_000] {
+            let cost = CostModel {
+                commission_bps: 10.0,
+                slippage_bps: 100.0,
+                min_commission: 75,
+            };
+            let mut off = Portfolio::with_quantity_step(1_000, cost, step);
+            let mut on = off.clone();
+            on.enable_execution_recording();
+            for (period, (quantity, price)) in [
+                (Shares::from_whole(10), 100),
+                (Shares::from_whole(-3), 110),
+                (Shares::ZERO, 110),
+                (Shares::from_raw(123_000), 103),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                on.set_execution_context(period, ExecutionKind::Rebalance);
+                off.execute_fill(symbol, quantity, price);
+                on.execute_fill(symbol, quantity, price);
+                off.record_return(&[(symbol, price)]);
+                on.record_return(&[(symbol, price)]);
+                assert_recording_preserves_portfolio(&off, &on);
+            }
+            let records = on.executions.as_ref().unwrap();
+            assert_eq!(records.len(), 3);
+            assert_eq!(on.trimmed_fill_count(), 1);
+            let trimmed = records[0].quantity.raw();
+            assert!(trimmed < 10 * Shares::SCALE);
+            assert_eq!(trimmed % step, 0);
+            assert_eq!(records[0].price, 101);
+            assert_eq!(records[0].cost, 75);
+            assert_eq!(records[1].price, 109);
+            assert_eq!(records[2].period_index, 3);
+            assert_execution_cash_and_positions(&on, 1_000);
+        }
+    }
+
+    #[test]
+    fn execution_records_exclude_zero_unaffordable_and_overdraw_sells() {
+        let symbol = Symbol::new("AAA");
+        let cost = CostModel {
+            min_commission: 200,
+            ..CostModel::zero()
+        };
+        let mut off = Portfolio::new(100, cost);
+        let mut on = off.clone();
+        on.enable_execution_recording();
+        for (quantity, price) in [
+            (Shares::ZERO, 100),
+            (Shares::from_whole(1), 100),
+            (Shares::from_whole(-1), 10),
+        ] {
+            off.execute_fill(symbol, quantity, price);
+            on.execute_fill(symbol, quantity, price);
+            assert_recording_preserves_portfolio(&off, &on);
+        }
+        assert_eq!(on.trimmed_fill_count(), 1);
+        assert_eq!(on.executions, Some(Vec::new()));
+        assert!(on.positions.is_empty());
+        assert_execution_cash_and_positions(&on, 100);
+    }
+
+    #[test]
+    fn execution_records_reconcile_cash_exit_reentry_and_stop_close() {
+        let symbol = Symbol::new("AAA");
+        let mut off = Portfolio::with_quantity_step(10_000, CostModel::zero(), 1_000);
+        let mut on = off.clone();
+        on.enable_execution_recording();
+        for (period, weight) in [0.7, 0.0, 0.8].into_iter().enumerate() {
+            on.set_execution_context(period, ExecutionKind::Rebalance);
+            off.rebalance_simple(&[(symbol, weight)], &[(symbol, 333)]);
+            on.rebalance_simple(&[(symbol, weight)], &[(symbol, 333)]);
+            assert_recording_preserves_portfolio(&off, &on);
+            assert_execution_cash_and_positions(&on, 10_000);
+        }
+        on.set_execution_context(3, ExecutionKind::StopExit);
+        assert!(off.close_position_at(symbol, 300));
+        assert!(on.close_position_at(symbol, 300));
+        assert_recording_preserves_portfolio(&off, &on);
+        assert_execution_cash_and_positions(&on, 10_000);
+        let records = on.take_executions().unwrap();
+        assert_eq!(records.len(), 4);
+        assert_eq!(records[3].period_index, 3);
+        assert_eq!(records[3].kind, ExecutionKind::StopExit);
+        assert!(on.executions.is_none());
+    }
+
+    #[test]
+    fn execution_records_use_actual_saturated_cash_change() {
+        let symbol = Symbol::new("AAA");
+        let mut off = Portfolio::new(i64::MAX - 10, CostModel::zero());
+        let mut on = off.clone();
+        on.enable_execution_recording();
+        off.execute_fill(symbol, Shares::from_whole(-1), 100);
+        on.execute_fill(symbol, Shares::from_whole(-1), 100);
+        assert_recording_preserves_portfolio(&off, &on);
+        let record = &on.executions.as_ref().unwrap()[0];
+        assert_eq!(record.notional, 100);
+        assert_eq!(record.cash_delta, 10);
+        assert_eq!(record.cash_after, i64::MAX);
+    }
 
     fn aapl() -> Symbol {
         Symbol::new("AAPL")
