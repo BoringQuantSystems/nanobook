@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- Added `reference_price` (unimpacted cents per share) and `reference_notional` (cents at the final filled quantity, using the engine's truncation and i64 clamp) to Rust and Python execution records. Stop references use the current close, including on hold days without rebalance fill bars. Slippage cost is `notional - reference_notional` for buys and `reference_notional - notional` for sells, up to truncation; `cost` remains commission only. The extra calculation runs only when recording is enabled; execution arithmetic and existing outputs are unchanged.
+
 - Added opt-in backtest execution records through Rust's `BacktestBridgeOptions.record_executions` and Python's `record_executions=True`. Results include `initial_cash`, actual `executions` (including stop exits and trimmed buys), and period-close `cash_snapshots`. Quantity is signed raw micro-shares (1 share = 1,000,000; positive buys, negative sells), with Python `side` (`buy`/`sell`); price is effective cents per share; all other monetary fields are cents. Notional truncates toward zero after scaling and clamps to i64; cash fields reflect actual balance changes, including saturation. Ledgers are `None` by default and empty for enabled empty/rejected runs. Existing calls and financial calculations are unchanged. The Python stubs for `backtest_weights` now match the runtime signature.
 
 ## [0.19.3] - 2026-10-31

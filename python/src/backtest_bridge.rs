@@ -190,7 +190,14 @@ fn parse_bar_prices_schedule(
 ///         Defaults to False. Disabled ledgers are None; enabled empty runs
 ///         return empty lists. Execution quantity is signed raw micro-shares
 ///         (1 share = 1_000_000), with side "buy" or "sell". Price is effective
-///         cents per share; notional, cost, cash_delta and cash_after are cents.
+///         cents per share; reference_price is the unimpacted fill input in
+///         cents per share (current close for stops, even on hold days without
+///         a rebalance fill bar). Notional, reference_notional, cost, cash_delta
+///         and cash_after are cents. Reference notional uses reference_price
+///         and the final filled quantity with the same truncation and clamp.
+///         Slippage cost is notional - reference_notional for buys and
+///         reference_notional - notional for sells, up to truncation.
+///         Cost is commission only.
 ///         Notional truncates abs(quantity * price) / 1_000_000 toward zero,
 ///         clamped to i64. Cash fields reflect actual engine cash, including
 ///         saturation. Sequence is zero-based execution order; period_index
@@ -360,7 +367,9 @@ pub fn backtest_weights(
                 },
             )?;
             item.set_item("price", execution.price)?;
+            item.set_item("reference_price", execution.reference_price)?;
             item.set_item("notional", execution.notional)?;
+            item.set_item("reference_notional", execution.reference_notional)?;
             item.set_item("cost", execution.cost)?;
             item.set_item("cash_delta", execution.cash_delta)?;
             item.set_item("cash_after", execution.cash_after)?;
@@ -551,8 +560,14 @@ pub fn py_tear_sheet(
 /// contains period-close cash aligned with returns. Empty runs yield empty lists.
 /// ``initial_cash`` is always present. Execution ``quantity`` is signed raw
 /// micro-shares (1 share = 1_000_000), ``side`` is "buy"/"sell", and ``price``
-/// is effective cents per share after slippage. All other monetary fields are
-/// cents. Notional truncates abs(quantity * price) / 1_000_000 toward zero and
+/// is effective cents per share after slippage. ``reference_price`` is the
+/// unimpacted fill input in cents per share (current close for stops, even on
+/// hold days without a rebalance fill bar). All other monetary fields are cents.
+/// ``reference_notional`` uses reference_price and the final filled quantity
+/// with the same truncation and clamp. Slippage cost is notional minus
+/// reference_notional for buys, reference_notional minus notional for sells,
+/// up to truncation; ``cost`` is commission only.
+/// Notional truncates abs(quantity * price) / 1_000_000 toward zero and
 /// clamps to i64; cash fields use actual balances, including saturation.
 /// ``sequence`` is zero-based engine order, ``period_index`` indexes the supplied
 /// schedule, and ``kind`` is "Rebalance" or "StopExit".

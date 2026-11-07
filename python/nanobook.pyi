@@ -262,8 +262,14 @@ def py_backtest_weights(
     fill_schedule: Optional[List[List[Tuple[str, BarPrices]]]] = None,
     record_executions: bool = False,
 ) -> Dict[str, Any]:
-    """Cash and monetary execution fields are cents; price is cents per share.
+    """Cash and notionals are cents; price and reference_price are cents per share.
 
+    price includes slippage rounding; reference_price is the unimpacted fill
+    input (current close for stops, even without a rebalance fill bar).
+    reference_notional uses the final filled quantity, the same truncation
+    and i64 clamp as notional, and reference_price. Slippage cost in cents is
+    notional - reference_notional for buys, reference_notional - notional
+    for sells, up to truncation. cost is commission only.
     Execution quantity is signed raw micro-shares (1 share = 1_000_000);
     side is "buy" or "sell", kind is "Rebalance" or "StopExit". Notional
     truncates abs(quantity * price) / 1_000_000 toward zero and clamps to i64.
@@ -355,8 +361,14 @@ def backtest_weights(
     period_month_ordinal: Optional[List[int]] = None,
     record_executions: bool = False,
 ) -> Dict[str, Any]:
-    """Cash and monetary execution fields are cents; price is cents per share.
+    """Cash and notionals are cents; price and reference_price are cents per share.
 
+    price includes slippage rounding; reference_price is the unimpacted fill
+    input (current close for stops, even without a rebalance fill bar).
+    reference_notional uses the final filled quantity, the same truncation
+    and i64 clamp as notional, and reference_price. Slippage cost in cents is
+    notional - reference_notional for buys, reference_notional - notional
+    for sells, up to truncation. cost is commission only.
     Execution quantity is signed raw micro-shares (1 share = 1_000_000);
     side is "buy" or "sell", kind is "Rebalance" or "StopExit". Notional
     truncates abs(quantity * price) / 1_000_000 toward zero and clamps to i64.

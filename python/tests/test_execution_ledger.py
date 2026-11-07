@@ -63,7 +63,8 @@ def assert_reconciles(
     for sequence, record in enumerate(records):
         assert record.keys() == {
             "sequence", "period_index", "kind", "symbol", "quantity", "side",
-            "price", "notional", "cost", "cash_delta", "cash_after",
+            "price", "reference_price", "notional", "reference_notional", "cost",
+            "cash_delta", "cash_after",
         }
         assert record["sequence"] == sequence
         assert 0 <= record["period_index"] < len(prices)
@@ -71,6 +72,9 @@ def assert_reconciles(
         assert record["side"] == ("buy" if record["quantity"] > 0 else "sell")
         signed = trunc_div(record["quantity"] * record["price"], SCALE)
         assert record["notional"] == abs(signed)
+        assert record["reference_notional"] == min(
+            abs(record["quantity"] * record["reference_price"]) // SCALE, 2**63 - 1
+        )
         assert record["cost"] == cost.compute_cost(record["notional"])
         assert record["cash_delta"] == -signed - record["cost"]
         cash += record["cash_delta"]
@@ -140,7 +144,10 @@ def test_trimmed_buy_records_filled_quantity_and_legacy_positional_calls() -> No
     record = on["executions"][0]
     assert record["quantity"] == 9 * SCALE
     assert record["price"] == 101
+    assert record["reference_price"] == 100
     assert record["notional"] == 909
+    assert record["reference_notional"] == 900
+    assert record["notional"] - record["reference_notional"] == 9
     assert record["cost"] == 75
     assert record["cash_delta"] == -984
     assert record["cash_after"] == 16
@@ -162,6 +169,62 @@ def test_stop_exit_and_reentry(stop_key: str) -> None:
     assert stops[0]["symbol"] == on["stop_events"][0]["symbol"]
     assert stops[0]["price"] == on["stop_events"][0]["exit_price"]
     assert any(r["period_index"] == 3 and r["kind"] == "Rebalance" for r in on["executions"])
+
+
+def test_reference_prices_and_side_aware_slippage() -> None:
+    """Check known buy and sell references before slippage rounding."""
+    prices = [[("AAA", bar(333))]] * 2
+    cost = nanobook.CostModel(0.0, 50.0, 0)
+    args = ([[("AAA", 0.07)], []], prices, 10_000, cost,
+            nanobook.FillPolicy.SignalBarClose)
+    off = nanobook.backtest_weights(*args)
+    on = nanobook.backtest_weights(*args, record_executions=True)
+    assert_legacy_equal(off, on)
+    assert_reconciles(on, prices, cost)
+    assert len(on["executions"]) == 2
+    buy, sell = on["executions"]
+    assert buy["quantity"] == 2 * SCALE
+    assert buy["reference_price"] == 333
+    assert buy["price"] == 335
+    assert buy["reference_notional"] == 666
+    assert buy["notional"] == 670
+    assert buy["notional"] - buy["reference_notional"] == 4
+    assert buy["cost"] == 0
+    assert sell["quantity"] == -2 * SCALE
+    assert sell["reference_price"] == 333
+    assert sell["price"] == 331
+    assert sell["reference_notional"] == 666
+    assert sell["notional"] == 662
+    assert sell["reference_notional"] - sell["notional"] == 4
+    assert sell["cost"] == 0
+
+
+@pytest.mark.parametrize("hold_day", [False, True])
+def test_stop_reference_is_close_with_or_without_rebalance_fill_bar(hold_day: bool) -> None:
+    """Check that a zero-slippage stop records the close even on a hold day."""
+    stop_bar = nanobook.BarPrices(open=10_000, high=10_000, low=9_000, close=9_000)
+    prices = [[("AAA", bar(10_000))], [("AAA", stop_bar)]]
+    fills = [[("AAA", bar(10_000))], [] if hold_day else [("AAA", bar(10_000))]]
+    args = ([[("AAA", 1.0)]] * 2, prices, 10_000,
+            nanobook.CostModel.zero(), nanobook.FillPolicy.NextBarOpen)
+    kwargs = {"stop_cfg": {"fixed_stop_pct": 0.05}, "fill_schedule": fills}
+    off = nanobook.backtest_weights(*args, **kwargs)
+    on = nanobook.backtest_weights(*args, **kwargs, record_executions=True)
+    assert_legacy_equal(off, on)
+    assert_reconciles(on, prices, args[3])
+    assert on["skipped_rebalances"] == ([1] if hold_day else [])
+    assert len(on["stop_events"]) == 1
+    assert len(on["executions"]) == 2
+    buy, stop = on["executions"]
+    assert buy["kind"] == "Rebalance"
+    assert buy["quantity"] == SCALE
+    assert stop["kind"] == "StopExit"
+    assert stop["period_index"] == 1
+    assert stop["quantity"] == -SCALE
+    assert stop["reference_price"] == stop["price"] == 9_000
+    assert stop["reference_price"] != 10_000
+    assert stop["reference_notional"] == stop["notional"] == 9_000
+    assert stop["reference_notional"] - stop["notional"] == 0
 
 
 @pytest.mark.parametrize("weights", [[], [[("AAA", 0.0)]], [[("AAA", 1.0)]], [[("AAA", -0.5)]]])

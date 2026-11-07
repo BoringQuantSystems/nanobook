@@ -1079,6 +1079,13 @@ mod tests {
             let signed_notional = (record.quantity.raw() as i128 * record.price as i128
                 / Shares::SCALE as i128) as i64;
             assert_eq!(record.notional, signed_notional.abs());
+            assert_eq!(
+                record.reference_notional,
+                (record.quantity.raw().unsigned_abs() as i128
+                    * record.reference_price.unsigned_abs() as i128
+                    / Shares::SCALE as i128)
+                    .clamp(0, i64::MAX as i128) as i64
+            );
             assert_eq!(record.cost, cost.compute_cost(record.notional));
             assert_eq!(record.cash_delta, -signed_notional - record.cost);
             cash += record.cash_delta;
@@ -1184,6 +1191,77 @@ mod tests {
                     }
                 }
             }
+        }
+    }
+
+    #[test]
+    fn execution_records_use_stop_close_with_and_without_rebalance_fill_bars() {
+        let aaa = Symbol::new("AAA");
+        let weights = vec![vec![(aaa, 1.0)]; 2];
+        let mut stop_bar = bar(10_000);
+        stop_bar.close = 9_000;
+        stop_bar.low = 9_000;
+        let prices = vec![vec![(aaa, bar(10_000))], vec![(aaa, stop_bar)]];
+        for hold_day in [false, true] {
+            let options = BacktestBridgeOptions {
+                stop_cfg: Some(BacktestStopConfig {
+                    fixed_stop_pct: Some(0.05),
+                    ..Default::default()
+                }),
+                fill_schedule: Some(vec![
+                    vec![(aaa, bar(10_000))],
+                    if hold_day {
+                        Vec::new()
+                    } else {
+                        vec![(aaa, bar(10_000))]
+                    },
+                ]),
+                ..Default::default()
+            };
+            let off = backtest_weights_with_options(
+                &weights,
+                &prices,
+                10_000,
+                CostModel::zero(),
+                FillPolicy::NextBarOpen,
+                252.0,
+                0.0,
+                options.clone(),
+            );
+            let on = backtest_weights_with_options(
+                &weights,
+                &prices,
+                10_000,
+                CostModel::zero(),
+                FillPolicy::NextBarOpen,
+                252.0,
+                0.0,
+                BacktestBridgeOptions {
+                    record_executions: true,
+                    ..options
+                },
+            );
+            assert_legacy_outputs_equal(&off, &on);
+            assert_bridge_execution_reconciliation(&on, &prices, CostModel::zero());
+            assert_eq!(
+                on.skipped_rebalances,
+                if hold_day { vec![1] } else { vec![] }
+            );
+            assert_eq!(on.stop_events.len(), 1);
+            let records = on.executions.as_ref().unwrap();
+            assert_eq!(records.len(), 2);
+            assert_eq!(records[0].kind, ExecutionKind::Rebalance);
+            assert_eq!(records[0].quantity.raw(), 1_000_000);
+            let stop = &records[1];
+            assert_eq!(stop.kind, ExecutionKind::StopExit);
+            assert_eq!(stop.period_index, 1);
+            assert_eq!(stop.quantity.raw(), -1_000_000);
+            assert_eq!(stop.reference_price, 9_000);
+            assert_ne!(stop.reference_price, stop_bar.open);
+            assert_eq!(stop.price, 9_000);
+            assert_eq!(stop.reference_notional, 9_000);
+            assert_eq!(stop.reference_notional, stop.notional);
+            assert_eq!(stop.reference_notional - stop.notional, 0);
         }
     }
 
