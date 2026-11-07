@@ -186,12 +186,30 @@ fn parse_bar_prices_schedule(
 ///         behaviour is unchanged (legacy next-period fill). Ignored by
 ///         ``SignalBarClose``. Must be the same length as ``weight_schedule``
 ///         or a ``ValueError`` is raised.
+///     record_executions: Record actual successful fills and period-close cash.
+///         Defaults to False. Disabled ledgers are None; enabled empty runs
+///         return empty lists. Execution quantity is signed raw micro-shares
+///         (1 share = 1_000_000), with side "buy" or "sell". Price is effective
+///         cents per share; reference_price is the unimpacted fill input in
+///         cents per share (current close for stops, even on hold days without
+///         a rebalance fill bar). Notional, reference_notional, cost, cash_delta
+///         and cash_after are cents. Reference notional uses reference_price
+///         and the final filled quantity with the same truncation and clamp.
+///         Slippage cost is notional - reference_notional for buys and
+///         reference_notional - notional for sells, up to truncation.
+///         Cost is commission only.
+///         Notional truncates abs(quantity * price) / 1_000_000 toward zero,
+///         clamped to i64. Cash fields reflect actual engine cash, including
+///         saturation. Sequence is zero-based execution order; period_index
+///         indexes the supplied schedule, including for next-bar fill policies.
+///         Kind is "Rebalance" or "StopExit".
 ///
 /// Returns a dict with keys:
 ///     ``returns``, ``equity_curve``, ``final_cash``, ``metrics``, ``holdings``,
-///     ``symbol_returns``, ``stop_events``.
+///     ``symbol_returns``, ``stop_events``, ``skipped_rebalances``,
+///     ``initial_cash``, ``executions``, ``cash_snapshots``.
 #[pyfunction]
-#[pyo3(signature = (weight_schedule, price_schedule, initial_cash, cost_model, fill_policy, periods_per_year=252.0, risk_free=0.0, stop_cfg=None, quantity_step=None, min_order_value=None, no_trade_band_bps=None, max_trades_per_rebalance=None, max_order_value=None, max_trades_per_day=None, max_trades_per_month=None, max_traded_value_per_month=None, period_day_ordinal=None, period_month_ordinal=None, fill_schedule=None))]
+#[pyo3(signature = (weight_schedule, price_schedule, initial_cash, cost_model, fill_policy, periods_per_year=252.0, risk_free=0.0, stop_cfg=None, quantity_step=None, min_order_value=None, no_trade_band_bps=None, max_trades_per_rebalance=None, max_order_value=None, max_trades_per_day=None, max_trades_per_month=None, max_traded_value_per_month=None, period_day_ordinal=None, period_month_ordinal=None, fill_schedule=None, record_executions=false))]
 #[allow(clippy::too_many_arguments)]
 pub fn backtest_weights(
     py: Python<'_>,
@@ -214,6 +232,7 @@ pub fn backtest_weights(
     period_day_ordinal: Option<Vec<i64>>,
     period_month_ordinal: Option<Vec<i64>>,
     fill_schedule: Option<Vec<Vec<(String, PyBarPrices)>>>,
+    record_executions: bool,
 ) -> PyResult<Py<PyAny>> {
     // Convert Python types to Rust types.
     let rust_weights = parse_symbol_schedule(&weight_schedule)?;
@@ -287,6 +306,7 @@ pub fn backtest_weights(
     }
 
     let options = BacktestBridgeOptions {
+        record_executions,
         stop_cfg: parse_stop_cfg(stop_cfg)?,
         quantity_step,
         min_order_value,
@@ -321,6 +341,44 @@ pub fn backtest_weights(
 
     // Convert result to Python dict.
     let dict = PyDict::new(py);
+    dict.set_item("initial_cash", result.initial_cash)?;
+    dict.set_item("cash_snapshots", result.cash_snapshots)?;
+    if let Some(executions) = result.executions {
+        let records = PyList::empty(py);
+        for execution in executions {
+            let item = PyDict::new(py);
+            item.set_item("sequence", execution.sequence)?;
+            item.set_item("period_index", execution.period_index)?;
+            item.set_item(
+                "kind",
+                match execution.kind {
+                    nanobook::portfolio::ExecutionKind::Rebalance => "Rebalance",
+                    nanobook::portfolio::ExecutionKind::StopExit => "StopExit",
+                },
+            )?;
+            item.set_item("symbol", execution.symbol.to_string())?;
+            item.set_item("quantity", execution.quantity.raw())?;
+            item.set_item(
+                "side",
+                if execution.quantity.is_positive() {
+                    "buy"
+                } else {
+                    "sell"
+                },
+            )?;
+            item.set_item("price", execution.price)?;
+            item.set_item("reference_price", execution.reference_price)?;
+            item.set_item("notional", execution.notional)?;
+            item.set_item("reference_notional", execution.reference_notional)?;
+            item.set_item("cost", execution.cost)?;
+            item.set_item("cash_delta", execution.cash_delta)?;
+            item.set_item("cash_after", execution.cash_after)?;
+            records.append(item)?;
+        }
+        dict.set_item("executions", records)?;
+    } else {
+        dict.set_item("executions", py.None())?;
+    }
     dict.set_item("returns", result.returns)?;
     dict.set_item("equity_curve", result.equity_curve)?;
     dict.set_item("final_cash", result.final_cash)?;
@@ -419,6 +477,12 @@ pub fn py_decompose_backtest(
 }
 
 /// Build a reporting payload from ``backtest_weights`` output.
+///
+/// Read returns, equity in cents, holdings, and symbol returns from the result.
+/// Use ``rolling_window`` periods and ``periods_per_year`` to annualize Sharpe.
+/// Group months in 21-period blocks. Return monthly returns, rolling Sharpe, trade counts,
+/// and drawdown events. Missing required fields raise ``ValueError``.
+/// Legacy results may omit ``initial_cash``; use their first equity value.
 #[pyfunction]
 #[pyo3(signature = (backtest_result, rolling_window=63, periods_per_year=252))]
 pub fn py_tear_sheet(
@@ -448,6 +512,12 @@ pub fn py_tear_sheet(
     let symbol_returns = parse_symbol_schedule(&symbol_returns_raw)?;
 
     let result = backtest_bridge::BacktestBridgeResult {
+        initial_cash: backtest_result
+            .get_item("initial_cash")?
+            .and_then(|v| v.extract().ok())
+            .unwrap_or_else(|| equity_curve.first().copied().unwrap_or(0)),
+        executions: None,
+        cash_snapshots: None,
         returns,
         equity_curve,
         final_cash: backtest_result
@@ -490,8 +560,25 @@ pub fn py_tear_sheet(
 }
 
 /// Backward-compatible alias for older callers using ``py_backtest_weights``.
+///
+/// ``record_executions=False`` preserves the default disabled ledger (None).
+/// When enabled, ``executions`` contains actual fills and ``cash_snapshots``
+/// contains period-close cash aligned with returns. Empty runs yield empty lists.
+/// ``initial_cash`` is always present. Execution ``quantity`` is signed raw
+/// micro-shares (1 share = 1_000_000), ``side`` is "buy"/"sell", and ``price``
+/// is effective cents per share after slippage. ``reference_price`` is the
+/// unimpacted fill input in cents per share (current close for stops, even on
+/// hold days without a rebalance fill bar). All other monetary fields are cents.
+/// ``reference_notional`` uses reference_price and the final filled quantity
+/// with the same truncation and clamp. Slippage cost is notional minus
+/// reference_notional for buys, reference_notional minus notional for sells,
+/// up to truncation; ``cost`` is commission only.
+/// Notional truncates abs(quantity * price) / 1_000_000 toward zero and
+/// clamps to i64; cash fields use actual balances, including saturation.
+/// ``sequence`` is zero-based engine order, ``period_index`` indexes the supplied
+/// schedule, and ``kind`` is "Rebalance" or "StopExit".
 #[pyfunction]
-#[pyo3(signature = (weight_schedule, price_schedule, initial_cash, cost_model, fill_policy, periods_per_year=252.0, risk_free=0.0, stop_cfg=None, quantity_step=None, min_order_value=None, no_trade_band_bps=None, max_trades_per_rebalance=None, max_order_value=None, max_trades_per_day=None, max_trades_per_month=None, max_traded_value_per_month=None, period_day_ordinal=None, period_month_ordinal=None, fill_schedule=None))]
+#[pyo3(signature = (weight_schedule, price_schedule, initial_cash, cost_model, fill_policy, periods_per_year=252.0, risk_free=0.0, stop_cfg=None, quantity_step=None, min_order_value=None, no_trade_band_bps=None, max_trades_per_rebalance=None, max_order_value=None, max_trades_per_day=None, max_trades_per_month=None, max_traded_value_per_month=None, period_day_ordinal=None, period_month_ordinal=None, fill_schedule=None, record_executions=false))]
 #[allow(clippy::too_many_arguments)]
 pub fn py_backtest_weights(
     py: Python<'_>,
@@ -514,6 +601,7 @@ pub fn py_backtest_weights(
     period_day_ordinal: Option<Vec<i64>>,
     period_month_ordinal: Option<Vec<i64>>,
     fill_schedule: Option<Vec<Vec<(String, PyBarPrices)>>>,
+    record_executions: bool,
 ) -> PyResult<Py<PyAny>> {
     backtest_weights(
         py,
@@ -536,6 +624,7 @@ pub fn py_backtest_weights(
         period_day_ordinal,
         period_month_ordinal,
         fill_schedule,
+        record_executions,
     )
 }
 

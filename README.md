@@ -188,6 +188,31 @@ Portfolio tools include fixed-parameter EWMA-style GARCH forecasting,
 optimizers (min-variance, max-Sharpe, risk-parity, inverse CVaR, inverse
 CDaR), and trailing/fixed stop-loss simulation — all accessible from Python.
 
+To inspect actual backtest fills, pass `record_executions=True` to
+`backtest_weights` (or `py_backtest_weights`). The result always includes
+`initial_cash` in cents, `executions`, and `cash_snapshots`. The two ledgers
+are `None` by default; enabled empty or rejected runs have empty ledgers.
+Cash snapshots are period-close balances aligned with `returns` and `holdings`.
+
+Each execution contains `sequence` (zero-based engine order), `period_index`
+(index into your schedule, including with next-bar policies), `kind`
+(`Rebalance` or `StopExit`), `symbol`, `quantity`, `side`, `price`,
+`reference_price`, `notional`, `reference_notional`, `cost`, `cash_delta`, and
+`cash_after`. Quantity is signed raw micro-shares
+(1 share = 1,000,000; positive buys, negative sells), and `side` is `buy` or
+`sell`. Price is effective cents per share after slippage; `reference_price`
+is the unimpacted input price in cents per share (the current bar close for
+stop exits, including on hold days without a rebalance fill bar). All other
+money fields are cents. Notional truncates `abs(quantity * price) / 1_000_000`
+toward zero and clamps to i64, as in the engine. Cash fields use actual
+balances, including saturation at integer limits. Records contain the
+quantity actually filled after affordability trimming; skipped fills produce
+no record. Reference notional uses the same truncation and clamp with
+`reference_price` and the final filled quantity. Side-aware slippage cost is
+`notional - reference_notional` for buys and `reference_notional - notional`
+for sells, in cents, up to truncation; `cost` is commission only.
+Unpriced holdings still raise an error in Python.
+
 ### Optimizer Example
 
 ```python

@@ -218,7 +218,68 @@ def py_rolling_max_drawdown(equity: List[float], window: int) -> List[float]: ..
 def sweep_equal_weight(price_series: List[List[Tuple[str, int]]], initial_cash: int, cost_model: CostModel, periods_per_year: float = 252.0, risk_free: float = 0.0) -> BacktestResult: ...
 def run_backtest(strategy: Callable[[int, Dict[str, int], Portfolio], List[Tuple[str, float]]], price_series: List[Dict[str, int]], initial_cash: int, cost_model: CostModel, periods_per_year: float = 252.0, risk_free: float = 0.0) -> BacktestResult: ...
 def parse_itch(path: str) -> List[Tuple[str, Event]]: ...
-def py_backtest_weights(weight_schedule: List[List[Tuple[str, float]]], price_schedule: List[List[Tuple[str, int]]], initial_cash: int, cost_bps: int, periods_per_year: float = 252.0, risk_free: float = 0.0, stop_cfg: Optional[Dict[str, Any]] = None, fill_schedule: Optional[List[List[Tuple[str, Any]]]] = None) -> Dict[str, Any]: ...
+class BarPrices:
+    def __init__(self, open: int, high: int, low: int, close: int) -> None: ...
+    @property
+    def open(self) -> int: ...
+    @property
+    def high(self) -> int: ...
+    @property
+    def low(self) -> int: ...
+    @property
+    def close(self) -> int: ...
+
+class FillPolicy:
+    SignalBarClose: "FillPolicy"
+    NextBarOpen: "FillPolicy"
+    NextBarTypical: "FillPolicy"
+    @staticmethod
+    def signal_bar_close() -> "FillPolicy": ...
+    @staticmethod
+    def next_bar_open() -> "FillPolicy": ...
+    @staticmethod
+    def next_bar_typical() -> "FillPolicy": ...
+
+def py_backtest_weights(
+    weight_schedule: List[List[Tuple[str, float]]],
+    price_schedule: List[List[Tuple[str, BarPrices]]],
+    initial_cash: int,
+    cost_model: CostModel,
+    fill_policy: FillPolicy,
+    periods_per_year: float = 252.0,
+    risk_free: float = 0.0,
+    stop_cfg: Optional[Dict[str, Any]] = None,
+    quantity_step: Optional[int] = None,
+    min_order_value: Optional[int] = None,
+    no_trade_band_bps: Optional[float] = None,
+    max_trades_per_rebalance: Optional[int] = None,
+    max_order_value: Optional[int] = None,
+    max_trades_per_day: Optional[int] = None,
+    max_trades_per_month: Optional[int] = None,
+    max_traded_value_per_month: Optional[int] = None,
+    period_day_ordinal: Optional[List[int]] = None,
+    period_month_ordinal: Optional[List[int]] = None,
+    fill_schedule: Optional[List[List[Tuple[str, BarPrices]]]] = None,
+    record_executions: bool = False,
+) -> Dict[str, Any]:
+    """Cash and notionals are cents; price and reference_price are cents per share.
+
+    price includes slippage rounding; reference_price is the unimpacted fill
+    input (current close for stops, even without a rebalance fill bar).
+    reference_notional uses the final filled quantity, the same truncation
+    and i64 clamp as notional, and reference_price. Slippage cost in cents is
+    notional - reference_notional for buys, reference_notional - notional
+    for sells, up to truncation. cost is commission only.
+    Execution quantity is signed raw micro-shares (1 share = 1_000_000);
+    side is "buy" or "sell", kind is "Rebalance" or "StopExit". Notional
+    truncates abs(quantity * price) / 1_000_000 toward zero and clamps to i64.
+    Cash fields reflect actual cash changes, including saturation. Sequence
+    is zero-based engine order; period_index indexes the supplied schedule.
+    initial_cash is always present. executions and cash_snapshots are None
+    when disabled, empty lists for enabled empty/rejected runs. Snapshots
+    are period-close cash, aligned with returns and holdings.
+    """
+    ...
 def py_decompose_backtest(weight_schedule: List[List[Tuple[str, float]]], return_schedule: List[List[Tuple[str, float]]]) -> Dict[str, Any]: ...
 def py_tear_sheet(backtest_result: Dict[str, Any], rolling_window: int = 63, periods_per_year: int = 252) -> Dict[str, Any]: ...
 
@@ -277,7 +338,47 @@ def py_optimize_hrp(returns_matrix: List[List[float]], symbols: List[str]) -> Di
 
 # v0.9 — Clean aliases (preferred for new callers)
 def capabilities() -> List[str]: ...
-def backtest_weights(weight_schedule: List[List[Tuple[str, float]]], price_schedule: List[List[Tuple[str, int]]], initial_cash: int, cost_bps: int, periods_per_year: float = 252.0, risk_free: float = 0.0, stop_cfg: Optional[Dict[str, Any]] = None, fill_schedule: Optional[List[List[Tuple[str, Any]]]] = None) -> Dict[str, Any]: ...
+def backtest_weights(
+    weight_schedule: List[List[Tuple[str, float]]],
+    price_schedule: List[List[Tuple[str, BarPrices]]],
+    initial_cash: int,
+    cost_model: CostModel,
+    fill_policy: FillPolicy,
+    periods_per_year: float = 252.0,
+    risk_free: float = 0.0,
+    stop_cfg: Optional[Dict[str, Any]] = None,
+    fill_schedule: Optional[List[List[Tuple[str, BarPrices]]]] = None,
+    *,
+    quantity_step: Optional[int] = None,
+    min_order_value: Optional[int] = None,
+    no_trade_band_bps: Optional[float] = None,
+    max_trades_per_rebalance: Optional[int] = None,
+    max_order_value: Optional[int] = None,
+    max_trades_per_day: Optional[int] = None,
+    max_trades_per_month: Optional[int] = None,
+    max_traded_value_per_month: Optional[int] = None,
+    period_day_ordinal: Optional[List[int]] = None,
+    period_month_ordinal: Optional[List[int]] = None,
+    record_executions: bool = False,
+) -> Dict[str, Any]:
+    """Cash and notionals are cents; price and reference_price are cents per share.
+
+    price includes slippage rounding; reference_price is the unimpacted fill
+    input (current close for stops, even without a rebalance fill bar).
+    reference_notional uses the final filled quantity, the same truncation
+    and i64 clamp as notional, and reference_price. Slippage cost in cents is
+    notional - reference_notional for buys, reference_notional - notional
+    for sells, up to truncation. cost is commission only.
+    Execution quantity is signed raw micro-shares (1 share = 1_000_000);
+    side is "buy" or "sell", kind is "Rebalance" or "StopExit". Notional
+    truncates abs(quantity * price) / 1_000_000 toward zero and clamps to i64.
+    Cash fields reflect actual cash changes, including saturation. Sequence
+    is zero-based engine order; period_index indexes the supplied schedule.
+    initial_cash is always present. executions and cash_snapshots are None
+    when disabled, empty lists for enabled empty/rejected runs. Snapshots
+    are period-close cash, aligned with returns and holdings.
+    """
+    ...
 def decompose_backtest(weight_schedule: List[List[Tuple[str, float]]], return_schedule: List[List[Tuple[str, float]]]) -> Dict[str, Any]: ...
 def tear_sheet(backtest_result: Dict[str, Any], rolling_window: int = 63, periods_per_year: int = 252) -> Dict[str, Any]: ...
 def sma(close: List[float], period: int) -> List[float]: ...

@@ -40,6 +40,55 @@ pub use strategy::{BacktestResult, EqualWeight, Strategy, run_backtest};
 use crate::types::Symbol;
 use rustc_hash::FxHashMap;
 
+/// Why a successful fill was executed.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ExecutionKind {
+    /// Fill made while rebalancing to target weights.
+    #[default]
+    Rebalance,
+    /// Fill made to close a position after a stop triggers.
+    StopExit,
+}
+
+/// An actual fill, in engine execution order.
+///
+/// Quantity is signed micro-shares (`Shares::SCALE` per share). Price is the
+/// effective cents per share after slippage rounding; reference price is the
+/// unimpacted input to the fill (the current close for stop exits). All other
+/// monetary fields are cents. Notional is `abs(quantity * price) / Shares::SCALE`,
+/// truncated toward zero and clamped to i64, as used by the cost model.
+/// Reference notional applies the same arithmetic to reference price and the
+/// final filled quantity. Slippage cost is `notional - reference_notional` for
+/// buys and `reference_notional - notional` for sells, up to truncation.
+/// Cash delta is the actual cash change, including costs and cash saturation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExecutionRecord {
+    /// Zero-based fill sequence in engine execution order across the run.
+    pub sequence: u64,
+    /// Index into the backtest weight and price schedules.
+    pub period_index: usize,
+    /// Reason the fill was executed.
+    pub kind: ExecutionKind,
+    /// Symbol whose position was filled.
+    pub symbol: Symbol,
+    /// Signed micro-shares actually filled after any affordability trim.
+    pub quantity: Shares,
+    /// Effective price in cents per share after slippage rounding.
+    pub price: i64,
+    /// Unimpacted input price in cents per share, before slippage.
+    pub reference_price: i64,
+    /// Absolute fill notional in cents, truncated and clamped for the cost model.
+    pub notional: i64,
+    /// Absolute notional at reference price for the final filled quantity.
+    pub reference_notional: i64,
+    /// Commission in cents charged for this fill; excludes slippage.
+    pub cost: i64,
+    /// Actual signed cash change in cents, including costs and saturation.
+    pub cash_delta: i64,
+    /// Cash balance in cents immediately after the fill.
+    pub cash_after: i64,
+}
+
 /// Serde helper for `FxHashMap<Symbol, Position>` — serializes as `Vec<(Symbol, Position)>`.
 #[cfg(feature = "serde")]
 mod serde_positions {
@@ -151,6 +200,13 @@ pub struct Portfolio {
     /// filled because cash was insufficient. Cumulative; not persisted.
     #[cfg_attr(feature = "serde", serde(skip, default))]
     trimmed_shortfall_cents: i64,
+    /// Transient run ledger: absent unless explicitly enabled by the bridge.
+    #[cfg_attr(feature = "serde", serde(skip, default))]
+    executions: Option<Vec<ExecutionRecord>>,
+    #[cfg_attr(feature = "serde", serde(skip, default))]
+    execution_period_index: usize,
+    #[cfg_attr(feature = "serde", serde(skip, default))]
+    execution_kind: ExecutionKind,
 }
 
 /// Serde default for `Portfolio::quantity_step`: whole shares, so JSON saved
@@ -191,7 +247,26 @@ impl Portfolio {
             last_rebalance_notional: 0,
             trimmed_fill_count: 0,
             trimmed_shortfall_cents: 0,
+            executions: None,
+            execution_period_index: 0,
+            execution_kind: ExecutionKind::Rebalance,
         }
+    }
+
+    /// Enable a fresh ledger for successful fills.
+    pub(crate) fn enable_execution_recording(&mut self) {
+        self.executions = Some(Vec::new());
+    }
+
+    /// Tag subsequent fills with their backtest period and execution reason.
+    pub(crate) fn set_execution_context(&mut self, period_index: usize, kind: ExecutionKind) {
+        self.execution_period_index = period_index;
+        self.execution_kind = kind;
+    }
+
+    /// Take the recorded fills, leaving execution recording disabled.
+    pub(crate) fn take_executions(&mut self) -> Option<Vec<ExecutionRecord>> {
+        self.executions.take()
     }
 
     /// Builder-style variant of [`Portfolio::new`] with an explicit sizing step
@@ -850,13 +925,17 @@ impl Portfolio {
 
     /// Execute a fill: update position, deduct cost, adjust cash.
     ///
-    /// `qty` is signed micro-shares (see [`Shares`]).
+    /// `qty` is signed micro-shares (see [`Shares`]); `price` is unimpacted
+    /// cents per share. Apply slippage before computing notional and costs.
     ///
     /// Buys never spend more cash than the account holds. An unaffordable buy
     /// is truncated to the largest `quantity_step` multiple whose notional
     /// plus [`CostModel::compute_cost`] fits in `cash`. A quantity that snaps
     /// to zero is skipped entirely (no zero-notional fill that would still
-    /// charge `min_commission`). Sells are never truncated — they raise cash.
+    /// charge `min_commission`). Sells are never truncated. Skip a sell if
+    /// cash and proceeds cannot cover its commission.
+    /// Record successful fills only, with the current execution context and
+    /// actual cash change in cents, including saturation.
     fn execute_fill(&mut self, symbol: Symbol, qty: Shares, price: i64) {
         if qty.is_zero() {
             return;
@@ -930,7 +1009,24 @@ impl Portfolio {
             .or_insert_with(|| Position::new(symbol));
         pos.apply_fill(qty, effective_price);
 
+        let cash_before = self.cash;
         self.cash = self.cash.saturating_sub(cash_delta.saturating_add(cost));
+        if let Some(executions) = &mut self.executions {
+            executions.push(ExecutionRecord {
+                sequence: executions.len() as u64,
+                period_index: self.execution_period_index,
+                kind: self.execution_kind,
+                symbol,
+                quantity: qty,
+                price: effective_price,
+                reference_price: price,
+                notional,
+                reference_notional: notional_of(qty, price),
+                cost,
+                cash_delta: self.cash - cash_before,
+                cash_after: self.cash,
+            });
+        }
         debug_assert!(self.cash >= 0);
     }
 }
@@ -1071,6 +1167,271 @@ pub struct PortfolioSnapshot {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Reconcile ordinary fills with commission, starting cash in cents, and positions.
+    fn assert_execution_cash_and_positions(portfolio: &Portfolio, initial_cash: i64) {
+        let mut cash = initial_cash;
+        let mut quantities = FxHashMap::<Symbol, i64>::default();
+        for (sequence, record) in portfolio.executions.as_ref().unwrap().iter().enumerate() {
+            assert_eq!(record.sequence, sequence as u64);
+            assert!(!record.quantity.is_zero());
+            let signed_notional = (record.quantity.raw() as i128 * record.price as i128
+                / Shares::SCALE as i128) as i64;
+            assert_eq!(record.notional, signed_notional.abs());
+            assert_eq!(
+                record.reference_notional,
+                (record.quantity.raw().unsigned_abs() as i128
+                    * record.reference_price.unsigned_abs() as i128
+                    / Shares::SCALE as i128)
+                    .clamp(0, i64::MAX as i128) as i64
+            );
+            assert_eq!(
+                record.cost,
+                portfolio.cost_model.compute_cost(record.notional)
+            );
+            assert_eq!(record.cash_delta, -signed_notional - record.cost);
+            cash += record.cash_delta;
+            assert_eq!(record.cash_after, cash);
+            *quantities.entry(record.symbol).or_default() += record.quantity.raw();
+        }
+        assert_eq!(cash, portfolio.cash());
+        for (symbol, position) in portfolio.positions() {
+            assert_eq!(
+                quantities.remove(symbol).unwrap_or(0),
+                position.quantity.raw()
+            );
+        }
+        assert!(quantities.is_empty());
+    }
+
+    /// Assert recording preserves cash, return bits, trimming counters, and positions.
+    fn assert_recording_preserves_portfolio(off: &Portfolio, on: &Portfolio) {
+        assert_eq!(off.cash(), on.cash());
+        assert_eq!(off.equity_curve(), on.equity_curve());
+        assert_eq!(
+            off.returns()
+                .iter()
+                .map(|v| v.to_bits())
+                .collect::<Vec<_>>(),
+            on.returns().iter().map(|v| v.to_bits()).collect::<Vec<_>>()
+        );
+        assert_eq!(off.trimmed_fill_count(), on.trimmed_fill_count());
+        assert_eq!(off.trimmed_shortfall_cents(), on.trimmed_shortfall_cents());
+        assert_eq!(off.positions.len(), on.positions.len());
+        for (symbol, position) in off.positions() {
+            let recorded = on.position(symbol).unwrap();
+            assert_eq!(position.quantity, recorded.quantity);
+            assert_eq!(position.avg_entry_price, recorded.avg_entry_price);
+            assert_eq!(position.realized_pnl, recorded.realized_pnl);
+            assert_eq!(position.total_cost, recorded.total_cost);
+        }
+        assert!(off.executions.is_none());
+    }
+
+    /// Assert buy and sell records retain references and side-aware slippage costs.
+    #[test]
+    fn execution_records_capture_reference_prices_and_side_aware_slippage() {
+        let symbol = Symbol::new("AAA");
+        let cost = CostModel {
+            slippage_bps: 50.0,
+            ..CostModel::zero()
+        };
+        let mut off = Portfolio::new(10_000, cost);
+        let mut on = off.clone();
+        on.enable_execution_recording();
+        for quantity in [Shares::from_whole(2), Shares::from_whole(-2)] {
+            off.execute_fill(symbol, quantity, 333);
+            on.execute_fill(symbol, quantity, 333);
+            assert_recording_preserves_portfolio(&off, &on);
+        }
+        let records = on.executions.as_ref().unwrap();
+        assert_eq!(records.len(), 2);
+        let buy = &records[0];
+        assert_eq!(buy.reference_price, 333);
+        assert_eq!(buy.price, 335);
+        assert_eq!(buy.reference_notional, 666);
+        assert_eq!(buy.notional, 670);
+        assert_eq!(buy.notional - buy.reference_notional, 4);
+        assert_eq!(buy.cost, 0);
+        let sell = &records[1];
+        assert_eq!(sell.reference_price, 333);
+        assert_eq!(sell.price, 331);
+        assert_eq!(sell.reference_notional, 666);
+        assert_eq!(sell.notional, 662);
+        assert_eq!(sell.reference_notional - sell.notional, 4);
+        assert_eq!(sell.cost, 0);
+        assert_execution_cash_and_positions(&on, 10_000);
+    }
+
+    /// Assert reference notional truncates after fractional quantity rounding.
+    #[test]
+    fn execution_records_truncate_fractional_reference_notional_after_quantity_rounding() {
+        let symbol = Symbol::new("AAA");
+        let cost = CostModel {
+            slippage_bps: 50.0,
+            ..CostModel::zero()
+        };
+        let mut off = Portfolio::with_quantity_step(10_000, cost, 1_000);
+        let mut on = off.clone();
+        on.enable_execution_recording();
+        off.rebalance_simple(&[(symbol, 0.0412)], &[(symbol, 333)]);
+        on.rebalance_simple(&[(symbol, 0.0412)], &[(symbol, 333)]);
+        assert_recording_preserves_portfolio(&off, &on);
+        let records = on.executions.as_ref().unwrap();
+        assert_eq!(records.len(), 1);
+        let record = &records[0];
+        assert_eq!(412 * Shares::SCALE / 333, 1_237_237);
+        assert_eq!(record.quantity.raw(), 1_237_000);
+        assert_eq!(record.reference_price, 333);
+        assert_eq!(record.price, 335);
+        assert_eq!(record.reference_notional, 411);
+        assert_eq!(record.notional, 414);
+        assert_eq!(record.notional - record.reference_notional, 3);
+        assert_execution_cash_and_positions(&on, 10_000);
+    }
+
+    /// Assert extreme sells clamp both notionals and the resulting cash balance.
+    #[test]
+    fn execution_records_clamp_reference_and_effective_notionals() {
+        let symbol = Symbol::new("AAA");
+        let mut off = Portfolio::new(0, CostModel::zero());
+        let mut on = off.clone();
+        on.enable_execution_recording();
+        off.execute_fill(symbol, Shares::from_raw(-i64::MAX), i64::MAX);
+        on.execute_fill(symbol, Shares::from_raw(-i64::MAX), i64::MAX);
+        assert_recording_preserves_portfolio(&off, &on);
+        let records = on.executions.as_ref().unwrap();
+        assert_eq!(records.len(), 1);
+        let record = &records[0];
+        assert_eq!(record.quantity.raw(), -i64::MAX);
+        assert_eq!(record.reference_price, i64::MAX);
+        assert_eq!(record.price, i64::MAX);
+        assert_eq!(record.reference_notional, i64::MAX);
+        assert_eq!(record.notional, i64::MAX);
+        assert_eq!(record.cash_delta, i64::MAX);
+        assert_eq!(record.cash_after, i64::MAX);
+    }
+
+    /// Assert whole and fractional trimmed buys preserve fills and reconcile cash.
+    #[test]
+    fn execution_records_preserve_fills_and_reconcile_trimmed_quantities() {
+        let symbol = Symbol::new("AAA");
+        for step in [Shares::SCALE, 1_000] {
+            let cost = CostModel {
+                commission_bps: 10.0,
+                slippage_bps: 100.0,
+                min_commission: 75,
+            };
+            let mut off = Portfolio::with_quantity_step(1_000, cost, step);
+            let mut on = off.clone();
+            on.enable_execution_recording();
+            for (period, (quantity, price)) in [
+                (Shares::from_whole(10), 100),
+                (Shares::from_whole(-3), 110),
+                (Shares::ZERO, 110),
+                (Shares::from_raw(123_000), 103),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                on.set_execution_context(period, ExecutionKind::Rebalance);
+                off.execute_fill(symbol, quantity, price);
+                on.execute_fill(symbol, quantity, price);
+                off.record_return(&[(symbol, price)]);
+                on.record_return(&[(symbol, price)]);
+                assert_recording_preserves_portfolio(&off, &on);
+            }
+            let records = on.executions.as_ref().unwrap();
+            assert_eq!(records.len(), 3);
+            assert_eq!(on.trimmed_fill_count(), 1);
+            let trimmed = records[0].quantity.raw();
+            assert!(trimmed < 10 * Shares::SCALE);
+            assert_eq!(trimmed % step, 0);
+            assert_eq!(records[0].price, 101);
+            assert_eq!(records[0].reference_price, 100);
+            if step == Shares::SCALE {
+                assert_eq!(trimmed, 9_000_000);
+                assert_eq!(records[0].reference_notional, 900);
+                assert_eq!(records[0].notional, 909);
+            } else {
+                assert_eq!(trimmed, 9_168_000);
+                assert_eq!(records[0].reference_notional, 916);
+                assert_eq!(records[0].notional, 925);
+            }
+            assert_eq!(records[0].cost, 75);
+            assert_eq!(records[1].price, 109);
+            assert_eq!(records[2].period_index, 3);
+            assert_execution_cash_and_positions(&on, 1_000);
+        }
+    }
+
+    /// Assert zero fills, unaffordable buys, and overdraw sells leave no records.
+    #[test]
+    fn execution_records_exclude_zero_unaffordable_and_overdraw_sells() {
+        let symbol = Symbol::new("AAA");
+        let cost = CostModel {
+            min_commission: 200,
+            ..CostModel::zero()
+        };
+        let mut off = Portfolio::new(100, cost);
+        let mut on = off.clone();
+        on.enable_execution_recording();
+        for (quantity, price) in [
+            (Shares::ZERO, 100),
+            (Shares::from_whole(1), 100),
+            (Shares::from_whole(-1), 10),
+        ] {
+            off.execute_fill(symbol, quantity, price);
+            on.execute_fill(symbol, quantity, price);
+            assert_recording_preserves_portfolio(&off, &on);
+        }
+        assert_eq!(on.trimmed_fill_count(), 1);
+        assert_eq!(on.executions, Some(Vec::new()));
+        assert!(on.positions.is_empty());
+        assert_execution_cash_and_positions(&on, 100);
+    }
+
+    /// Assert cash exit, reentry, and a tagged stop close reconcile cash and positions.
+    #[test]
+    fn execution_records_reconcile_cash_exit_reentry_and_stop_close() {
+        let symbol = Symbol::new("AAA");
+        let mut off = Portfolio::with_quantity_step(10_000, CostModel::zero(), 1_000);
+        let mut on = off.clone();
+        on.enable_execution_recording();
+        for (period, weight) in [0.7, 0.0, 0.8].into_iter().enumerate() {
+            on.set_execution_context(period, ExecutionKind::Rebalance);
+            off.rebalance_simple(&[(symbol, weight)], &[(symbol, 333)]);
+            on.rebalance_simple(&[(symbol, weight)], &[(symbol, 333)]);
+            assert_recording_preserves_portfolio(&off, &on);
+            assert_execution_cash_and_positions(&on, 10_000);
+        }
+        on.set_execution_context(3, ExecutionKind::StopExit);
+        assert!(off.close_position_at(symbol, 300));
+        assert!(on.close_position_at(symbol, 300));
+        assert_recording_preserves_portfolio(&off, &on);
+        assert_execution_cash_and_positions(&on, 10_000);
+        let records = on.take_executions().unwrap();
+        assert_eq!(records.len(), 4);
+        assert_eq!(records[3].period_index, 3);
+        assert_eq!(records[3].kind, ExecutionKind::StopExit);
+        assert!(on.executions.is_none());
+    }
+
+    /// Assert saturated cash records the actual change rather than full sell proceeds.
+    #[test]
+    fn execution_records_use_actual_saturated_cash_change() {
+        let symbol = Symbol::new("AAA");
+        let mut off = Portfolio::new(i64::MAX - 10, CostModel::zero());
+        let mut on = off.clone();
+        on.enable_execution_recording();
+        off.execute_fill(symbol, Shares::from_whole(-1), 100);
+        on.execute_fill(symbol, Shares::from_whole(-1), 100);
+        assert_recording_preserves_portfolio(&off, &on);
+        let record = &on.executions.as_ref().unwrap()[0];
+        assert_eq!(record.notional, 100);
+        assert_eq!(record.cash_delta, 10);
+        assert_eq!(record.cash_after, i64::MAX);
+    }
 
     fn aapl() -> Symbol {
         Symbol::new("AAPL")

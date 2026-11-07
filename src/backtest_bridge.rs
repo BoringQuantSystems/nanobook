@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet, hash_map::Entry};
 use crate::portfolio::metrics::{
     DrawdownEvent, Metrics, compute_metrics, drawdown_series, rolling_sharpe,
 };
-use crate::portfolio::{CostModel, Portfolio};
+use crate::portfolio::{CostModel, ExecutionKind, ExecutionRecord, Portfolio};
 use crate::types::Symbol;
 
 /// Optional stop simulation configuration.
@@ -47,6 +47,8 @@ impl BacktestStopConfig {
 /// Backtest options for v0.9 API surface.
 #[derive(Clone, Debug, Default)]
 pub struct BacktestBridgeOptions {
+    /// Capture actual successful fills and period-close cash. Defaults to false.
+    pub record_executions: bool,
     /// Optional stop simulation configuration.
     pub stop_cfg: Option<BacktestStopConfig>,
     /// Order sizing granularity, in micro-shares (see [`crate::portfolio::Shares`]).
@@ -192,6 +194,14 @@ impl std::fmt::Display for UnpricedHolding {
 }
 
 pub struct BacktestBridgeResult {
+    /// Starting cash in cents, including for empty or rejected runs.
+    pub initial_cash: i64,
+    /// Actual fills, or None when recording is disabled. Empty/rejected runs
+    /// return Some(empty) when recording is enabled; partial runs are discarded.
+    pub executions: Option<Vec<ExecutionRecord>>,
+    /// Period-close cash in cents, aligned with returns and holdings.
+    /// Same enabled/disabled and empty/rejected semantics as executions.
+    pub cash_snapshots: Option<Vec<i64>>,
     /// Per-period returns.
     pub returns: Vec<f64>,
     /// Equity curve (one entry per date + initial equity).
@@ -242,6 +252,10 @@ pub fn backtest_weights(
 /// Returns an empty result (no returns, no metrics) for invalid inputs:
 /// mismatched schedule lengths, non-positive cash, NaN/Inf weights,
 /// or negative prices.
+/// Cash and bar prices use cents; sizing steps use micro-shares.
+/// Each period rebalances before checking stops at the close. When recording
+/// is enabled, return actual fills and close cash aligned with the schedule.
+/// Discard partial results if a held symbol has no usable price.
 #[allow(clippy::too_many_arguments)]
 pub fn backtest_weights_with_options(
     weight_schedule: &[Vec<(Symbol, f64)>],
@@ -254,22 +268,22 @@ pub fn backtest_weights_with_options(
     options: BacktestBridgeOptions,
 ) -> BacktestBridgeResult {
     if !valid_inputs(weight_schedule, price_schedule, initial_cash_cents) {
-        return empty_result(initial_cash_cents);
+        return empty_result(initial_cash_cents, options.record_executions);
     }
     if let Some(days) = &options.period_day_ordinal
         && days.len() != weight_schedule.len()
     {
-        return empty_result(initial_cash_cents);
+        return empty_result(initial_cash_cents, options.record_executions);
     }
     if let Some(months) = &options.period_month_ordinal
         && months.len() != weight_schedule.len()
     {
-        return empty_result(initial_cash_cents);
+        return empty_result(initial_cash_cents, options.record_executions);
     }
     if let Some(fill) = &options.fill_schedule
         && fill.len() != weight_schedule.len()
     {
-        return empty_result(initial_cash_cents);
+        return empty_result(initial_cash_cents, options.record_executions);
     }
 
     let stop_cfg = options
@@ -278,6 +292,12 @@ pub fn backtest_weights_with_options(
         .and_then(BacktestStopConfig::sanitized);
 
     let mut portfolio = Portfolio::new(initial_cash_cents, cost_model);
+    if options.record_executions {
+        portfolio.enable_execution_recording();
+    }
+    let mut cash_snapshots = options
+        .record_executions
+        .then(|| Vec::with_capacity(weight_schedule.len()));
     if let Some(step) = options.quantity_step {
         portfolio.set_quantity_step(step);
     }
@@ -429,7 +449,11 @@ pub fn backtest_weights_with_options(
                         symbol,
                         at_fill: true,
                     },
+                    options.record_executions,
                 );
+            }
+            if options.record_executions {
+                portfolio.set_execution_context(period_index, ExecutionKind::Rebalance);
             }
             portfolio.rebalance_simple(weights, &fill_prices);
             if windowed_budgets_active {
@@ -463,6 +487,7 @@ pub fn backtest_weights_with_options(
                     symbol,
                     at_fill: false,
                 },
+                options.record_executions,
             );
         }
 
@@ -476,6 +501,9 @@ pub fn backtest_weights_with_options(
 
         let equity = portfolio.total_equity(&close_prices);
         equity_curve.push(equity);
+        if let Some(snapshots) = &mut cash_snapshots {
+            snapshots.push(portfolio.cash());
+        }
 
         prev_prices = price_map;
     }
@@ -484,6 +512,9 @@ pub fn backtest_weights_with_options(
     let metrics = compute_metrics(&returns, periods_per_year, risk_free);
 
     BacktestBridgeResult {
+        initial_cash: initial_cash_cents,
+        executions: portfolio.take_executions(),
+        cash_snapshots,
         returns,
         equity_curve,
         final_cash: portfolio.cash(),
@@ -741,8 +772,12 @@ fn valid_inputs(
     true
 }
 
-fn empty_result(initial_cash_cents: i64) -> BacktestBridgeResult {
+/// Return unchanged starting cash in cents with empty or disabled ledgers.
+fn empty_result(initial_cash_cents: i64, record_executions: bool) -> BacktestBridgeResult {
     BacktestBridgeResult {
+        initial_cash: initial_cash_cents,
+        executions: record_executions.then(Vec::new),
+        cash_snapshots: record_executions.then(Vec::new),
         returns: Vec::new(),
         equity_curve: vec![initial_cash_cents],
         final_cash: initial_cash_cents,
@@ -755,10 +790,15 @@ fn empty_result(initial_cash_cents: i64) -> BacktestBridgeResult {
     }
 }
 
-fn unpriced_result(initial_cash_cents: i64, unpriced: UnpricedHolding) -> BacktestBridgeResult {
+/// Discard a partial run and return its missing-price error with starting cash.
+fn unpriced_result(
+    initial_cash_cents: i64,
+    unpriced: UnpricedHolding,
+    record_executions: bool,
+) -> BacktestBridgeResult {
     BacktestBridgeResult {
         unpriced_holding: Some(unpriced),
-        ..empty_result(initial_cash_cents)
+        ..empty_result(initial_cash_cents, record_executions)
     }
 }
 
@@ -816,6 +856,8 @@ impl StopTracker {
     }
 }
 
+/// Update stop trackers from close prices in cents and close breached positions.
+/// Tag successful exits with the schedule index and append their stop events.
 fn apply_stop_cfg(
     portfolio: &mut Portfolio,
     price_map: &HashMap<Symbol, i64>,
@@ -867,6 +909,7 @@ fn apply_stop_cfg(
         };
 
         if breached {
+            portfolio.set_execution_context(period_index, ExecutionKind::StopExit);
             let closed = portfolio.close_position_at(sym, price);
             if closed {
                 stop_events.push(BacktestStopEvent {
@@ -942,6 +985,455 @@ fn sanitize_positive(v: Option<f64>) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Assert exact float parity, including NaN payloads and signed zero.
+    fn assert_float_bits_equal(left: &[f64], right: &[f64]) {
+        assert_eq!(
+            left.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+            right.iter().map(|v| v.to_bits()).collect::<Vec<_>>()
+        );
+    }
+
+    /// Assert that recording preserves legacy outputs, including metric float bits.
+    fn assert_legacy_outputs_equal(off: &BacktestBridgeResult, on: &BacktestBridgeResult) {
+        assert_float_bits_equal(&off.returns, &on.returns);
+        assert_eq!(off.equity_curve, on.equity_curve);
+        assert_eq!(off.final_cash, on.final_cash);
+        assert_eq!(off.skipped_rebalances, on.skipped_rebalances);
+        assert_eq!(off.unpriced_holding, on.unpriced_holding);
+        for (left, right) in [
+            (&off.holdings, &on.holdings),
+            (&off.symbol_returns, &on.symbol_returns),
+        ] {
+            assert_eq!(left.len(), right.len());
+            for (left, right) in left.iter().zip(right) {
+                assert_eq!(
+                    left.iter().map(|v| v.0).collect::<Vec<_>>(),
+                    right.iter().map(|v| v.0).collect::<Vec<_>>()
+                );
+                assert_float_bits_equal(
+                    &left.iter().map(|v| v.1).collect::<Vec<_>>(),
+                    &right.iter().map(|v| v.1).collect::<Vec<_>>(),
+                );
+            }
+        }
+        assert_eq!(off.stop_events.len(), on.stop_events.len());
+        for (left, right) in off.stop_events.iter().zip(&on.stop_events) {
+            assert_eq!(
+                (
+                    left.period_index,
+                    left.symbol,
+                    left.trigger_price,
+                    left.exit_price,
+                    left.reason
+                ),
+                (
+                    right.period_index,
+                    right.symbol,
+                    right.trigger_price,
+                    right.exit_price,
+                    right.reason
+                )
+            );
+        }
+        match (&off.metrics, &on.metrics) {
+            (Some(left), Some(right)) => {
+                let values = |m: &Metrics| {
+                    [
+                        m.total_return,
+                        m.cagr,
+                        m.volatility,
+                        m.sharpe,
+                        m.sortino,
+                        m.max_drawdown,
+                        m.calmar,
+                        m.cvar_95,
+                        m.win_rate,
+                        m.profit_factor,
+                        m.payoff_ratio,
+                        m.kelly,
+                    ]
+                };
+                assert_float_bits_equal(&values(left), &values(right));
+                assert_eq!(
+                    (left.num_periods, left.winning_periods, left.losing_periods),
+                    (
+                        right.num_periods,
+                        right.winning_periods,
+                        right.losing_periods
+                    )
+                );
+            }
+            (None, None) => {}
+            _ => panic!("recording changed metrics availability"),
+        }
+        assert!(off.executions.is_none());
+        assert!(off.cash_snapshots.is_none());
+    }
+
+    /// Reconcile ordinary fills with costs, cash snapshots, equity, and holdings.
+    fn assert_bridge_execution_reconciliation(
+        result: &BacktestBridgeResult,
+        prices: &[Vec<(Symbol, BarPrices)>],
+        cost: CostModel,
+    ) {
+        use crate::portfolio::Shares;
+        let records = result.executions.as_ref().unwrap();
+        let snapshots = result.cash_snapshots.as_ref().unwrap();
+        assert_eq!(snapshots.len(), result.returns.len());
+        assert_eq!(snapshots.len(), result.holdings.len());
+        let mut cash = result.initial_cash;
+        for (sequence, record) in records.iter().enumerate() {
+            assert_eq!(record.sequence, sequence as u64);
+            assert!(record.period_index < result.returns.len());
+            assert!(!record.quantity.is_zero());
+            let signed_notional = (record.quantity.raw() as i128 * record.price as i128
+                / Shares::SCALE as i128) as i64;
+            assert_eq!(record.notional, signed_notional.abs());
+            assert_eq!(
+                record.reference_notional,
+                (record.quantity.raw().unsigned_abs() as i128
+                    * record.reference_price.unsigned_abs() as i128
+                    / Shares::SCALE as i128)
+                    .clamp(0, i64::MAX as i128) as i64
+            );
+            assert_eq!(record.cost, cost.compute_cost(record.notional));
+            assert_eq!(record.cash_delta, -signed_notional - record.cost);
+            cash += record.cash_delta;
+            assert_eq!(record.cash_after, cash);
+        }
+        assert_eq!(cash, result.final_cash);
+        let mut quantities = HashMap::<Symbol, i64>::new();
+        let mut records = records.iter().peekable();
+        cash = result.initial_cash;
+        for (period, snapshot) in snapshots.iter().enumerate() {
+            while let Some(record) = records.next_if(|r| r.period_index <= period) {
+                cash = record.cash_after;
+                *quantities.entry(record.symbol).or_default() += record.quantity.raw();
+            }
+            assert_eq!(*snapshot, cash);
+            let values: Vec<_> = prices[period]
+                .iter()
+                .map(|(symbol, bar)| {
+                    (
+                        *symbol,
+                        (quantities.get(symbol).copied().unwrap_or(0) as i128 * bar.close as i128
+                            / Shares::SCALE as i128) as i64,
+                    )
+                })
+                .collect();
+            let equity = cash + values.iter().map(|(_, value)| value).sum::<i64>();
+            assert_eq!(result.equity_curve[period + 1], equity);
+            for (symbol, weight) in &result.holdings[period] {
+                let value = values.iter().find(|v| v.0 == *symbol).unwrap().1;
+                assert_eq!(weight.to_bits(), (value as f64 / equity as f64).to_bits());
+            }
+        }
+        assert!(records.next().is_none());
+    }
+
+    /// Assert recording parity and reconciliation across sizing, costs, and fill policies.
+    #[test]
+    fn execution_recording_preserves_outputs_across_fills_costs_rounding_and_policies() {
+        let aaa = Symbol::new("AAA");
+        let bbb = Symbol::new("BBB");
+        let weights = vec![
+            vec![(aaa, 1.0)],
+            vec![(aaa, 0.4), (bbb, 0.5)],
+            vec![],
+            vec![(bbb, 1.0)],
+            vec![(aaa, 0.6), (bbb, 0.3)],
+        ];
+        let prices: Vec<_> = [333, 350, 310, 320, 340]
+            .into_iter()
+            .map(|p| vec![(aaa, bar(p)), (bbb, bar(p * 2))])
+            .collect();
+        for step in [crate::portfolio::Shares::SCALE, 1_000] {
+            for cost in [
+                CostModel::zero(),
+                CostModel {
+                    commission_bps: 15.0,
+                    slippage_bps: 50.0,
+                    min_commission: 75,
+                },
+            ] {
+                for policy in [
+                    FillPolicy::SignalBarClose,
+                    FillPolicy::NextBarOpen,
+                    FillPolicy::NextBarTypical,
+                ] {
+                    let options = BacktestBridgeOptions {
+                        quantity_step: Some(step),
+                        ..Default::default()
+                    };
+                    let off = backtest_weights_with_options(
+                        &weights,
+                        &prices,
+                        10_000,
+                        cost,
+                        policy,
+                        252.0,
+                        0.0,
+                        options.clone(),
+                    );
+                    let on = backtest_weights_with_options(
+                        &weights,
+                        &prices,
+                        10_000,
+                        cost,
+                        policy,
+                        252.0,
+                        0.0,
+                        BacktestBridgeOptions {
+                            record_executions: true,
+                            ..options
+                        },
+                    );
+                    assert_legacy_outputs_equal(&off, &on);
+                    assert_bridge_execution_reconciliation(&on, &prices, cost);
+                    let records = on.executions.as_ref().unwrap();
+                    assert!(records.iter().any(|r| r.quantity.is_positive()));
+                    assert!(records.iter().any(|r| r.quantity.is_negative()));
+                    assert!(records.iter().all(|r| r.kind == ExecutionKind::Rebalance));
+                    assert!(records.iter().all(|r| r.quantity.raw() % step == 0));
+                    assert_eq!(on.cash_snapshots.as_ref().unwrap()[2], on.equity_curve[3]);
+                    if policy != FillPolicy::SignalBarClose {
+                        assert_eq!(on.skipped_rebalances, vec![4]);
+                        assert!(records.iter().all(|r| r.period_index < 4));
+                    }
+                }
+            }
+        }
+    }
+
+    /// Assert stop references use the close with or without a rebalance fill bar.
+    #[test]
+    fn execution_records_use_stop_close_with_and_without_rebalance_fill_bars() {
+        let aaa = Symbol::new("AAA");
+        let weights = vec![vec![(aaa, 1.0)]; 2];
+        let mut stop_bar = bar(10_000);
+        stop_bar.close = 9_000;
+        stop_bar.low = 9_000;
+        let prices = vec![vec![(aaa, bar(10_000))], vec![(aaa, stop_bar)]];
+        for hold_day in [false, true] {
+            let options = BacktestBridgeOptions {
+                stop_cfg: Some(BacktestStopConfig {
+                    fixed_stop_pct: Some(0.05),
+                    ..Default::default()
+                }),
+                fill_schedule: Some(vec![
+                    vec![(aaa, bar(10_000))],
+                    if hold_day {
+                        Vec::new()
+                    } else {
+                        vec![(aaa, bar(10_000))]
+                    },
+                ]),
+                ..Default::default()
+            };
+            let off = backtest_weights_with_options(
+                &weights,
+                &prices,
+                10_000,
+                CostModel::zero(),
+                FillPolicy::NextBarOpen,
+                252.0,
+                0.0,
+                options.clone(),
+            );
+            let on = backtest_weights_with_options(
+                &weights,
+                &prices,
+                10_000,
+                CostModel::zero(),
+                FillPolicy::NextBarOpen,
+                252.0,
+                0.0,
+                BacktestBridgeOptions {
+                    record_executions: true,
+                    ..options
+                },
+            );
+            assert_legacy_outputs_equal(&off, &on);
+            assert_bridge_execution_reconciliation(&on, &prices, CostModel::zero());
+            assert_eq!(
+                on.skipped_rebalances,
+                if hold_day { vec![1] } else { vec![] }
+            );
+            assert_eq!(on.stop_events.len(), 1);
+            let records = on.executions.as_ref().unwrap();
+            assert_eq!(records.len(), 2);
+            assert_eq!(records[0].kind, ExecutionKind::Rebalance);
+            assert_eq!(records[0].quantity.raw(), 1_000_000);
+            let stop = &records[1];
+            assert_eq!(stop.kind, ExecutionKind::StopExit);
+            assert_eq!(stop.period_index, 1);
+            assert_eq!(stop.quantity.raw(), -1_000_000);
+            assert_eq!(stop.reference_price, 9_000);
+            assert_ne!(stop.reference_price, stop_bar.open);
+            assert_eq!(stop.price, 9_000);
+            assert_eq!(stop.reference_notional, 9_000);
+            assert_eq!(stop.reference_notional, stop.notional);
+            assert_eq!(stop.reference_notional - stop.notional, 0);
+        }
+    }
+
+    /// Assert fixed and trailing stops tag exits and the next rebalance tags reentry.
+    #[test]
+    fn execution_recording_tags_fixed_and_trailing_stop_exits() {
+        let aaa = Symbol::new("AAA");
+        let weights = vec![vec![(aaa, 1.0)]; 4];
+        let prices: Vec<_> = [100, 120, 80, 100]
+            .into_iter()
+            .map(|p| vec![(aaa, bar(p))])
+            .collect();
+        for cfg in [
+            BacktestStopConfig {
+                fixed_stop_pct: Some(0.1),
+                ..Default::default()
+            },
+            BacktestStopConfig {
+                trailing_stop_pct: Some(0.1),
+                ..Default::default()
+            },
+        ] {
+            let options = BacktestBridgeOptions {
+                stop_cfg: Some(cfg),
+                ..Default::default()
+            };
+            let off = backtest_weights_with_options(
+                &weights,
+                &prices,
+                10_000,
+                CostModel::zero(),
+                FillPolicy::SignalBarClose,
+                252.0,
+                0.0,
+                options.clone(),
+            );
+            let on = backtest_weights_with_options(
+                &weights,
+                &prices,
+                10_000,
+                CostModel::zero(),
+                FillPolicy::SignalBarClose,
+                252.0,
+                0.0,
+                BacktestBridgeOptions {
+                    record_executions: true,
+                    ..options
+                },
+            );
+            assert_legacy_outputs_equal(&off, &on);
+            assert_bridge_execution_reconciliation(&on, &prices, CostModel::zero());
+            assert_eq!(on.stop_events.len(), 1);
+            let stops: Vec<_> = on
+                .executions
+                .as_ref()
+                .unwrap()
+                .iter()
+                .filter(|r| r.kind == ExecutionKind::StopExit)
+                .collect();
+            assert_eq!(stops.len(), 1);
+            assert_eq!(stops[0].period_index, 2);
+            assert_eq!(stops[0].symbol, on.stop_events[0].symbol);
+            assert_eq!(stops[0].price, on.stop_events[0].exit_price);
+            assert!(stops[0].quantity.is_negative());
+            assert!(
+                on.executions
+                    .as_ref()
+                    .unwrap()
+                    .iter()
+                    .any(|r| r.period_index == 3 && r.kind == ExecutionKind::Rebalance)
+            );
+        }
+    }
+
+    /// Assert empty, rejected, and skipped runs preserve ledger availability and cash.
+    #[test]
+    fn execution_recording_empty_rejected_and_skipped_runs() {
+        let aaa = Symbol::new("AAA");
+        for enabled in [false, true] {
+            let options = BacktestBridgeOptions {
+                record_executions: enabled,
+                ..Default::default()
+            };
+            let empty = backtest_weights_with_options(
+                &[],
+                &[],
+                100,
+                CostModel::zero(),
+                FillPolicy::SignalBarClose,
+                252.0,
+                0.0,
+                options.clone(),
+            );
+            assert_eq!(empty.initial_cash, 100);
+            assert_eq!(empty.executions, enabled.then(Vec::new));
+            assert_eq!(empty.cash_snapshots, enabled.then(Vec::new));
+            let unpriced = backtest_weights_with_options(
+                &[vec![(aaa, 1.0)], vec![]],
+                &[vec![(aaa, bar(100))], vec![]],
+                100,
+                CostModel::zero(),
+                FillPolicy::SignalBarClose,
+                252.0,
+                0.0,
+                options,
+            );
+            assert!(unpriced.unpriced_holding.is_some());
+            assert_eq!(unpriced.initial_cash, 100);
+            assert_eq!(unpriced.executions, enabled.then(Vec::new));
+            assert_eq!(unpriced.cash_snapshots, enabled.then(Vec::new));
+        }
+        for (weight, cost) in [
+            (0.0, CostModel::zero()),
+            (
+                1.0,
+                CostModel {
+                    min_commission: 200,
+                    ..CostModel::zero()
+                },
+            ),
+            (
+                -0.5,
+                CostModel {
+                    min_commission: 200,
+                    ..CostModel::zero()
+                },
+            ),
+        ] {
+            let weights = vec![vec![(aaa, weight)]];
+            let prices = vec![vec![(aaa, bar(10))]];
+            let off = backtest_weights_with_options(
+                &weights,
+                &prices,
+                100,
+                cost,
+                FillPolicy::SignalBarClose,
+                252.0,
+                0.0,
+                BacktestBridgeOptions::default(),
+            );
+            let on = backtest_weights_with_options(
+                &weights,
+                &prices,
+                100,
+                cost,
+                FillPolicy::SignalBarClose,
+                252.0,
+                0.0,
+                BacktestBridgeOptions {
+                    record_executions: true,
+                    ..Default::default()
+                },
+            );
+            assert_legacy_outputs_equal(&off, &on);
+            assert_bridge_execution_reconciliation(&on, &prices, cost);
+            assert_eq!(on.executions, Some(Vec::new()));
+            assert_eq!(on.cash_snapshots, Some(vec![100]));
+        }
+    }
 
     fn aapl() -> Symbol {
         Symbol::new("AAPL")

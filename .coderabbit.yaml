@@ -1,0 +1,6 @@
+# Repository override of the organisation CodeRabbit settings. Inheritance keeps
+# the central instructions; only automatic review decisions are added here.
+inheritance: true
+reviews:
+  auto_approvals:
+    enabled: true
