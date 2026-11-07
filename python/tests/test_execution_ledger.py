@@ -199,6 +199,24 @@ def test_reference_prices_and_side_aware_slippage() -> None:
     assert sell["cost"] == 0
 
 
+def test_reference_notional_clamps_above_i64_maximum() -> None:
+    """Check that a large short clamps its reference but keeps its effective notional."""
+    prices = [[("AAA", bar(2**62))]]
+    result = nanobook.backtest_weights(
+        [[("AAA", -2.0)]], prices, 2**62,
+        nanobook.CostModel(0.0, 5_000.0, 0),
+        nanobook.FillPolicy.SignalBarClose, record_executions=True,
+    )
+    assert len(result["executions"]) == 1
+    record = result["executions"][0]
+    assert record["quantity"] == -2 * SCALE
+    assert record["reference_price"] == 2**62
+    assert record["reference_notional"] == 2**63 - 1
+    assert record["price"] == 2**61
+    # Two shares at 2**61 effective cents per share give 2**62 cents.
+    assert record["notional"] == 2**62
+
+
 @pytest.mark.parametrize("hold_day", [False, True])
 def test_stop_reference_is_close_with_or_without_rebalance_fill_bar(hold_day: bool) -> None:
     """Check that a zero-slippage stop records the close even on a hold day."""

@@ -925,13 +925,17 @@ impl Portfolio {
 
     /// Execute a fill: update position, deduct cost, adjust cash.
     ///
-    /// `qty` is signed micro-shares (see [`Shares`]).
+    /// `qty` is signed micro-shares (see [`Shares`]); `price` is unimpacted
+    /// cents per share. Apply slippage before computing notional and costs.
     ///
     /// Buys never spend more cash than the account holds. An unaffordable buy
     /// is truncated to the largest `quantity_step` multiple whose notional
     /// plus [`CostModel::compute_cost`] fits in `cash`. A quantity that snaps
     /// to zero is skipped entirely (no zero-notional fill that would still
-    /// charge `min_commission`). Sells are never truncated — they raise cash.
+    /// charge `min_commission`). Sells are never truncated. Skip a sell if
+    /// cash and proceeds cannot cover its commission.
+    /// Record successful fills only, with the current execution context and
+    /// actual cash change in cents, including saturation.
     fn execute_fill(&mut self, symbol: Symbol, qty: Shares, price: i64) {
         if qty.is_zero() {
             return;
@@ -1164,6 +1168,7 @@ pub struct PortfolioSnapshot {
 mod tests {
     use super::*;
 
+    /// Reconcile ordinary fills with commission, starting cash in cents, and positions.
     fn assert_execution_cash_and_positions(portfolio: &Portfolio, initial_cash: i64) {
         let mut cash = initial_cash;
         let mut quantities = FxHashMap::<Symbol, i64>::default();
@@ -1199,6 +1204,7 @@ mod tests {
         assert!(quantities.is_empty());
     }
 
+    /// Assert recording preserves cash, return bits, trimming counters, and positions.
     fn assert_recording_preserves_portfolio(off: &Portfolio, on: &Portfolio) {
         assert_eq!(off.cash(), on.cash());
         assert_eq!(off.equity_curve(), on.equity_curve());
@@ -1222,6 +1228,7 @@ mod tests {
         assert!(off.executions.is_none());
     }
 
+    /// Assert buy and sell records retain references and side-aware slippage costs.
     #[test]
     fn execution_records_capture_reference_prices_and_side_aware_slippage() {
         let symbol = Symbol::new("AAA");
@@ -1256,6 +1263,7 @@ mod tests {
         assert_execution_cash_and_positions(&on, 10_000);
     }
 
+    /// Assert reference notional truncates after fractional quantity rounding.
     #[test]
     fn execution_records_truncate_fractional_reference_notional_after_quantity_rounding() {
         let symbol = Symbol::new("AAA");
@@ -1282,6 +1290,7 @@ mod tests {
         assert_execution_cash_and_positions(&on, 10_000);
     }
 
+    /// Assert extreme sells clamp both notionals and the resulting cash balance.
     #[test]
     fn execution_records_clamp_reference_and_effective_notionals() {
         let symbol = Symbol::new("AAA");
@@ -1299,9 +1308,11 @@ mod tests {
         assert_eq!(record.price, i64::MAX);
         assert_eq!(record.reference_notional, i64::MAX);
         assert_eq!(record.notional, i64::MAX);
+        assert_eq!(record.cash_delta, i64::MAX);
         assert_eq!(record.cash_after, i64::MAX);
     }
 
+    /// Assert whole and fractional trimmed buys preserve fills and reconcile cash.
     #[test]
     fn execution_records_preserve_fills_and_reconcile_trimmed_quantities() {
         let symbol = Symbol::new("AAA");
@@ -1354,6 +1365,7 @@ mod tests {
         }
     }
 
+    /// Assert zero fills, unaffordable buys, and overdraw sells leave no records.
     #[test]
     fn execution_records_exclude_zero_unaffordable_and_overdraw_sells() {
         let symbol = Symbol::new("AAA");
@@ -1379,6 +1391,7 @@ mod tests {
         assert_execution_cash_and_positions(&on, 100);
     }
 
+    /// Assert cash exit, reentry, and a tagged stop close reconcile cash and positions.
     #[test]
     fn execution_records_reconcile_cash_exit_reentry_and_stop_close() {
         let symbol = Symbol::new("AAA");
@@ -1404,6 +1417,7 @@ mod tests {
         assert!(on.executions.is_none());
     }
 
+    /// Assert saturated cash records the actual change rather than full sell proceeds.
     #[test]
     fn execution_records_use_actual_saturated_cash_change() {
         let symbol = Symbol::new("AAA");

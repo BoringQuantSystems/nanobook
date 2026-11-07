@@ -252,6 +252,10 @@ pub fn backtest_weights(
 /// Returns an empty result (no returns, no metrics) for invalid inputs:
 /// mismatched schedule lengths, non-positive cash, NaN/Inf weights,
 /// or negative prices.
+/// Cash and bar prices use cents; sizing steps use micro-shares.
+/// Each period rebalances before checking stops at the close. When recording
+/// is enabled, return actual fills and close cash aligned with the schedule.
+/// Discard partial results if a held symbol has no usable price.
 #[allow(clippy::too_many_arguments)]
 pub fn backtest_weights_with_options(
     weight_schedule: &[Vec<(Symbol, f64)>],
@@ -768,6 +772,7 @@ fn valid_inputs(
     true
 }
 
+/// Return unchanged starting cash in cents with empty or disabled ledgers.
 fn empty_result(initial_cash_cents: i64, record_executions: bool) -> BacktestBridgeResult {
     BacktestBridgeResult {
         initial_cash: initial_cash_cents,
@@ -785,6 +790,7 @@ fn empty_result(initial_cash_cents: i64, record_executions: bool) -> BacktestBri
     }
 }
 
+/// Discard a partial run and return its missing-price error with starting cash.
 fn unpriced_result(
     initial_cash_cents: i64,
     unpriced: UnpricedHolding,
@@ -850,6 +856,8 @@ impl StopTracker {
     }
 }
 
+/// Update stop trackers from close prices in cents and close breached positions.
+/// Tag successful exits with the schedule index and append their stop events.
 fn apply_stop_cfg(
     portfolio: &mut Portfolio,
     price_map: &HashMap<Symbol, i64>,
@@ -978,6 +986,7 @@ fn sanitize_positive(v: Option<f64>) -> Option<f64> {
 mod tests {
     use super::*;
 
+    /// Assert exact float parity, including NaN payloads and signed zero.
     fn assert_float_bits_equal(left: &[f64], right: &[f64]) {
         assert_eq!(
             left.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
@@ -985,6 +994,7 @@ mod tests {
         );
     }
 
+    /// Assert that recording preserves legacy outputs, including metric float bits.
     fn assert_legacy_outputs_equal(off: &BacktestBridgeResult, on: &BacktestBridgeResult) {
         assert_float_bits_equal(&off.returns, &on.returns);
         assert_eq!(off.equity_curve, on.equity_curve);
@@ -1061,6 +1071,7 @@ mod tests {
         assert!(off.cash_snapshots.is_none());
     }
 
+    /// Reconcile ordinary fills with costs, cash snapshots, equity, and holdings.
     fn assert_bridge_execution_reconciliation(
         result: &BacktestBridgeResult,
         prices: &[Vec<(Symbol, BarPrices)>],
@@ -1121,6 +1132,7 @@ mod tests {
         assert!(records.next().is_none());
     }
 
+    /// Assert recording parity and reconciliation across sizing, costs, and fill policies.
     #[test]
     fn execution_recording_preserves_outputs_across_fills_costs_rounding_and_policies() {
         let aaa = Symbol::new("AAA");
@@ -1194,6 +1206,7 @@ mod tests {
         }
     }
 
+    /// Assert stop references use the close with or without a rebalance fill bar.
     #[test]
     fn execution_records_use_stop_close_with_and_without_rebalance_fill_bars() {
         let aaa = Symbol::new("AAA");
@@ -1265,6 +1278,7 @@ mod tests {
         }
     }
 
+    /// Assert fixed and trailing stops tag exits and the next rebalance tags reentry.
     #[test]
     fn execution_recording_tags_fixed_and_trailing_stop_exits() {
         let aaa = Symbol::new("AAA");
@@ -1335,6 +1349,7 @@ mod tests {
         }
     }
 
+    /// Assert empty, rejected, and skipped runs preserve ledger availability and cash.
     #[test]
     fn execution_recording_empty_rejected_and_skipped_runs() {
         let aaa = Symbol::new("AAA");

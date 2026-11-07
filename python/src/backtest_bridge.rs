@@ -477,6 +477,12 @@ pub fn py_decompose_backtest(
 }
 
 /// Build a reporting payload from ``backtest_weights`` output.
+///
+/// Read returns, equity in cents, holdings, and symbol returns from the result.
+/// Use ``rolling_window`` periods and ``periods_per_year`` to annualize Sharpe.
+/// Group months in 21-period blocks. Return monthly returns, rolling Sharpe, trade counts,
+/// and drawdown events. Missing required fields raise ``ValueError``.
+/// Legacy results may omit ``initial_cash``; use their first equity value.
 #[pyfunction]
 #[pyo3(signature = (backtest_result, rolling_window=63, periods_per_year=252))]
 pub fn py_tear_sheet(
