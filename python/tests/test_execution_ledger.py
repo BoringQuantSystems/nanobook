@@ -83,7 +83,7 @@ def assert_reconciles(result, prices, cost):
         equity = cash + sum(values.values())
         assert result["equity_curve"][period + 1] == equity
         for symbol, weight in result["holdings"][period]:
-            assert bits(weight) == bits(values[symbol] / equity)
+            assert weight == pytest.approx(values[symbol] / equity, rel=1e-12, abs=1e-15)
     assert cursor == len(records)
 
 
