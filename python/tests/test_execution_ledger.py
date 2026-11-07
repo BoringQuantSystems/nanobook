@@ -202,11 +202,13 @@ def test_reference_prices_and_side_aware_slippage() -> None:
 def test_reference_notional_clamps_above_i64_maximum() -> None:
     """Check that a large short clamps its reference but keeps its effective notional."""
     prices = [[("AAA", bar(2**62))]]
-    result = nanobook.backtest_weights(
+    args = (
         [[("AAA", -2.0)]], prices, 2**62,
         nanobook.CostModel(0.0, 5_000.0, 0),
-        nanobook.FillPolicy.SignalBarClose, record_executions=True,
+        nanobook.FillPolicy.SignalBarClose,
     )
+    result = nanobook.backtest_weights(*args, record_executions=True)
+    assert_legacy_equal(nanobook.backtest_weights(*args), result)
     assert len(result["executions"]) == 1
     record = result["executions"][0]
     assert record["quantity"] == -2 * SCALE
@@ -215,6 +217,10 @@ def test_reference_notional_clamps_above_i64_maximum() -> None:
     assert record["price"] == 2**61
     # Two shares at 2**61 effective cents per share give 2**62 cents.
     assert record["notional"] == 2**62
+    # Cash 2**62 plus proceeds 2**62 saturates at the i64 maximum.
+    assert record["cash_after"] == 2**63 - 1
+    assert record["cash_delta"] == 2**62 - 1
+    assert result["final_cash"] == 2**63 - 1
 
 
 @pytest.mark.parametrize("hold_day", [False, True])
