@@ -41,14 +41,18 @@ impl BookSnapshot {
         }
     }
 
-    /// Returns total bid quantity across all levels.
+    /// Returns total bid quantity across all levels, capped at `Quantity::MAX`.
     pub fn total_bid_quantity(&self) -> Quantity {
-        self.bids.iter().map(|l| l.quantity).sum()
+        self.bids
+            .iter()
+            .fold(0, |sum, l| sum.saturating_add(l.quantity))
     }
 
-    /// Returns total ask quantity across all levels.
+    /// Returns total ask quantity across all levels, capped at `Quantity::MAX`.
     pub fn total_ask_quantity(&self) -> Quantity {
-        self.asks.iter().map(|l| l.quantity).sum()
+        self.asks
+            .iter()
+            .fold(0, |sum, l| sum.saturating_add(l.quantity))
     }
 
     /// Order book imbalance: `(bid_qty - ask_qty) / (bid_qty + ask_qty)`.
@@ -62,7 +66,7 @@ impl BookSnapshot {
     pub fn imbalance(&self) -> Option<f64> {
         let bid_qty = self.total_bid_quantity();
         let ask_qty = self.total_ask_quantity();
-        let total = bid_qty + ask_qty;
+        let total = u128::from(bid_qty) + u128::from(ask_qty);
         if total == 0 {
             return None;
         }

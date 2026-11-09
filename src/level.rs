@@ -7,6 +7,12 @@ use std::collections::VecDeque;
 
 use crate::{OrderId, Price, Quantity};
 
+/// Converts an exact total to `Quantity`, capping at `Quantity::MAX`.
+#[inline]
+pub(crate) fn cap_quantity(total: u128) -> Quantity {
+    Quantity::try_from(total).unwrap_or(Quantity::MAX)
+}
+
 /// A queue of orders at a single price level.
 ///
 /// Orders are processed FIFO (first-in-first-out) for time priority.
@@ -17,8 +23,10 @@ pub struct Level {
     price: Price,
     /// Order IDs in FIFO order
     pub(crate) orders: VecDeque<OrderId>,
-    /// Sum of remaining quantities (cached for O(1) access)
-    total_quantity: Quantity,
+    /// Sum of remaining quantities (cached for O(1) access). Wider than
+    /// `Quantity` so the sum stays exact: the level is empty exactly when
+    /// this is zero, and matching relies on that.
+    total_quantity: u128,
     /// Number of tombstones (cancelled orders still in the queue)
     tombstone_count: usize,
 }
@@ -55,9 +63,16 @@ impl Level {
         self.orders.len() - self.tombstone_count
     }
 
-    /// Returns the total quantity across all orders at this level.
+    /// Returns the total quantity across all orders at this level, capped
+    /// at `Quantity::MAX`.
     #[inline]
     pub fn total_quantity(&self) -> Quantity {
+        cap_quantity(self.total_quantity)
+    }
+
+    /// Returns the exact total quantity across all orders at this level.
+    #[inline]
+    pub(crate) fn exact_total_quantity(&self) -> u128 {
         self.total_quantity
     }
 
@@ -92,11 +107,11 @@ impl Level {
 
     /// Add an order to the back of the queue.
     ///
-    /// The quantity is added to the level's total (saturating on overflow).
+    /// The quantity is added to the level's exact total.
     pub fn push_back(&mut self, order_id: OrderId, quantity: Quantity) {
         assert!(order_id.0 != 0, "OrderId(0) reserved for tombstones");
         self.orders.push_back(order_id);
-        self.total_quantity = self.total_quantity.saturating_add(quantity);
+        self.total_quantity += u128::from(quantity);
     }
 
     /// Remove and return the order at the front of the queue.
@@ -111,7 +126,7 @@ impl Level {
                 self.tombstone_count -= 1;
                 continue;
             }
-            self.total_quantity = self.total_quantity.saturating_sub(quantity);
+            self.total_quantity = self.total_quantity.saturating_sub(u128::from(quantity));
             return Some(id);
         }
         None
@@ -126,7 +141,7 @@ impl Level {
             && id_ref.0 != 0
         {
             id_ref.0 = 0; // Set to tombstone ID
-            self.total_quantity = self.total_quantity.saturating_sub(quantity);
+            self.total_quantity = self.total_quantity.saturating_sub(u128::from(quantity));
             self.tombstone_count += 1;
         }
     }
@@ -141,7 +156,7 @@ impl Level {
     pub fn remove(&mut self, order_id: OrderId, quantity: Quantity) -> bool {
         if let Some(pos) = self.orders.iter().position(|&id| id == order_id) {
             self.orders.remove(pos);
-            self.total_quantity = self.total_quantity.saturating_sub(quantity);
+            self.total_quantity = self.total_quantity.saturating_sub(u128::from(quantity));
             true
         } else {
             false
@@ -161,7 +176,7 @@ impl Level {
     ///
     /// Use this when an order is partially filled but remains in the queue.
     pub fn decrease_quantity(&mut self, amount: Quantity) {
-        self.total_quantity = self.total_quantity.saturating_sub(amount);
+        self.total_quantity = self.total_quantity.saturating_sub(u128::from(amount));
     }
 
     /// Returns an iterator over the active order IDs in FIFO order.
