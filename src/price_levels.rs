@@ -112,13 +112,12 @@ impl PriceLevels {
     /// Add an order at the given price.
     ///
     /// Creates the level if it doesn't exist.
-    /// Returns the position index within the level.
+    /// Returns the order's position within the level.
     pub fn insert_order(&mut self, price: Price, order_id: OrderId, quantity: Quantity) -> usize {
         let level = self.get_or_create_level(price);
-        // Actually, VecDeque index is just the length before push.
-        let actual_index = level.orders.len();
+        let position = level.next_position();
         level.push_back(order_id, quantity);
-        actual_index
+        position
     }
 
     /// Mark an order as a tombstone.

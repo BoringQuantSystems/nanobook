@@ -29,6 +29,10 @@ pub struct Level {
     total_quantity: u128,
     /// Number of tombstones (cancelled orders still in the queue)
     tombstone_count: usize,
+    /// Entries removed from the queue front so far. An entry's position is
+    /// this count plus its current index, which stays fixed while the front
+    /// of the queue is consumed.
+    popped_from_front: usize,
 }
 
 impl Level {
@@ -39,6 +43,7 @@ impl Level {
             orders: VecDeque::new(),
             total_quantity: 0,
             tombstone_count: 0,
+            popped_from_front: 0,
         }
     }
 
@@ -90,6 +95,18 @@ impl Level {
         self.orders.len()
     }
 
+    /// Returns the position that the next pushed order will have.
+    #[inline]
+    pub(crate) fn next_position(&self) -> usize {
+        self.popped_from_front + self.orders.len()
+    }
+
+    /// Returns the position of the entry currently at the queue front.
+    #[inline]
+    pub(crate) fn front_position(&self) -> usize {
+        self.popped_from_front
+    }
+
     /// Returns the OrderId at the front of the queue (next to fill).
     /// Skips tombstones.
     pub fn front(&mut self) -> Option<OrderId> {
@@ -97,6 +114,7 @@ impl Level {
             if id.0 == 0 {
                 // It's a tombstone
                 self.orders.pop_front();
+                self.popped_from_front += 1;
                 self.tombstone_count -= 1;
             } else {
                 return Some(id);
@@ -122,6 +140,7 @@ impl Level {
     /// Returns `None` if the level is empty.
     pub fn pop_front(&mut self, quantity: Quantity) -> Option<OrderId> {
         while let Some(id) = self.orders.pop_front() {
+            self.popped_from_front += 1;
             if id.0 == 0 {
                 self.tombstone_count -= 1;
                 continue;
@@ -134,10 +153,11 @@ impl Level {
 
     /// Mark an order as a tombstone (O(1) cancellation).
     ///
-    /// The caller provides the index into the VecDeque (tracked in OrderBook's
+    /// The caller provides the entry's position (tracked in OrderBook's
     /// HashMap). The order's quantity is subtracted from the level total.
-    pub fn mark_tombstone(&mut self, index: usize, quantity: Quantity) {
-        if let Some(id_ref) = self.orders.get_mut(index)
+    pub fn mark_tombstone(&mut self, position: usize, quantity: Quantity) {
+        if let Some(index) = position.checked_sub(self.popped_from_front)
+            && let Some(id_ref) = self.orders.get_mut(index)
             && id_ref.0 != 0
         {
             id_ref.0 = 0; // Set to tombstone ID
