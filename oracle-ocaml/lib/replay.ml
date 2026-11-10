@@ -29,11 +29,28 @@ let add_order_to_book book order =
   | Side.Buy -> book.Book.bids <- Book.insert_bid book.Book.bids level
   | Side.Sell -> book.Book.asks <- Book.insert_ask book.Book.asks level
 
-(* Helper: remove order from book *)
-let remove_order_from_book book order =
+(* Helper: remove [qty] of an order's quantity from its price level *)
+let remove_order_from_book book order qty =
   match order.Order.side with
-  | Side.Buy -> book.Book.bids <- Book.remove_bid book.Book.bids order.Order.price order.Order.remaining_quantity
-  | Side.Sell -> book.Book.asks <- Book.remove_ask book.Book.asks order.Order.price order.Order.remaining_quantity
+  | Side.Buy -> book.Book.bids <- Book.remove_bid book.Book.bids order.Order.price qty
+  | Side.Sell -> book.Book.asks <- Book.remove_ask book.Book.asks order.Order.price qty
+
+(* Helper: apply the fills in [trades] to the incoming order and store its
+   final state. It rests if [rest] and still active; otherwise any remainder
+   is cancelled, so a finished order is never active. *)
+let settle_incoming book order trades ~rest =
+  let filled =
+    List.fold_left (fun acc t -> Int64.add acc t.Matching.quantity) 0L trades
+  in
+  let order = if filled > 0L then Order.fill order filled else order in
+  if rest && Order.is_active order then begin
+    Book.store_order book order;
+    add_order_to_book book order
+  end
+  else if Order.is_active order then
+    Book.store_order book (fst (Order.cancel order))
+  else
+    Book.store_order book order
 
 (* Replay events through the book *)
 let replay_events events =
@@ -54,19 +71,13 @@ let replay_events events =
         (* Match the order against the book *)
         let match_result = Matching.match_order book order stp_policy in
         
-        (* Store the potentially modified order *)
-        Book.store_order book order;
-        
         (* Collect trades *)
         all_trades := !all_trades @ match_result.trades;
         
-        (* If order has remaining quantity and can rest, add to book *)
-        if match_result.remaining_quantity > 0L && Order.tif_can_rest time_in_force then
-          add_order_to_book book order
-        else if match_result.remaining_quantity > 0L && not (Order.tif_can_rest time_in_force) then
-          (* IOC/FOK remainder - cancel it *)
-          let cancelled_order = fst (Order.cancel order) in
-          Book.store_order book cancelled_order
+        (* Rest the remainder if the order can rest and STP did not cancel it;
+           otherwise store it filled or cancelled *)
+        settle_incoming book order match_result.trades
+          ~rest:(match_result.remaining_quantity > 0L && Order.tif_can_rest time_in_force)
           
     | SubmitMarket { side; quantity; owner; stp_policy } ->
         (* Market order - match immediately at best prices *)
@@ -87,11 +98,11 @@ let replay_events events =
         (* Match the market order *)
         let match_result = Matching.match_order book order stp_policy in
         
-        (* Store the order (should be fully filled or cancelled) *)
-        Book.store_order book order;
-        
         (* Collect trades *)
-        all_trades := !all_trades @ match_result.trades
+        all_trades := !all_trades @ match_result.trades;
+        
+        (* Store the order filled or cancelled; a market order never rests *)
+        settle_incoming book order match_result.trades ~rest:false
         
     | Cancel { order_id } ->
         (* Cancel the order *)
@@ -100,10 +111,10 @@ let replay_events events =
         | Some order ->
             if Order.is_active order then
               begin
-                let cancelled_order, _cancelled_qty = Order.cancel order in
+                let cancelled_order, cancelled_qty = Order.cancel order in
                 Book.store_order book cancelled_order;
-                (* Remove from book *)
-                remove_order_from_book book cancelled_order
+                (* Remove the quantity it had before the cancel *)
+                remove_order_from_book book cancelled_order cancelled_qty
               end
   ) events;
   
