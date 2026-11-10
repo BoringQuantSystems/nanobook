@@ -9,9 +9,11 @@
 #![allow(clippy::inconsistent_digit_grouping)]
 
 use nanobook::{
-    Exchange, OrderId, OrderOwner, OrderStatus, Price, Quantity, Side, StpPolicy, TimeInForce,
+    Exchange, OrderId, OrderOwner, OrderStatus, Price, Quantity, Side, StpPolicy, SubmitResult,
+    TimeInForce,
 };
 use proptest::prelude::*;
+use proptest::test_runner::TestCaseError;
 
 const PRICE: Price = Price(100_00);
 
@@ -91,7 +93,34 @@ fn partly_filled_self_trade_cancel_leaves_other_orders_alone() {
 
 #[derive(Clone, Debug)]
 enum Op {
-    Submit(Side, i64, Quantity, TimeInForce),
+    SubmitLimit {
+        side: Side,
+        price: i64,
+        quantity: Quantity,
+        tif: TimeInForce,
+        owner: Option<OrderOwner>,
+    },
+    SubmitMarket {
+        side: Side,
+        quantity: Quantity,
+    },
+    Modify {
+        index: usize,
+        price: i64,
+        quantity: Quantity,
+    },
+    StopMarket {
+        side: Side,
+        stop_price: i64,
+        quantity: Quantity,
+    },
+    StopLimit {
+        side: Side,
+        stop_price: i64,
+        limit_price: i64,
+        quantity: Quantity,
+        tif: TimeInForce,
+    },
     Cancel(usize),
     Compact,
 }
@@ -105,73 +134,259 @@ fn quantity() -> impl Strategy<Value = Quantity> {
     ]
 }
 
+fn side() -> impl Strategy<Value = Side> {
+    prop_oneof![Just(Side::Buy), Just(Side::Sell)]
+}
+
+fn tif() -> impl Strategy<Value = TimeInForce> {
+    prop_oneof![
+        Just(TimeInForce::GTC),
+        Just(TimeInForce::IOC),
+        Just(TimeInForce::FOK),
+    ]
+}
+
+fn owner() -> impl Strategy<Value = Option<OrderOwner>> {
+    prop_oneof![
+        Just(None),
+        Just(Some(OrderOwner(1))),
+        Just(Some(OrderOwner(2))),
+    ]
+}
+
+fn price() -> impl Strategy<Value = i64> {
+    1i64..=3
+}
+
+fn earlier_index() -> impl Strategy<Value = usize> {
+    any::<prop::sample::Index>().prop_map(|index| index.index(1 << 16))
+}
+
+fn stp_policy() -> impl Strategy<Value = StpPolicy> {
+    prop_oneof![
+        Just(StpPolicy::Off),
+        Just(StpPolicy::CancelNewest),
+        Just(StpPolicy::CancelOldest),
+        Just(StpPolicy::DecrementAndCancel),
+    ]
+}
+
 fn op() -> impl Strategy<Value = Op> {
     prop_oneof![
-        6 => (
-            prop_oneof![Just(Side::Buy), Just(Side::Sell)],
-            1i64..=3,
-            quantity(),
-            prop_oneof![Just(TimeInForce::GTC), Just(TimeInForce::IOC)],
-        )
-            .prop_map(|(side, price, quantity, tif)| Op::Submit(side, price, quantity, tif)),
-        3 => any::<prop::sample::Index>().prop_map(|index| Op::Cancel(index.index(1 << 16))),
+        4 => (side(), price(), quantity(), tif(), owner()).prop_map(
+            |(side, price, quantity, tif, owner)| Op::SubmitLimit {
+                side,
+                price,
+                quantity,
+                tif,
+                owner,
+            },
+        ),
+        2 => (side(), quantity()).prop_map(|(side, quantity)| Op::SubmitMarket { side, quantity }),
+        2 => (earlier_index(), price(), quantity()).prop_map(|(index, price, quantity)| {
+            Op::Modify {
+                index,
+                price,
+                quantity,
+            }
+        }),
+        1 => (side(), price(), quantity()).prop_map(|(side, stop_price, quantity)| Op::StopMarket {
+            side,
+            stop_price,
+            quantity,
+        }),
+        1 => (side(), price(), price(), quantity(), tif()).prop_map(
+            |(side, stop_price, limit_price, quantity, tif)| Op::StopLimit {
+                side,
+                stop_price,
+                limit_price,
+                quantity,
+                tif,
+            },
+        ),
+        3 => earlier_index().prop_map(Op::Cancel),
         1 => Just(Op::Compact),
     ]
 }
 
+fn note_ids(exchange: &Exchange, ids: &mut Vec<OrderId>, next: &mut u64) {
+    let end = exchange.book().peek_next_order_id().0;
+    while *next < end {
+        ids.push(OrderId(*next));
+        *next += 1;
+    }
+}
+
+fn assert_submit(result: &SubmitResult, quantity: Quantity) -> Result<(), TestCaseError> {
+    prop_assert_eq!(
+        u128::from(result.filled_quantity)
+            + u128::from(result.resting_quantity)
+            + u128::from(result.cancelled_quantity),
+        u128::from(quantity)
+    );
+    Ok(())
+}
+
+fn trade_price_ok(side: Side, limit: Price, trade_price: Price) -> bool {
+    match side {
+        Side::Buy => trade_price <= limit,
+        Side::Sell => trade_price >= limit,
+    }
+}
+
+fn assert_new_trades(exchange: &Exchange, from: usize) -> Result<(), TestCaseError> {
+    for trade in &exchange.trades()[from..] {
+        prop_assert!(trade.quantity > 0, "trade {:?} has no size", trade.id);
+        prop_assert!(
+            exchange.get_order(trade.aggressor_order_id).is_some(),
+            "trade {:?} aggressor is not stored",
+            trade.id
+        );
+        let aggressor = exchange.get_order(trade.aggressor_order_id).unwrap();
+        // Market orders carry Price::MAX or Price::MIN. Those prices are not limits.
+        if aggressor.price == Price::MAX || aggressor.price == Price::MIN {
+            continue;
+        }
+        prop_assert!(
+            trade_price_ok(aggressor.side, aggressor.price, trade.price),
+            "trade {:?} price {} is outside {:?} limit {}",
+            trade.id,
+            trade.price.0,
+            aggressor.side,
+            aggressor.price.0
+        );
+    }
+    Ok(())
+}
+
+fn assert_book(exchange: &Exchange) -> Result<(), TestCaseError> {
+    if let (Some(bid), Some(ask)) = exchange.best_bid_ask() {
+        prop_assert!(bid < ask, "crossed book bid {} ask {}", bid.0, ask.0);
+    }
+
+    let book = exchange.book();
+    let mut queued = Vec::new();
+    for levels in [book.bids(), book.asks()] {
+        for (price, level) in levels.iter_best_to_worst() {
+            prop_assert!(level.order_count() > 0);
+            let ids: Vec<OrderId> = level.iter().collect();
+            prop_assert!(ids.windows(2).all(|pair| pair[0].0 < pair[1].0));
+
+            let mut sum = 0u128;
+            for id in ids {
+                let order = exchange.get_order(id).unwrap();
+                prop_assert!(order.is_active(), "queued order {:?} is not active", id);
+                prop_assert_eq!(order.price, *price);
+                prop_assert_eq!(
+                    u128::from(order.filled_quantity) + u128::from(order.remaining_quantity),
+                    u128::from(order.original_quantity),
+                    "active order {:?} lost quantity",
+                    id
+                );
+                sum += u128::from(order.remaining_quantity);
+                queued.push(id);
+            }
+            prop_assert_eq!(
+                u128::from(level.total_quantity()),
+                sum.min(u128::from(u64::MAX))
+            );
+        }
+    }
+
+    queued.sort_by_key(|id| id.0);
+    // A pending stop is not a book order. A triggered stop's child order is.
+    // This scan keeps every id, including stop ids.
+    let next = book.peek_next_order_id().0;
+    let mut active: Vec<OrderId> = (1..next)
+        .map(OrderId)
+        .filter(|id| {
+            exchange
+                .get_order(*id)
+                .is_some_and(|order| order.is_active())
+        })
+        .collect();
+    active.sort_by_key(|id| id.0);
+    prop_assert_eq!(queued, active);
+    Ok(())
+}
+
 proptest! {
-    /// After any mix of submits, later cancels, and compaction: every active
-    /// order sits once in the level at its own price, queues stay in arrival
-    /// order, each level total is exact, and every trade has a positive size.
+    /// After every limit, market, modify, stop, cancel, and compact: the book
+    /// is not crossed, each submit conserves quantity, each limit trade is at
+    /// or inside its limit, and every active order is queued once at its price.
     #[test]
-    fn queues_match_active_orders(ops in prop::collection::vec(op(), 1..120)) {
-        let mut exchange = Exchange::new();
-        let mut submitted: Vec<OrderId> = Vec::new();
+    fn queues_match_active_orders(
+        (policy, ops) in (stp_policy(), prop::collection::vec(op(), 1..120))
+    ) {
+        let mut exchange = Exchange::new().with_stp_policy(policy);
+        let mut ids: Vec<OrderId> = Vec::new();
+        let mut next_id = 1u64;
 
         for op in ops {
+            let trades_before = exchange.trades().len();
             match op {
-                Op::Submit(side, price, quantity, tif) => {
-                    let result = exchange.submit_limit(side, Price(price), quantity, tif);
-                    prop_assert!(result.trades.iter().all(|t| t.quantity > 0));
-                    submitted.push(result.order_id);
+                Op::SubmitLimit {
+                    side,
+                    price,
+                    quantity,
+                    tif,
+                    owner,
+                } => {
+                    let result = match owner {
+                        Some(owner) => exchange.submit_limit_with_owner(
+                            side,
+                            Price(price),
+                            quantity,
+                            tif,
+                            owner,
+                        ),
+                        None => exchange.submit_limit(side, Price(price), quantity, tif),
+                    };
+                    assert_submit(&result, quantity)?;
                 }
-                Op::Cancel(index) if !submitted.is_empty() => {
-                    exchange.cancel(submitted[index % submitted.len()]);
+                Op::SubmitMarket { side, quantity } => {
+                    let result = exchange.submit_market(side, quantity);
+                    assert_submit(&result, quantity)?;
+                }
+                Op::Modify {
+                    index,
+                    price,
+                    quantity,
+                } if !ids.is_empty() => {
+                    exchange.modify(ids[index % ids.len()], Price(price), quantity);
+                }
+                Op::Modify { .. } => {}
+                Op::StopMarket {
+                    side,
+                    stop_price,
+                    quantity,
+                } => {
+                    exchange.submit_stop_market(side, Price(stop_price), quantity);
+                }
+                Op::StopLimit {
+                    side,
+                    stop_price,
+                    limit_price,
+                    quantity,
+                    tif,
+                } => {
+                    exchange.submit_stop_limit(
+                        side,
+                        Price(stop_price),
+                        Price(limit_price),
+                        quantity,
+                        tif,
+                    );
+                }
+                Op::Cancel(index) if !ids.is_empty() => {
+                    exchange.cancel(ids[index % ids.len()]);
                 }
                 Op::Cancel(_) => {}
                 Op::Compact => exchange.compact(),
             }
+            note_ids(&exchange, &mut ids, &mut next_id);
+            assert_new_trades(&exchange, trades_before)?;
+            assert_book(&exchange)?;
         }
-
-        let book = exchange.book();
-        let mut queued = Vec::new();
-        for levels in [book.bids(), book.asks()] {
-            for (price, level) in levels.iter_best_to_worst() {
-                prop_assert!(level.order_count() > 0);
-                let ids: Vec<OrderId> = level.iter().collect();
-                prop_assert!(ids.windows(2).all(|pair| pair[0].0 < pair[1].0));
-
-                let mut sum = 0u128;
-                for id in ids {
-                    let order = exchange.get_order(id).unwrap();
-                    prop_assert!(order.is_active(), "queued order {:?} is not active", id);
-                    prop_assert_eq!(order.price, *price);
-                    sum += u128::from(order.remaining_quantity);
-                    queued.push(id);
-                }
-                prop_assert_eq!(
-                    u128::from(level.total_quantity()),
-                    sum.min(u128::from(u64::MAX))
-                );
-            }
-        }
-
-        queued.sort_by_key(|id| id.0);
-        let mut active: Vec<OrderId> = submitted
-            .into_iter()
-            .filter(|id| exchange.get_order(*id).is_some_and(|o| o.is_active()))
-            .collect();
-        active.sort_by_key(|id| id.0);
-        prop_assert_eq!(queued, active);
     }
 }

@@ -1,0 +1,7 @@
+{"type":"SubmitLimit","side":"BUY","price":10000,"quantity":10,"time_in_force":"GTC"}
+{"type":"SubmitLimit","side":"BUY","price":10000,"quantity":5,"time_in_force":"GTC","owner":1,"stp_policy":"CancelNewest"}
+{"type":"SubmitLimit","side":"SELL","price":10000,"quantity":30,"time_in_force":"GTC","owner":1,"stp_policy":"CancelNewest"}
+{"type":"Cancel","order_id":2}
+{"type":"SubmitLimit","side":"SELL","price":10000,"quantity":7,"time_in_force":"GTC"}
+{"type":"Cancel","order_id":3}
+{"type":"SubmitLimit","side":"BUY","price":10000,"quantity":7,"time_in_force":"IOC"}

@@ -1,0 +1,5 @@
+{"type":"SubmitLimit","side":"BUY","price":10000,"quantity":10,"time_in_force":"GTC"}
+{"type":"SubmitLimit","side":"SELL","price":10000,"quantity":30,"time_in_force":"IOC"}
+{"type":"SubmitLimit","side":"SELL","price":10000,"quantity":7,"time_in_force":"GTC"}
+{"type":"Cancel","order_id":2}
+{"type":"SubmitLimit","side":"BUY","price":10000,"quantity":7,"time_in_force":"IOC"}
