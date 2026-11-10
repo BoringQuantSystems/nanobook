@@ -75,7 +75,15 @@ impl BookSnapshot {
         if total == 0 {
             return None;
         }
-        Some((bid_qty as f64 - ask_qty as f64) / total as f64)
+        // Subtract in integers: converting first loses a small difference
+        // between two large sides.
+        let difference = bid_qty.abs_diff(ask_qty) as f64;
+        let signed = if bid_qty >= ask_qty {
+            difference
+        } else {
+            -difference
+        };
+        Some(signed / total as f64)
     }
 
     /// Volume-weighted midpoint price.

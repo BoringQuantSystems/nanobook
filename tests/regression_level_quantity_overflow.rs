@@ -100,6 +100,19 @@ fn imbalance_uses_exact_side_sums() {
 }
 
 #[test]
+fn imbalance_keeps_a_small_difference_between_large_sides() {
+    let mut exchange = Exchange::new();
+    exchange.submit_limit(Side::Buy, Price(100_00), u64::MAX, TimeInForce::GTC);
+    exchange.submit_limit(Side::Buy, Price(99_00), 2, TimeInForce::GTC);
+    exchange.submit_limit(Side::Sell, Price(101_00), u64::MAX, TimeInForce::GTC);
+    exchange.submit_limit(Side::Sell, Price(102_00), 1, TimeInForce::GTC);
+
+    // Bids exceed asks by one share, so the ratio is small but positive.
+    let imbalance = exchange.depth(10).imbalance().unwrap();
+    assert!(imbalance > 0.0, "imbalance {imbalance}");
+}
+
+#[test]
 fn imbalance_handles_both_sides_at_the_cap() {
     let mut exchange = Exchange::new();
     exchange.submit_limit(Side::Buy, Price(99_00), u64::MAX, TimeInForce::GTC);
