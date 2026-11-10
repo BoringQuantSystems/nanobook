@@ -305,7 +305,8 @@ impl Exchange {
             } else {
                 OrderStatus::Cancelled
             };
-            order.status = status;
+            // The stored order is finished: nothing of it rests on the book.
+            order.status = OrderStatus::Cancelled;
             // The STP remainder is the difference between what the user
             // submitted and what actually traded. Under DecrementAndCancel
             // this equals the decremented quantity.
@@ -334,7 +335,8 @@ impl Exchange {
             } else {
                 OrderStatus::Cancelled
             };
-            order.status = status;
+            // The stored order is finished: its remainder never rests.
+            order.cancel();
             self.book.orders.insert(order_id, order);
             (status, 0, remaining)
         };

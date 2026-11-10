@@ -1,7 +1,7 @@
 # Golden Corpus (verified)
 
 Byte-identical trade output from the Rust `corpus-replay` binary and the OCaml
-`replay_bin` oracle across all 18 cases below. CI runs the differential loop in
+`replay_bin` oracle across all 21 cases below. CI runs the differential loop in
 `.github/workflows/oracle.yml`.
 
 ## Layout
@@ -89,6 +89,9 @@ the next timestamp (and trade id separately from 1).
 | 16-stp-decrement-equal | STP equal qty, resting cancelled |
 | 17-min-price | i64 near `MIN` |
 | 18-max-price | i64 near `MAX` |
+| 19-cancel-after-front-fill | Cancel the middle order after a front fill |
+| 20-cancel-finished-ioc | Cancel a finished IOC, then fill the next sell |
+| 21-stp-partial-then-cancel | CancelNewest partial fill, then cancel that id |
 
 ## Run locally
 
@@ -120,9 +123,9 @@ for case in oracle-ocaml/test/corpus/*/; do
 done
 ```
 
-## Add case 19
+## Add a case
 
-1. Create `oracle-ocaml/test/corpus/19-your-case/` with `input.jsonl`.
+1. Create `oracle-ocaml/test/corpus/22-your-case/` with `input.jsonl`.
 2. Run either engine to produce a candidate `output.jsonl`.
 3. Run the other engine and `diff` until byte-identical.
 4. Add a row to the table above and commit all three files.

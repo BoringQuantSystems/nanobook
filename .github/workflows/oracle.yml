@@ -51,8 +51,9 @@ jobs:
           for case in oracle-ocaml/test/corpus/*/; do
             [ -f "$case/input.jsonl" ] || continue
             name=$(basename "$case")
-            opam exec -- dune exec --root oracle-ocaml bin/replay_bin.exe -- "$case/input.jsonl" "/tmp/ocaml-$name.jsonl"
-            ./target/release/corpus-replay "$case/input.jsonl" "/tmp/rust-$name.jsonl"
+            # A replay that loops forever fails the case instead of stalling the job.
+            timeout 60 opam exec -- dune exec --root oracle-ocaml bin/replay_bin.exe -- "$case/input.jsonl" "/tmp/ocaml-$name.jsonl"
+            timeout 60 ./target/release/corpus-replay "$case/input.jsonl" "/tmp/rust-$name.jsonl"
             diff -u "$case/output.jsonl" "/tmp/ocaml-$name.jsonl"
             diff -u "$case/output.jsonl" "/tmp/rust-$name.jsonl"
             echo "ok $name"

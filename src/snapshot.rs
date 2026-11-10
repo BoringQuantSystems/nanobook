@@ -41,14 +41,18 @@ impl BookSnapshot {
         }
     }
 
-    /// Returns total bid quantity across all levels.
+    /// Returns total bid quantity across all levels, capped at `Quantity::MAX`.
     pub fn total_bid_quantity(&self) -> Quantity {
-        self.bids.iter().map(|l| l.quantity).sum()
+        self.bids
+            .iter()
+            .fold(0, |sum, l| sum.saturating_add(l.quantity))
     }
 
-    /// Returns total ask quantity across all levels.
+    /// Returns total ask quantity across all levels, capped at `Quantity::MAX`.
     pub fn total_ask_quantity(&self) -> Quantity {
-        self.asks.iter().map(|l| l.quantity).sum()
+        self.asks
+            .iter()
+            .fold(0, |sum, l| sum.saturating_add(l.quantity))
     }
 
     /// Order book imbalance: `(bid_qty - ask_qty) / (bid_qty + ask_qty)`.
@@ -60,13 +64,26 @@ impl BookSnapshot {
     ///
     /// Returns `None` if the book is empty on both sides.
     pub fn imbalance(&self) -> Option<f64> {
-        let bid_qty = self.total_bid_quantity();
-        let ask_qty = self.total_ask_quantity();
+        // Exact side sums: the capped totals would distort the ratio once a
+        // side holds more than `Quantity::MAX`.
+        let exact = |levels: &[LevelSnapshot]| -> u128 {
+            levels.iter().map(|l| u128::from(l.quantity)).sum()
+        };
+        let bid_qty = exact(&self.bids);
+        let ask_qty = exact(&self.asks);
         let total = bid_qty + ask_qty;
         if total == 0 {
             return None;
         }
-        Some((bid_qty as f64 - ask_qty as f64) / total as f64)
+        // Subtract in integers: converting first loses a small difference
+        // between two large sides.
+        let difference = bid_qty.abs_diff(ask_qty) as f64;
+        let signed = if bid_qty >= ask_qty {
+            difference
+        } else {
+            -difference
+        };
+        Some(signed / total as f64)
     }
 
     /// Volume-weighted midpoint price.

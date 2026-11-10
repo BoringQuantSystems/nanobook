@@ -298,6 +298,17 @@ impl OrderBook {
     pub fn compact(&mut self) {
         self.bids.compact();
         self.asks.compact();
+
+        // Compaction shifts queue entries, so stored positions are rewritten.
+        for levels in [&self.bids, &self.asks] {
+            for (_, level) in levels.iter_best_to_worst() {
+                for (offset, id) in level.iter().enumerate() {
+                    if let Some(order) = self.orders.get_mut(&id) {
+                        order.position_in_level = level.front_position() + offset;
+                    }
+                }
+            }
+        }
     }
 }
 

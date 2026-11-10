@@ -108,7 +108,9 @@ impl Trade {
         if trades.is_empty() {
             return None;
         }
-        let total_qty: u64 = trades.iter().map(|t| t.quantity).sum();
+        let total_qty = trades
+            .iter()
+            .try_fold(0u64, |sum, t| sum.checked_add(t.quantity))?;
         if total_qty == 0 {
             return None;
         }
@@ -121,7 +123,7 @@ impl Trade {
             let n = checked_notional(trade.price.0, trade.quantity).ok()?;
             total_notional = total_notional.checked_add(n)?;
         }
-        Some(Price(total_notional / total_qty as i64))
+        Some(Price(total_notional / i64::try_from(total_qty).ok()?))
     }
 }
 

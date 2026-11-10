@@ -5,7 +5,13 @@
 
 use std::collections::BTreeMap;
 
+use crate::level::cap_quantity;
 use crate::{Level, OrderId, Price, Quantity, Side};
+
+/// Sums level totals exactly and caps the result at `Quantity::MAX`.
+fn capped_sum<'a>(levels: impl Iterator<Item = &'a Level>) -> Quantity {
+    cap_quantity(levels.map(Level::exact_total_quantity).sum())
+}
 
 /// One side of the order book (all bids or all asks).
 ///
@@ -106,13 +112,12 @@ impl PriceLevels {
     /// Add an order at the given price.
     ///
     /// Creates the level if it doesn't exist.
-    /// Returns the position index within the level.
+    /// Returns the order's position within the level.
     pub fn insert_order(&mut self, price: Price, order_id: OrderId, quantity: Quantity) -> usize {
         let level = self.get_or_create_level(price);
-        // Actually, VecDeque index is just the length before push.
-        let actual_index = level.orders.len();
+        let position = level.next_position();
         level.push_back(order_id, quantity);
-        actual_index
+        position
     }
 
     /// Mark an order as a tombstone.
@@ -184,12 +189,13 @@ impl PriceLevels {
         }
     }
 
-    /// Returns the total quantity across all levels.
+    /// Returns the total quantity across all levels, capped at `Quantity::MAX`.
     pub fn total_quantity(&self) -> Quantity {
-        self.levels.values().map(|l| l.total_quantity()).sum()
+        capped_sum(self.levels.values())
     }
 
-    /// Returns the total quantity available at prices that would cross with the given price.
+    /// Returns the total quantity available at prices that would cross with the given price,
+    /// capped at `Quantity::MAX`.
     ///
     /// For bids: quantity at prices >= given price
     /// For asks: quantity at prices <= given price
@@ -197,17 +203,11 @@ impl PriceLevels {
         match self.side {
             Side::Buy => {
                 // Bids: want prices >= given (higher is better for buyer)
-                self.levels
-                    .range(price..)
-                    .map(|(_, l)| l.total_quantity())
-                    .sum()
+                capped_sum(self.levels.range(price..).map(|(_, l)| l))
             }
             Side::Sell => {
                 // Asks: want prices <= given (lower is better for seller's counterparty)
-                self.levels
-                    .range(..=price)
-                    .map(|(_, l)| l.total_quantity())
-                    .sum()
+                capped_sum(self.levels.range(..=price).map(|(_, l)| l))
             }
         }
     }
