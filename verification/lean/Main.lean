@@ -61,7 +61,8 @@ def parseOwner (v : Lean.Json) : Except String (Option Nat) :=
   match v with
   | .null => .ok none
   | .num n =>
-    if n.exponent != 0 || n.mantissa < 0 then
+    -- Same contract as corpus-replay: an owner must fit in u32.
+    if n.exponent != 0 || n.mantissa < 0 || n.mantissa.toNat > 4294967295 then
       .error "invalid owner"
     else
       .ok (some n.mantissa.toNat)
@@ -73,6 +74,12 @@ def field (j : Lean.Json) (key : String) : Except String Lean.Json :=
 def optField (j : Lean.Json) (key : String) : Lean.Json :=
   j.getObjValD key
 
+/-- An absent `stp_policy` means `Off`; an explicit `null` is invalid, as in corpus-replay. -/
+def parsePolicyField (j : Lean.Json) : Except String StpPolicy :=
+  match j.getObjVal? "stp_policy" with
+  | .error _ => .ok .off
+  | .ok v => do parsePolicy (← v.getStr?)
+
 def parseEvent (line : String) : Except String Event := do
   let j ← Lean.Json.parse line
   let ty ← (← field j "type").getStr?
@@ -83,19 +90,13 @@ def parseEvent (line : String) : Except String Event := do
     let quantity ← parseQty (← field j "quantity")
     let tif ← parseTif (← (← field j "time_in_force").getStr?)
     let owner ← parseOwner (optField j "owner")
-    let policy ←
-      match optField j "stp_policy" with
-      | .null => pure .off
-      | v => parsePolicy (← v.getStr?)
+    let policy ← parsePolicyField j
     pure (.submitLimit side price quantity tif owner policy)
   | "SubmitMarket" =>
     let side ← parseSide (← (← field j "side").getStr?)
     let quantity ← parseQty (← field j "quantity")
     let owner ← parseOwner (optField j "owner")
-    let policy ←
-      match optField j "stp_policy" with
-      | .null => pure .off
-      | v => parsePolicy (← v.getStr?)
+    let policy ← parsePolicyField j
     pure (.submitMarket side quantity owner policy)
   | "Cancel" =>
     let orderId ← parseQty (← field j "order_id")

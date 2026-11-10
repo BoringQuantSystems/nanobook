@@ -105,18 +105,16 @@ fn json_i64_field(obj: &serde_json::Value, key: &str) -> Option<i64> {
 }
 
 fn json_u64_field(obj: &serde_json::Value, key: &str) -> Option<u64> {
-    obj.get(key)
-        .and_then(|v| v.as_u64().or_else(|| v.as_i64().map(|n| n as u64)))
+    // Negative values are rejected, not wrapped.
+    obj.get(key).and_then(|v| v.as_u64())
 }
 
 fn json_owner_field(obj: &serde_json::Value) -> Option<Option<u32>> {
     match obj.get("owner") {
         None => Some(None),
         Some(v) if v.is_null() => Some(None),
-        Some(v) => v
-            .as_u64()
-            .or_else(|| v.as_i64().map(|n| n as u64))
-            .map(|n| Some(n as u32)),
+        // An owner outside `u32` is rejected, not truncated.
+        Some(v) => v.as_u64().and_then(|n| u32::try_from(n).ok()).map(Some),
     }
 }
 

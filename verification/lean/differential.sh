@@ -9,11 +9,21 @@ ROOT="$(cd "$LEAN_DIR/../.." && pwd)"
 LENGTH=64
 export CARGO_BUILD_JOBS=2
 
+# One scratch directory for the whole run, removed on every exit path.
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+
+require_count() {
+  if ! [[ "$1" =~ ^[1-9][0-9]*$ ]]; then
+    echo "N must be a positive integer, got '$1'" >&2
+    exit 2
+  fi
+}
+
 run_seeds() {
   local n="$1"
-  local tmp rust_bin gen_bin lean_bin
-  tmp="$(mktemp -d)"
-  trap 'rm -rf "$tmp"' RETURN
+  local tmp="$TMP" rust_bin gen_bin lean_bin
+  require_count "$n"
   rust_bin="$ROOT/target/release/corpus-replay"
   gen_bin="$ROOT/target/release/examples/corpus_gen"
   lean_bin="$LEAN_DIR/.lake/build/bin/nanobook-replay"
@@ -25,19 +35,21 @@ run_seeds() {
     if ! cmp -s "$tmp/rust.jsonl" "$tmp/lean.jsonl"; then
       echo "mismatch seed $seed"
       awk '
-        NR == FNR { rust[NR] = $0; rust_n = NR; next }
+        FILENAME == ARGV[1] { rust[FNR] = $0; rust_n = FNR; next }
         {
+          lean_n = FNR
           if ($0 != rust[FNR]) {
             print "line " FNR
             print "rust: " rust[FNR]
             print "lean: " $0
+            found = 1
             exit
           }
         }
         END {
-          if (FNR < rust_n) {
-            print "line " FNR + 1
-            print "rust: " rust[FNR + 1]
+          if (!found && lean_n < rust_n) {
+            print "line " lean_n + 1
+            print "rust: " rust[lean_n + 1]
             print "lean: "
           }
         }
@@ -66,6 +78,7 @@ if [[ $# -ne 1 ]]; then
 fi
 
 N="$1"
+require_count "$N"
 cargo build --manifest-path "$ROOT/Cargo.toml" --release --features serde --bin corpus-replay
 cargo build --manifest-path "$ROOT/Cargo.toml" --release --example corpus_gen
 lake --dir "$LEAN_DIR" build

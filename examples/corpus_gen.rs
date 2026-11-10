@@ -165,4 +165,9 @@ fn main() {
             }
         }
     }
+    // Dropping a BufWriter discards a flush error; report it instead.
+    out.flush().unwrap_or_else(|err| {
+        eprintln!("write {path}: {err}");
+        exit(1);
+    });
 }
