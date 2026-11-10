@@ -54,6 +54,8 @@ run_seeds() {
           }
         }
       ' "$tmp/rust.jsonl" "$tmp/lean.jsonl"
+      # Byte offset as well: a difference in trailing newlines shows no differing line.
+      cmp "$tmp/rust.jsonl" "$tmp/lean.jsonl" || true
       exit 1
     fi
     if (( seed % 1000 == 0 )); then
