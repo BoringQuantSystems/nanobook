@@ -1,6 +1,9 @@
 # Rust
 /target/
 
+# Lean
+verification/lean/.lake/
+
 # cargo-mutants output (I3 baseline; regenerated on demand)
 /mutants.out/
 /mutants.log

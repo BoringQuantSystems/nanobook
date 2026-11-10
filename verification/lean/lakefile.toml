@@ -1,0 +1,10 @@
+name = "nanobook"
+version = "0.1.0"
+defaultTargets = ["Nanobook", "nanobook-replay"]
+
+[[lean_lib]]
+name = "Nanobook"
+
+[[lean_exe]]
+name = "nanobook-replay"
+root = "Main"
