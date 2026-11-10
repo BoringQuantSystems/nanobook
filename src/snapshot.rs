@@ -64,9 +64,14 @@ impl BookSnapshot {
     ///
     /// Returns `None` if the book is empty on both sides.
     pub fn imbalance(&self) -> Option<f64> {
-        let bid_qty = self.total_bid_quantity();
-        let ask_qty = self.total_ask_quantity();
-        let total = u128::from(bid_qty) + u128::from(ask_qty);
+        // Exact side sums: the capped totals would distort the ratio once a
+        // side holds more than `Quantity::MAX`.
+        let exact = |levels: &[LevelSnapshot]| -> u128 {
+            levels.iter().map(|l| u128::from(l.quantity)).sum()
+        };
+        let bid_qty = exact(&self.bids);
+        let ask_qty = exact(&self.asks);
+        let total = bid_qty + ask_qty;
         if total == 0 {
             return None;
         }

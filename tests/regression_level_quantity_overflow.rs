@@ -85,6 +85,21 @@ fn totals_across_levels_are_capped() {
 }
 
 #[test]
+fn imbalance_uses_exact_side_sums() {
+    let mut exchange = Exchange::new();
+    exchange.submit_limit(Side::Buy, Price(100_00), u64::MAX, TimeInForce::GTC);
+    exchange.submit_limit(Side::Buy, Price(99_00), u64::MAX, TimeInForce::GTC);
+    exchange.submit_limit(Side::Sell, Price(101_00), u64::MAX, TimeInForce::GTC);
+
+    // Bids hold twice the asks: (2 - 1) / (2 + 1).
+    let imbalance = exchange.depth(10).imbalance().unwrap();
+    assert!(
+        (imbalance - 1.0 / 3.0).abs() < 1e-12,
+        "imbalance {imbalance}"
+    );
+}
+
+#[test]
 fn imbalance_handles_both_sides_at_the_cap() {
     let mut exchange = Exchange::new();
     exchange.submit_limit(Side::Buy, Price(99_00), u64::MAX, TimeInForce::GTC);
