@@ -276,14 +276,18 @@ impl OrderBook {
         if quantity == 0 {
             return true;
         }
+        // Without an owner or a policy, self-trade prevention never acts:
+        // the aggregate crossing size decides.
+        if owner.is_none() || policy == StpPolicy::Off {
+            return self.can_fully_fill(side, price, quantity);
+        }
         let mut remaining = quantity;
         for (level_price, level) in self.opposite_side(side).iter_best_to_worst() {
             if !Self::prices_cross(side, price, *level_price) {
                 break;
             }
-            let ids: Vec<_> = level.iter().collect();
             let mut halted = false;
-            for id in ids {
+            for id in level.iter() {
                 if remaining == 0 {
                     return true;
                 }
@@ -292,8 +296,7 @@ impl OrderBook {
                 };
                 let same_owner = matches!(
                     (owner, resting.owner),
-                    (Some(incoming), Some(resting_owner))
-                        if incoming == resting_owner && policy != StpPolicy::Off
+                    (Some(incoming), Some(resting_owner)) if incoming == resting_owner
                 );
                 if !same_owner {
                     let fill_qty = remaining.min(resting.remaining_quantity);
@@ -301,10 +304,8 @@ impl OrderBook {
                     continue;
                 }
                 match policy {
-                    StpPolicy::Off => {
-                        let fill_qty = remaining.min(resting.remaining_quantity);
-                        remaining -= fill_qty;
-                    }
+                    // Handled by the early return above.
+                    StpPolicy::Off => unreachable!("Off returns before the walk"),
                     StpPolicy::CancelNewest => {
                         halted = true;
                         break;
