@@ -6,3 +6,4 @@ import Nanobook.Proofs.Conservation
 import Nanobook.Proofs.Price
 import Nanobook.Proofs.BookShape
 import Nanobook.Proofs.Uncrossed
+import Nanobook.Proofs.CancelLocal
