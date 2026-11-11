@@ -52,23 +52,62 @@ let stp_conflict incoming_owner resting_owner policy =
   | (Some incoming, Some resting, _) when incoming = resting && policy <> Off -> true
   | _ -> false
 
-(* Calculate total available quantity at crossing prices *)
-let calculate_available_liquidity book incoming_side incoming_price =
-  (* For a BUY order, check ASK side (sells). For a SELL order, check BID side (buys). *)
-  let levels = 
+(* Same owner on both sides, and the policy is not Off. *)
+let owner_conflict incoming_owner resting_owner policy =
+  match (incoming_owner, resting_owner, policy) with
+  | (Some incoming, Some resting, _) when incoming = resting && policy <> Off -> true
+  | _ -> false
+
+(* Size one queue can trade. The pair is (taken, continue). *)
+let rec scan_ids book ids r owner policy =
+  match ids with
+  | [] -> (0L, true)
+  | _ when r = 0L -> (0L, true)
+  | id :: rest ->
+      match Book.get_order book id with
+      | None -> scan_ids book rest r owner policy
+      | Some resting when not (Order.is_active resting) ->
+          scan_ids book rest r owner policy
+      | Some resting ->
+          let resting_qty = resting.Order.remaining_quantity in
+          if owner_conflict owner resting.Order.owner policy then
+            match policy with
+            | Off ->
+                let q = if r <= resting_qty then r else resting_qty in
+                let (taken, cont) = scan_ids book rest (Int64.sub r q) owner policy in
+                (Int64.add q taken, cont)
+            | CancelNewest -> (0L, false)
+            | CancelOldest -> scan_ids book rest r owner policy
+            | DecrementAndCancel ->
+                if r < resting_qty then (0L, false)
+                else scan_ids book rest r owner policy
+          else
+            let q = if r <= resting_qty then r else resting_qty in
+            let (taken, cont) = scan_ids book rest (Int64.sub r q) owner policy in
+            (Int64.add q taken, cont)
+
+(* Size the crossing levels can trade, best price first. *)
+let rec scan_levels book levels side price r owner policy =
+  match levels with
+  | [] -> 0L
+  | _ when r = 0L -> 0L
+  | level :: rest ->
+      if not (prices_cross side price level.Book.price) then 0L
+      else
+        let (taken, cont) = scan_ids book level.Book.orders r owner policy in
+        if (not cont) || taken = r then taken
+        else
+          Int64.add taken
+            (scan_levels book rest side price (Int64.sub r taken) owner policy)
+
+(* Count only size the incoming order can trade under its policy. *)
+let calculate_available_liquidity book incoming_side incoming_price incoming_qty incoming_owner policy =
+  let levels =
     match incoming_side with
     | Side.Buy -> book.Book.asks
     | Side.Sell -> book.Book.bids
   in
-  let rec sum_liquidity acc = function
-    | [] -> acc
-    | level :: rest ->
-        if prices_cross incoming_side incoming_price level.Book.price then
-          sum_liquidity (Int64.add acc level.Book.quantity) rest
-        else
-          acc  (* Price doesn't cross, stop here *)
-  in
-  sum_liquidity 0L levels
+  scan_levels book levels incoming_side incoming_price incoming_qty incoming_owner policy
 
 (* Match an incoming order against the book *)
 let rec match_order book incoming policy =
@@ -79,7 +118,9 @@ let rec match_order book incoming policy =
   (* Check FOK: if order cannot be fully filled, cancel without trades *)
   if incoming.Order.time_in_force = Order.FOK then
     begin
-      let available = calculate_available_liquidity book incoming.Order.side incoming.Order.price in
+      let available =
+        calculate_available_liquidity book incoming.Order.side incoming.Order.price
+          incoming.Order.remaining_quantity incoming.Order.owner policy in
       if available < incoming.Order.remaining_quantity then
         begin
           (* Cannot fill fully - cancel without trades *)

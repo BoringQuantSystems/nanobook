@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- Fixed fill-or-kill orders under self-trade prevention. The fill-or-kill check counted the owner's own resting orders, so the order could pass the check and then be stopped by self-trade prevention: it could be partly filled, cancel the owner's resting order without trading, or be stored as cancelled. The check now counts only size the order could trade under its self-trade policy, and a short order is rejected without changing the book. `OrderBook::can_fully_fill` is unchanged; the new `OrderBook::can_fully_fill_under` takes the owner and the policy.
+
 - Fixed cancels that removed the wrong order. After the front of a price queue had filled, or after `compact`, cancelling an order could mark a different order at that price, leaving queued orders that could not match and could stall matching. A partially filled IOC or self-trade-cancelled order now reads as `Cancelled` with no remaining quantity from `get_order` and can no longer be cancelled; `SubmitResult.status` is unchanged.
 
 - Fixed resting quantities whose sum exceeds `u64::MAX`. A level dropped its remaining orders after its total saturated, and sums across levels overflowed, which panicked in debug builds and made fill-or-kill checks wrong in release builds. Level totals are now exact; `total_quantity`, `quantity_at_or_better`, and snapshot totals cap at `u64::MAX`, `BookSnapshot::imbalance` uses exact side sums, and `Trade::vwap` returns `None` when the quantity sum does not fit.

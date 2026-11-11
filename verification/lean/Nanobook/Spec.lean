@@ -207,31 +207,84 @@ def pricesCross (side : Side) (incomingPrice restingPrice : Int) : Bool :=
   | .buy => decide (incomingPrice ≥ restingPrice)
   | .sell => decide (incomingPrice ≤ restingPrice)
 
-def sumIds (orders : List (Nat × Order)) (ids : List Nat) : Nat :=
+/-- Both owners are present and equal, and the policy is not `Off`. -/
+def ownerConflict (incoming resting : Option Nat) (policy : StpPolicy) : Bool :=
+  match incoming, resting, policy with
+  | some _, some _, .off => false
+  | some a, some b, _ => a == b
+  | _, _, _ => false
+
+/-- Quantity taken from one queue, and whether the walk stops. -/
+structure Scan where
+  taken : Nat
+  halt : Bool
+  deriving Repr
+
+/-- Walk one queue from front to back.
+`r` is the incoming remainder.
+Missing, inactive, and empty orders contribute nothing.
+`CancelNewest` stops the walk.
+`CancelOldest` skips the resting order.
+`DecrementAndCancel` stops when `r` is below the resting size, and skips it otherwise. -/
+def scanIds (orders : List (Nat × Order)) (ids : List Nat) (r : Nat)
+    (owner : Option Nat) (policy : StpPolicy) : Scan :=
   match ids with
-  | [] => 0
+  | [] => { taken := 0, halt := false }
   | id :: rest =>
-    let qty :=
+    if r == 0 then
+      { taken := 0, halt := false }
+    else
       match findOrder orders id with
-      | some o => if o.status.isActive then o.remaining else 0
-      | none => 0
-    qty + sumIds orders rest
+      | none => scanIds orders rest r owner policy
+      | some resting =>
+        if !resting.status.isActive || resting.remaining == 0 then
+          scanIds orders rest r owner policy
+        else if ownerConflict owner resting.owner policy && policy == .cancelNewest then
+          { taken := 0, halt := true }
+        else if ownerConflict owner resting.owner policy && policy == .cancelOldest then
+          scanIds orders rest r owner policy
+        else if ownerConflict owner resting.owner policy && policy == .decrementAndCancel &&
+            decide (r < resting.remaining) then
+          { taken := 0, halt := true }
+        else if ownerConflict owner resting.owner policy && policy == .decrementAndCancel then
+          scanIds orders rest r owner policy
+        else
+          let q := min r resting.remaining
+          let tail := scanIds orders rest (r - q) owner policy
+          { taken := q + tail.taken, halt := tail.halt }
 termination_by ids
 
--- Count every crossing order. Self-trade policy does not reduce this quantity.
-def sumCrossing (orders : List (Nat × Order)) (levels : List Level) (side : Side)
-    (price : Int) : Nat :=
+/-- Walk crossing levels from the best price.
+The walk stops when the remainder is filled, a self-trade stop hits, or the price no longer crosses. -/
+def scanLevels (orders : List (Nat × Order)) (levels : List Level) (side : Side)
+    (price : Int) (r : Nat) (owner : Option Nat) (policy : StpPolicy) : Scan :=
   match levels with
-  | [] => 0
-  | h :: rest =>
-    if pricesCross side price h.price then
-      sumIds orders h.orders + sumCrossing orders rest side price
+  | [] => { taken := 0, halt := false }
+  | level :: rest =>
+    if r == 0 then
+      { taken := 0, halt := false }
+    else if pricesCross side price level.price then
+      let here := scanIds orders level.orders r owner policy
+      if here.halt then
+        here
+      else if here.taken == r then
+        here
+      else
+        let more := scanLevels orders rest side price (r - here.taken) owner policy
+        { taken := here.taken + more.taken, halt := more.halt }
     else
-      0
+      { taken := 0, halt := false }
 termination_by levels
 
-def available (book : Book) (side : Side) (price : Int) : Nat :=
-  sumCrossing book.orders (levelsOf book side.opposite) side price
+/-- Size a fill-or-kill order can trade under `policy`. -/
+def sumCrossing (orders : List (Nat × Order)) (levels : List Level) (side : Side)
+    (price : Int) (quantity : Nat) (owner : Option Nat) (policy : StpPolicy) : Nat :=
+  (scanLevels orders levels side price quantity owner policy).taken
+
+/-- Size a fill-or-kill order can trade on `book`. -/
+def available (book : Book) (side : Side) (price : Int) (quantity : Nat)
+    (owner : Option Nat) (policy : StpPolicy) : Nat :=
+  sumCrossing book.orders (levelsOf book side.opposite) side price quantity owner policy
 
 def alloc (book : Book) (side : Side) (price : Int) (quantity : Nat)
     (tif : TimeInForce) (owner : Option Nat) : Book × Order :=
@@ -374,10 +427,11 @@ def settle (book : Book) (o : Order) (stp : Bool) : Book :=
   else
     writeOrder book { o with remaining := 0, status := .cancelled }
 
--- Reject a fill-or-kill order when crossing quantity is short. The id counter still advances.
+-- Reject a fill-or-kill order when tradable size is short. The id counter still advances.
 def submit (book : Book) (side : Side) (price : Int) (quantity : Nat)
     (tif : TimeInForce) (owner : Option Nat) (policy : StpPolicy) : Book × List Trade :=
-  if tif == .fok && available book side price < quantity then
+  if tif == .fok &&
+      available book side price quantity owner policy < quantity then
     let (book, _) := alloc book side price quantity tif owner
     (book, [])
   else

@@ -5,7 +5,7 @@
 //! 2. At the same price, earlier orders match first (FIFO)
 //! 3. Trades execute at the resting order's price (price improvement for aggressor)
 
-use crate::{Order, OrderBook, Price, Quantity, Side, Trade};
+use crate::{Order, OrderBook, OrderOwner, Price, Quantity, Side, Trade};
 
 /// Self-trade prevention (STP) policy applied when the incoming and
 /// resting orders share the same [`OrderOwner`](crate::order::OrderOwner).
@@ -248,16 +248,82 @@ impl OrderBook {
         }
     }
 
-    /// Calculate how much quantity is available at prices that would cross.
-    ///
-    /// This is used for FOK (fill-or-kill) feasibility checks.
+    /// Return the crossing size at `price` on the opposite side.
+    /// The count ignores owner and self-trade policy.
     pub fn available_to_fill(&self, side: Side, price: Price) -> Quantity {
         self.opposite_side(side).quantity_at_or_better(price)
     }
 
-    /// Check if an order can be fully filled (for FOK orders).
+    /// Return true when crossing size is at least `quantity`.
+    /// The check ignores owner and self-trade policy.
     pub fn can_fully_fill(&self, side: Side, price: Price, quantity: Quantity) -> bool {
         self.available_to_fill(side, price) >= quantity
+    }
+
+    /// Return true when `quantity` can trade under `policy`.
+    /// The walk reads the opposite queue from the best price.
+    /// `CancelNewest` stops the walk.
+    /// `CancelOldest` skips that resting order.
+    /// `DecrementAndCancel` stops when the remainder is smaller than the resting order.
+    pub fn can_fully_fill_under(
+        &self,
+        side: Side,
+        price: Price,
+        quantity: Quantity,
+        owner: Option<OrderOwner>,
+        policy: StpPolicy,
+    ) -> bool {
+        if quantity == 0 {
+            return true;
+        }
+        // Without an owner or a policy, self-trade prevention never acts:
+        // the aggregate crossing size decides.
+        if owner.is_none() || policy == StpPolicy::Off {
+            return self.can_fully_fill(side, price, quantity);
+        }
+        let mut remaining = quantity;
+        for (level_price, level) in self.opposite_side(side).iter_best_to_worst() {
+            if !Self::prices_cross(side, price, *level_price) {
+                break;
+            }
+            let mut halted = false;
+            for id in level.iter() {
+                if remaining == 0 {
+                    return true;
+                }
+                let Some(resting) = self.get_order(id) else {
+                    continue;
+                };
+                let same_owner = matches!(
+                    (owner, resting.owner),
+                    (Some(incoming), Some(resting_owner)) if incoming == resting_owner
+                );
+                if !same_owner {
+                    let fill_qty = remaining.min(resting.remaining_quantity);
+                    remaining -= fill_qty;
+                    continue;
+                }
+                match policy {
+                    // Handled by the early return above.
+                    StpPolicy::Off => unreachable!("Off returns before the walk"),
+                    StpPolicy::CancelNewest => {
+                        halted = true;
+                        break;
+                    }
+                    StpPolicy::CancelOldest => {}
+                    StpPolicy::DecrementAndCancel => {
+                        if remaining < resting.remaining_quantity {
+                            halted = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if halted || remaining == 0 {
+                break;
+            }
+        }
+        remaining == 0
     }
 }
 
