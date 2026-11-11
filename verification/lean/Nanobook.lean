@@ -9,3 +9,4 @@ import Nanobook.Proofs.Uncrossed
 import Nanobook.Proofs.CancelLocal
 import Nanobook.Proofs.SelfTrade
 import Nanobook.Proofs.Priority
+import Nanobook.Proofs.FillOrKill
