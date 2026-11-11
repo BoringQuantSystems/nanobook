@@ -426,6 +426,9 @@ def pop_front_book (q : QueueBook) (side : Side) (price : Int) (qty : Nat) : Que
 Rust calls `Order::fill`, then `decrease_quantity`.
 `Order::fill` panics when `amount` exceeds the remainder. `Nat` subtraction saturates. -/
 def decrease_book (q : QueueBook) (side : Side) (price : Int) (amount : Nat) : QueueBook :=
+  -- `match_at_price` calls `Level::front` before every fill, which pops leading
+  -- tombstones and advances `popped_from_front`; apply it first, as Rust does.
+  let q := setQueueLevels q side (front_at (queueLevels q side) price).1
   match firstLiveAt (queueLevels q side) price with
   | none => q
   | some id =>
@@ -678,6 +681,18 @@ private def holeCompact : QueueBook :=
 
 #guard match (pop_front_book (add_order QueueBook.empty .buy 10 1 5) .buy 10 5).bids with
   | [] => true
+  | _ => false
+
+-- A partial fill first pops leading tombstones, as `match_at_price` calls
+-- `Level::front` before every fill: `[0, 2, 3]` becomes `[2, 3]`, popped 1.
+#guard
+  let q := add_order QueueBook.empty .sell 100 1 5
+  let q := add_order q .sell 100 2 5
+  let q := add_order q .sell 100 3 5
+  let q := (cancel_order q 1).1
+  let q := decrease_book q .sell 100 2
+  match queueLevels q .sell with
+  | [level] => level.orders == [2, 3] && level.popped_from_front == 1
   | _ => false
 
 end Nanobook
