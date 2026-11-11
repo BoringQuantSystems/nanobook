@@ -5,6 +5,7 @@ The events are limit submits, market submits, and cancels.
 -/
 
 import Nanobook.Spec
+import Nanobook.Queue
 
 namespace Nanobook
 
@@ -262,5 +263,28 @@ def law9 : Prop :=
           (∀ y, y ≠ x → findOrder book'.orders y = findOrder book.orders y) ∧
           levelsOf book' o.side = removeAt (levelsOf book o.side) o.price x ∧
           levelsOf book' o.side.opposite = levelsOf book o.side.opposite
+
+/-- Tombstone queues match the plain FIFO lists.
+`toPlain` drops every `0`. `abstractsBook` says each side equals those lists, in the same order.
+`levelInv` says `tombstone_count` equals the number of zeros.
+It says `total_quantity` equals the sum of the live remainders.
+It says `is_empty` holds exactly when no live id remains.
+For each live order, `position_in_level - popped_from_front` is the index of that same id.
+`linked` says each slot and the plain order agree on side, price, remainder, and active status.
+`holds` is these three claims together.
+`allowed` is one engine step: insert, cancel, `compact_book`, `front`, a full pop, or a partial decrease.
+An insert uses a fresh nonzero id and a positive quantity.
+A full pop passes the front live order's own remainder.
+A partial decrease passes a smaller positive quantity.
+`Level.compact` alone does not rewrite positions. `compact_book` does.
+The empty book satisfies `holds`.
+Each allowed step keeps `holds`.
+Every engine sequence is a chain of those steps, so the four queue properties hold after every sequence. -/
+def law10 : Prop :=
+  holds QueueBook.empty Book.empty ∧
+  ∀ q plain step,
+    holds q plain →
+    allowed q step →
+    holds (applyQ step q) (applyPlain step plain)
 
 end Nanobook
