@@ -1,4 +1,5 @@
 import Nanobook.Spec
+import Nanobook.Queue
 import Nanobook.Laws
 import Nanobook.Proofs.WellFormed
 import Nanobook.Proofs.Fuel
