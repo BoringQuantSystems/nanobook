@@ -38,7 +38,8 @@ It builds the proofs of the nine laws in `Nanobook/Laws.lean`, rejects `sorry`
 and other unchecked constructs, requires every law to depend only on
 `propext`, `Classical.choice` and `Quot.sound`, replays every declaration in
 `leanchecker --fresh`, replays the corpus in Lean, and compares the Rust and
-Lean engines on 1000 seeded random event logs. CI runs the same script
+Lean engines on 1000 seeded random event logs. `check.sh 0` runs every Lean step
+and skips the Rust comparison, for a machine without Rust. CI runs the same script
 (`.github/workflows/lean.yml`). A change to matching, cancel or fill-or-kill
 code in `src/` must keep this script passing; if the behaviour change is
 intended, change `Nanobook/Spec.lean` to match and repair the proofs, without
