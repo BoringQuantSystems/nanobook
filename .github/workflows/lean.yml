@@ -1,0 +1,56 @@
+name: Lean verification
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lean:
+    name: Prove the matching laws and replay Rust against the Lean model
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      LEAN_VERSION: "4.35.0"
+      LEAN_SHA256: "7289597a44543246c9227b8cae501767e095ce17f6d448b95fc4a8dc97268f6d"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Lean from the pinned release archive
+        run: |
+          set -euo pipefail
+          archive="lean-${LEAN_VERSION}-linux.tar.zst"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/$archive" \
+            "https://github.com/leanprover/lean4/releases/download/v${LEAN_VERSION}/$archive"
+          echo "${LEAN_SHA256}  $RUNNER_TEMP/$archive" | sha256sum -c -
+          tar --zstd -xf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/lean-${LEAN_VERSION}-linux/bin" >> "$GITHUB_PATH"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable @ 2026-05-21
+        with:
+          toolchain: stable
+
+      - name: Cache Rust
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo
+            target
+          key: ${{ runner.os }}-lean-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache Lean build
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: verification/lean/.lake
+          key: ${{ runner.os }}-lake-${{ env.LEAN_VERSION }}-${{ hashFiles('verification/lean/**/*.lean', 'verification/lean/lakefile.toml') }}
+
+      - name: Check proofs, axioms, kernel replay, corpus and 1000 seeded logs
+        run: verification/lean/check.sh 1000
