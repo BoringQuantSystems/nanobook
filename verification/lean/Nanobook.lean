@@ -7,3 +7,5 @@ import Nanobook.Proofs.Price
 import Nanobook.Proofs.BookShape
 import Nanobook.Proofs.Uncrossed
 import Nanobook.Proofs.CancelLocal
+import Nanobook.Proofs.SelfTrade
+import Nanobook.Proofs.Priority
