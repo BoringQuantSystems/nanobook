@@ -1,7 +1,7 @@
 # Golden Corpus (verified)
 
 Byte-identical trade output from the Rust `corpus-replay` binary and the OCaml
-`replay_bin` oracle across all 21 cases below. CI runs the differential loop in
+`replay_bin` oracle across all 25 cases below. CI runs the differential loop in
 `.github/workflows/oracle.yml`.
 
 ## Layout
@@ -92,6 +92,10 @@ the next timestamp (and trade id separately from 1).
 | 19-cancel-after-front-fill | Cancel the middle order after a front fill |
 | 20-cancel-finished-ioc | Cancel a finished IOC, then fill the next sell |
 | 21-stp-partial-then-cancel | CancelNewest partial fill, then cancel that id |
+| 22-fok-stp-off | FOK trades with the same owner |
+| 23-fok-stp-cancel-newest | FOK rejects own size, then another owner trades |
+| 24-fok-stp-cancel-oldest | FOK rejects own size, then another owner trades |
+| 25-fok-stp-decrement | FOK rejects own size, then another owner trades |
 
 ## Run locally
 

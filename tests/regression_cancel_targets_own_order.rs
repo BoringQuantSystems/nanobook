@@ -9,8 +9,8 @@
 #![allow(clippy::inconsistent_digit_grouping)]
 
 use nanobook::{
-    Exchange, OrderId, OrderOwner, OrderStatus, Price, Quantity, Side, StpPolicy, SubmitResult,
-    TimeInForce,
+    Exchange, Order, OrderId, OrderOwner, OrderStatus, Price, PriceLevels, Quantity, Side,
+    StpPolicy, SubmitResult, TimeInForce,
 };
 use proptest::prelude::*;
 use proptest::test_runner::TestCaseError;
@@ -259,6 +259,39 @@ fn assert_new_trades(exchange: &Exchange, from: usize) -> Result<(), TestCaseErr
     Ok(())
 }
 
+fn level_ids(levels: &PriceLevels) -> Vec<(i64, Vec<u64>)> {
+    levels
+        .iter_best_to_worst()
+        .map(|(price, level)| (price.0, level.iter().map(|id| id.0).collect()))
+        .collect()
+}
+
+fn order_slots(exchange: &Exchange) -> Vec<Option<Order>> {
+    let end = exchange.book().peek_next_order_id().0;
+    (1..end)
+        .map(|id| exchange.get_order(OrderId(id)).cloned())
+        .collect()
+}
+
+fn assert_fok_rejection_is_inert(
+    exchange: &Exchange,
+    result: &SubmitResult,
+    bids_before: &[(i64, Vec<u64>)],
+    asks_before: &[(i64, Vec<u64>)],
+    orders_before: &[Option<Order>],
+) -> Result<(), TestCaseError> {
+    prop_assert!(result.trades.is_empty());
+    prop_assert_eq!(result.filled_quantity, 0);
+    prop_assert!(exchange.get_order(result.order_id).is_none());
+    prop_assert_eq!(level_ids(exchange.book().bids()), bids_before);
+    prop_assert_eq!(level_ids(exchange.book().asks()), asks_before);
+    let orders_after = order_slots(exchange);
+    prop_assert_eq!(orders_after.len(), orders_before.len() + 1);
+    prop_assert_eq!(&orders_after[..orders_before.len()], orders_before);
+    prop_assert!(orders_after[orders_before.len()].is_none());
+    Ok(())
+}
+
 fn assert_book(exchange: &Exchange) -> Result<(), TestCaseError> {
     if let (Some(bid), Some(ask)) = exchange.best_bid_ask() {
         prop_assert!(bid < ask, "crossed book bid {} ask {}", bid.0, ask.0);
@@ -332,6 +365,13 @@ proptest! {
                     tif,
                     owner,
                 } => {
+                    let fok_before = (tif == TimeInForce::FOK).then(|| {
+                        (
+                            level_ids(exchange.book().bids()),
+                            level_ids(exchange.book().asks()),
+                            order_slots(&exchange),
+                        )
+                    });
                     let result = match owner {
                         Some(owner) => exchange.submit_limit_with_owner(
                             side,
@@ -342,6 +382,17 @@ proptest! {
                         ),
                         None => exchange.submit_limit(side, Price(price), quantity, tif),
                     };
+                    if let Some((bids_before, asks_before, orders_before)) = fok_before
+                        && result.trades.is_empty()
+                    {
+                        assert_fok_rejection_is_inert(
+                            &exchange,
+                            &result,
+                            &bids_before,
+                            &asks_before,
+                            &orders_before,
+                        )?;
+                    }
                     assert_submit(&result, quantity)?;
                 }
                 Op::SubmitMarket { side, quantity } => {

@@ -108,11 +108,11 @@ impl Exchange {
     /// Remaining quantity is handled according to time-in-force:
     /// - **GTC**: Rests on book until filled or cancelled
     /// - **IOC**: Cancelled (never rests)
-    /// - **FOK**: If cannot fill entirely, order is rejected (no trades)
+    /// - **FOK**: Reject the order when it cannot trade its whole quantity. The book does not change.
     ///
     /// # FOK rejection contract (ghost `OrderId`)
     ///
-    /// An order rejected under `TimeInForce::FOK` (no full fill available)
+    /// An order rejected under `TimeInForce::FOK` (it cannot trade its whole quantity)
     /// returns a [`SubmitResult`] with a valid, monotonically-assigned
     /// `order_id` and `status == OrderStatus::Cancelled`, but that id is
     /// **not** retrievable via [`Self::get_order`] — the order is never
@@ -261,12 +261,17 @@ impl Exchange {
         tif: TimeInForce,
         owner: Option<OrderOwner>,
     ) -> SubmitResult {
-        // FOK: Check feasibility before doing anything
-        if tif == TimeInForce::FOK && !self.book.can_fully_fill(side, price, quantity) {
-            // Reject the order. We still consume an OrderId for consistency
-            // (the caller gets a valid ID even for rejected orders).
-            // Note: This creates gaps in the OrderId sequence for rejected FOKs,
-            // and the order is not stored (get_order returns None).
+        // A fill-or-kill order must be able to trade its whole quantity.
+        // The walk uses the owner and the self-trade policy.
+        // A short order is rejected. The book does not change.
+        if tif == TimeInForce::FOK
+            && !self
+                .book
+                .can_fully_fill_under(side, price, quantity, owner, self.stp_policy)
+        {
+            // Reject the order. The exchange still consumes an OrderId.
+            // The caller receives that id. The order is not stored.
+            // get_order returns None for the rejected id.
             let order = self.book.create_order(side, price, quantity, tif);
             return SubmitResult {
                 order_id: order.id,
