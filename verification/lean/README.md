@@ -34,7 +34,7 @@ From the repository root:
 verification/lean/check.sh 1000
 ```
 
-It builds the proofs of the nine laws in `Nanobook/Laws.lean`, rejects `sorry`
+It builds the proofs of the eleven laws in `Nanobook/Laws.lean`, rejects `sorry`
 and other unchecked constructs, requires every law to depend only on
 `propext`, `Classical.choice` and `Quot.sound`, replays every declaration in
 `leanchecker --fresh`, replays the corpus in Lean, and compares the Rust and
