@@ -29,7 +29,7 @@ trap 'rm -rf "$scratch"' EXIT
 {
   echo 'import Nanobook'
   echo 'open Nanobook'
-  for i in 1 2 3 4 5 6 7 8 9; do echo "#print axioms law${i}_holds"; done
+  for i in 1 2 3 4 5 6 7 8 9 10; do echo "#print axioms law${i}_holds"; done
 } > "$scratch/Axioms.lean"
 lake --dir "$LEAN_DIR" env lean "$scratch/Axioms.lean" | tee "$scratch/axioms.txt"
 # Each law may use any subset of the three standard axioms, and nothing else.
@@ -47,7 +47,7 @@ awk '
     }
   }
   END {
-    if (laws != 9) { print "expected 9 laws, found " laws > "/dev/stderr"; bad = 1 }
+    if (laws != 10) { print "expected 10 laws, found " laws > "/dev/stderr"; bad = 1 }
     exit bad
   }
 ' "$scratch/axioms.txt"
