@@ -287,4 +287,23 @@ def law10 : Prop :=
     allowed q step →
     holds (applyQ step q) (applyPlain step plain)
 
+/-- A submit leaves a record whose quantities match its status.
+Filled: the whole submit filled and nothing remains.
+New or partly filled: filled plus remaining equals the submit, and some quantity remains.
+Cancelled: nothing remains and less than the submit filled. This covers an immediate-or-cancel
+remainder and a stop by self-trade prevention.
+No record: a rejected fill-or-kill, which prints no trade.
+Law 3 only bounds filled plus rested by the submit. This law says where the rest went. -/
+def law11 : Prop :=
+  ∀ book, Reachable book →
+    ∀ event view book' trades,
+      eventSubmit event = some view →
+      apply book event = (book', trades) →
+      match findOrder book'.orders book.nextOrderId with
+      | none => trades = []
+      | some o =>
+        (o.status = .filled → o.filled = view.quantity ∧ o.remaining = 0) ∧
+        (o.status.isActive = true → o.filled + o.remaining = view.quantity ∧ 0 < o.remaining) ∧
+        (o.status = .cancelled → o.remaining = 0 ∧ o.filled < view.quantity)
+
 end Nanobook
