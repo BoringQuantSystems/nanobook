@@ -471,9 +471,14 @@ def concatLive (levels : List QueueLevel) : List Nat :=
 termination_by levels
 
 /-- Queue bookkeeping invariant.
+Levels are sorted best first with one level per price: bids strictly descending, asks
+strictly ascending, as `BTreeMap` keys are. Without this, a book the engine never builds
+(two levels at one price) breaks the active-slot clause after an insert.
 Every level has a live id, because Rust drops a level when `is_empty` holds.
 Each id has one slot. Each active slot stands in its own level. -/
 def bookInv (q : QueueBook) : Prop :=
+  q.bids.Pairwise (fun a b => a.price > b.price) ∧
+  q.asks.Pairwise (fun a b => a.price < b.price) ∧
   (∀ level ∈ q.bids, levelInv level q.orders .buy) ∧
   (∀ level ∈ q.asks, levelInv level q.orders .sell) ∧
   (∀ level ∈ q.bids, liveIds level.orders ≠ []) ∧
