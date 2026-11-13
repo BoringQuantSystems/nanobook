@@ -9,6 +9,8 @@ This directory contains public project documentation for nanobook. It focuses on
 
 ## Domain and API reference
 
+- [Developer reference](reference.md) — full API reference for every layer (moved out of the top-level README).
+- [Lean verification](../verification/lean/README.md) — the matching model, the eleven proved laws, and how to recheck them.
 - [Ubiquitous language](../UBIQUITOUS_LANGUAGE.md) — glossary for order lifecycle, portfolio, risk, broker, and rebalancer terms.
 - [Event log schema](event-log-schema.md) — JSONL schema for deterministic order-book replay and oracle compatibility.
 - [Public API surface audit](api-surface-audit.md) — inventory of exported Rust/Python surface used to reason about stability.

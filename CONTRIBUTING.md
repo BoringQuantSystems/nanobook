@@ -65,7 +65,7 @@ cargo bench
 
 ## Architecture
 
-See [README.md](README.md#full-reference-merged-from-docmd) for the developer reference. Key crates:
+See [docs/reference.md](docs/reference.md) for the developer reference. Key crates:
 
 | Crate | Purpose |
 |-------|---------|
