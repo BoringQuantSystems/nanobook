@@ -1,8 +1,8 @@
 # nanobook Python bindings
 
-Rust extension plus pure-Python research helpers. The order-book matching underneath
-is proved in Lean 4: eleven laws of the book, checked against the Rust engine on every
-change ([details](https://github.com/BoringQuantSystems/nanobook#matching-rules-proved-in-lean)). Build with `uv sync --group dev` from this directory.
+Rust extension plus pure-Python research helpers. Eleven laws of the order-book matching
+underneath are proved in Lean 4 on a model of the engine, and CI tests the Rust engine
+against that model on every change ([details](https://github.com/BoringQuantSystems/nanobook#matching-rules-proved-in-lean)). Build with `uv sync --group dev` from this directory.
 
 ## Monte Carlo scenarios (Rust-backed, parity-safe)
 

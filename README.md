@@ -17,9 +17,8 @@ that strategy: portfolio accounting, transaction costs, stops, deterministic
 limit-order-book simulation, pre-trade risk checks, and optional IBKR
 rebalancing.
 
-Its matching rules are proved in Lean: eleven laws of the order book,
-machine-checked on a model of the engine that is tested against the Rust code
-on every change.
+Eleven laws of its order-book matching are proved in Lean, on a model of the
+engine that CI tests against the Rust code on every change.
 
 Use it when you want to ask: "if my strategy emits these target weights, what
 exactly happens to cash, holdings, risk checks, order-book events, and audit
@@ -50,11 +49,13 @@ core library only, with no `sorry` and no unchecked shortcuts.
 **How the proofs reach the Rust code.** The laws are proved about a Lean model of
 the engine. On every pull request, CI rebuilds every proof, checks that each law
 rests only on Lean's three standard axioms, rechecks the whole development with an
-independent kernel checker (`leanchecker --fresh`), and runs the Rust engine and
-the Lean model side by side on the 25-case golden corpus and on 1000 random event
-logs: their trade logs must match byte for byte. Each law was also
-tested against a deliberately broken model, to show the proof fails when the
-behaviour it protects is wrong.
+independent kernel checker (`leanchecker --fresh`), replays the 25-case golden
+corpus in Lean against the trades the Rust engine recorded for it, and runs both
+engines on 1000 random event logs: their trade logs must match byte for byte.
+
+When each law was proved, it was also run against a deliberately broken copy of the
+model, to show the proof fails when the behaviour it protects is wrong. The pull
+request of each proof records those runs; CI does not repeat them.
 
 **Bugs the verification work found** (all fixed, each with a regression test):
 

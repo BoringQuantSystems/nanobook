@@ -1,9 +1,3 @@
-## Full Reference`).
-
-## License
-
-MIT
-
 # nanobook developer reference
 
 Full API documentation for the nanobook workspace. The overview is in the [README](../README.md).

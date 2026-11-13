@@ -6,7 +6,7 @@ build-backend = "maturin"
 name = "nanobook"
 version = "0.19.3"
 requires-python = ">=3.11"
-description = "Rust-backed Python package for target-weight backtests, portfolio metrics, deterministic order-book simulation with matching rules proved in Lean, and pre-trade risk checks"
+description = "Rust-backed Python package for target-weight backtests, portfolio metrics, deterministic order-book simulation (core matching rules proved on a Lean model the Rust engine is tested against), and pre-trade risk checks"
 license = "MIT"
 authors = [{ name = "Ricardo Frantz" }]
 readme = "README.md"
