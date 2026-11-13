@@ -471,8 +471,8 @@ Invalid inputs (schedules of different length, non-positive cash, NaN or infinit
 ### Python API
 
 ```python
-def bar(open, high, low, close):
-    return nanobook.BarPrices(open=open, high=high, low=low, close=close)
+def bar(open_: int, high: int, low: int, close: int) -> nanobook.BarPrices:
+    return nanobook.BarPrices(open=open_, high=high, low=low, close=close)
 
 result = nanobook.backtest_weights(
     weight_schedule=[[("AAPL", 0.5), ("MSFT", 0.5)], ...],
