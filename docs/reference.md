@@ -223,7 +223,7 @@ exchange.submit_stop_limit(Side::Sell, Price(95_00), Price(94_50), 100, TimeInFo
 | Buy stop | `last_trade_price >= stop_price` |
 | Sell stop | `last_trade_price <= stop_price` |
 
-Key behaviors: immediate trigger if price already past stop, cascade up to 100 iterations, cancel via `exchange.cancel(stop_id)`.
+Key behaviors: a plain (non-trailing) stop triggers immediately if the last trade price is already past the stop, cascade up to 100 iterations, cancel via `exchange.cancel(stop_id)`. A trailing stop does not trigger on submission; it first needs price movement to set its watermark.
 
 ### Trailing Stops
 
@@ -263,7 +263,7 @@ let replayed = Exchange::replay(&events);
 assert_eq!(exchange.best_bid_ask(), replayed.best_bid_ask());
 ```
 
-Event types: `SubmitLimit`, `SubmitMarket`, `Cancel`, `Modify`.
+Event types: `SubmitLimit`, `SubmitMarket`, `Cancel`, `Modify`, `SubmitStopMarket`, `SubmitStopLimit`, `SubmitTrailingStopMarket`, `SubmitTrailingStopLimit`.
 
 Disable for max performance:
 
@@ -277,11 +277,11 @@ nanobook = { version = "0.19", default-features = false }
 
 ### Symbol
 
-Fixed-size instrument identifier. `[u8; 8]` inline — `Copy`, no heap allocation, max 8 ASCII bytes.
+Fixed-size instrument identifier. `[u8; 8]` inline — `Copy`, no heap allocation, max 8 UTF-8 bytes (a multi-byte character counts as more than one byte).
 
 ```rust
-let sym = Symbol::new("AAPL");
-assert!(Symbol::try_new("TOOLONGNAME").is_none());
+let sym = Symbol::new("AAPL");                       // panics if longer than 8 bytes
+assert!(Symbol::try_new("TOOLONGNAME").is_none());   // returns None instead
 ```
 
 ### MultiExchange
@@ -308,37 +308,47 @@ for (sym, bid, ask) in multi.best_prices() {
 Tracks cash, positions, costs, returns, and equity over time.
 
 ```rust
-use nanobook::portfolio::{Portfolio, CostModel};
+use nanobook::Symbol;
+use nanobook::portfolio::{CostModel, Portfolio, compute_metrics};
 
-let cost = CostModel { commission_bps: 5, slippage_bps: 3, min_trade_fee: 1_00 };
+// Commission and slippage in basis points (f64); minimum commission per fill in cents
+let cost = CostModel { commission_bps: 5.0, slippage_bps: 3.0, min_commission: 1_00 };
 let mut portfolio = Portfolio::new(1_000_000_00, cost);
 
 // Rebalance to target weights
 portfolio.rebalance_simple(&[(Symbol::new("AAPL"), 0.6)], &[(Symbol::new("AAPL"), 150_00)]);
 
-// Record period return and compute metrics
+// Record period return and compute metrics (None if no returns were recorded)
 portfolio.record_return(&[(Symbol::new("AAPL"), 155_00)]);
 let metrics = compute_metrics(portfolio.returns(), 252.0, 0.0);
 ```
 
+`Portfolio::equity_curve()` starts with the initial cash and gains one entry per `record_return` call, so it is one longer than `returns()`.
+
 ### Execution Modes
 
 - **SimpleFill** — instant at bar prices: `portfolio.rebalance_simple(targets, prices)`
-- **LOBFill** — route through `Exchange` matching engines: `portfolio.rebalance_lob(targets, exchanges)`
+- **LOBFill** — route through `Exchange` matching engines: `portfolio.rebalance_lob(targets, &mut exchanges)`, where `exchanges` is a `MultiExchange`
 
 ### Position
 
 Per-symbol tracking with VWAP entry price and realized PnL:
 
 ```rust
+use nanobook::Symbol;
+use nanobook::portfolio::{Position, Shares};
+
 let mut pos = Position::new(Symbol::new("AAPL"));
-pos.apply_fill(100, 150_00);   // buy 100 @ $150
-pos.apply_fill(-50, 160_00);   // sell 50 @ $160 → $500 realized PnL
+pos.apply_fill(Shares::from_whole(100), 150_00);   // buy 100 @ $150
+pos.apply_fill(Shares::from_whole(-50), 160_00);   // sell 50 @ $160 → $500 realized PnL
+assert_eq!(pos.realized_pnl, 500_00);              // cents
 ```
+
+`Shares` is a signed fixed-point quantity in micro-shares (`Shares::SCALE` = 1_000_000 per share). Build one with `Shares::from_whole(n)` or `Shares::from_raw(micro_shares)`; a negative value is a sell.
 
 ### Financial Metrics
 
-`compute_metrics(&returns, periods_per_year, risk_free)` returns: `total_return`, `cagr`, `volatility`, `sharpe`, `sortino`, `max_drawdown`, `calmar`, `num_periods`, `winning_periods`, `losing_periods`.
+`compute_metrics(&returns, periods_per_year, risk_free)` returns `Option<Metrics>` (`None` for an empty return series or a non-positive or non-finite `periods_per_year`). `Metrics` has the fields `total_return`, `cagr`, `volatility`, `sharpe`, `sortino`, `max_drawdown`, `calmar`, `num_periods`, `winning_periods`, `losing_periods`, `cvar_95`, `win_rate`, `profit_factor`, `payoff_ratio`, `kelly`.
 
 ### Parallel Sweep
 
@@ -347,9 +357,10 @@ pos.apply_fill(-50, 160_00);   // sell 50 @ $160 → $500 realized PnL
 ```rust
 use nanobook::portfolio::sweep::sweep;
 
+let params = vec![0.5_f64, 1.0, 2.0];
 let results = sweep(&params, 12.0, 0.0, |&leverage| {
     vec![0.01 * leverage, -0.005 * leverage]
-});
+});   // Vec<Option<Metrics>>, one per parameter
 ```
 
 ---
@@ -374,7 +385,9 @@ impl Strategy for MomentumStrategy {
     }
 }
 
+// price_series: &[Vec<(Symbol, i64)>], one Vec of prices per bar
 let result = run_backtest(&strategy, &price_series, 1_000_000_00, CostModel::zero(), 12.0, 0.0);
+// result.portfolio: final Portfolio; result.metrics: Option<Metrics>
 ```
 
 Built-in: `EqualWeight` strategy. Parallel variant: `sweep_strategy()`.
@@ -388,16 +401,51 @@ Rust simulates the portfolio at compiled speed.
 
 ### Rust API
 
+**Feature flag:** `portfolio`
+
 ```rust
 use nanobook::backtest_bridge::backtest_weights;
+use nanobook::portfolio::CostModel;
+use nanobook::{BarPrices, FillPolicy};
 
+let cost_model = CostModel { commission_bps: 15.0, slippage_bps: 0.0, min_commission: 0 };
 let result = backtest_weights(
-    &weight_schedule,    // &[Vec<(Symbol, f64)>] — target weights per period
-    &price_schedule,     // &[Vec<(Symbol, i64)>] — prices per period
-    1_000_000_00,        // initial cash in cents
-    15,                  // cost in basis points
-    252.0,               // periods per year
-    0.0,                 // risk-free rate per period
+    &weight_schedule,        // &[Vec<(Symbol, f64)>] — target weights per period
+    &price_schedule,         // &[Vec<(Symbol, BarPrices)>] — OHLC bar per symbol per period
+    1_000_000_00,            // initial cash in cents
+    cost_model,              // CostModel
+    FillPolicy::SignalBarClose,
+    252.0,                   // periods per year
+    0.0,                     // risk-free rate per period
+);
+```
+
+`BarPrices` has the integer fields `open`, `high`, `low`, `close` (cents). `FillPolicy` selects the price each rebalance fills at:
+
+| `FillPolicy` | Fill price |
+|--------------|------------|
+| `SignalBarClose` | Close of the same bar |
+| `NextBarOpen` | Open of the next bar (or of `fill_schedule[i]`) |
+| `NextBarTypical` | `(high + low + close) / 3` of the next bar (or of `fill_schedule[i]`) |
+
+A period with no fill bar (for example the last period under a next-bar policy) does not rebalance and its index is listed in `skipped_rebalances`.
+
+`backtest_weights_with_options` takes the same arguments plus a `BacktestBridgeOptions` value: `stop_cfg: Option<BacktestStopConfig>`, `record_executions`, `fill_schedule`, `quantity_step`, `min_order_value`, `max_order_value`, `no_trade_band_bps`, `max_trades_per_rebalance`, and day and month trade budgets. `backtest_weights` runs without stop simulation.
+
+```rust
+use nanobook::backtest_bridge::{BacktestBridgeOptions, BacktestStopConfig, backtest_weights_with_options};
+
+let result = backtest_weights_with_options(
+    &weight_schedule, &price_schedule, 1_000_000_00, cost_model,
+    FillPolicy::SignalBarClose, 252.0, 0.0,
+    BacktestBridgeOptions {
+        stop_cfg: Some(BacktestStopConfig {
+            trailing_stop_pct: Some(0.05),
+            atr_period: 14,
+            ..Default::default()
+        }),
+        ..Default::default()
+    },
 );
 ```
 
@@ -405,35 +453,54 @@ Returns `BacktestBridgeResult`:
 
 | Field | Type | Description |
 |-------|------|-------------|
+| `initial_cash` | `i64` | Starting cash in cents (also set for empty or rejected runs) |
 | `returns` | `Vec<f64>` | Per-period returns |
-| `equity_curve` | `Vec<i64>` | Equity at each period (cents) |
+| `equity_curve` | `Vec<i64>` | Initial equity followed by the equity after each period (cents); length is the number of periods + 1 |
 | `final_cash` | `i64` | Ending cash balance |
 | `metrics` | `Option<Metrics>` | Sharpe, Sortino, max drawdown, etc. |
 | `holdings` | `Vec<Vec<(Symbol, f64)>>` | Per-period holdings weights |
 | `symbol_returns` | `Vec<Vec<(Symbol, f64)>>` | Per-period close-to-close symbol returns |
-| `stop_events` | `Vec<BacktestStopEvent>` | Stop trigger metadata (index, symbol, price, reason) |
+| `stop_events` | `Vec<BacktestStopEvent>` | Stop trigger metadata (`period_index`, `symbol`, `trigger_price`, `exit_price`, `reason`) |
+| `skipped_rebalances` | `Vec<usize>` | Period indices with no fill bar |
+| `executions` | `Option<Vec<ExecutionRecord>>` | Actual fills; `Some` only when `record_executions` is set |
+| `cash_snapshots` | `Option<Vec<i64>>` | Cash at each period close; `Some` only when `record_executions` is set |
+| `unpriced_holding` | `Option<UnpricedHolding>` | Set when a held symbol has no positive price; treat it as an error, not a finished run |
+
+Invalid inputs (schedules of different length, non-positive cash, NaN or infinite weights, negative prices, a bar with `high` below `low`) return an empty result: no returns and an `equity_curve` of `[initial_cash]`.
 
 ### Python API
 
 ```python
-result = nanobook.py_backtest_weights(
+def bar(open_: int, high: int, low: int, close: int) -> nanobook.BarPrices:
+    return nanobook.BarPrices(open=open_, high=high, low=low, close=close)
+
+result = nanobook.backtest_weights(
     weight_schedule=[[("AAPL", 0.5), ("MSFT", 0.5)], ...],
-    price_schedule=[[("AAPL", 185_00), ("MSFT", 370_00)], ...],
+    price_schedule=[[("AAPL", bar(185_00, 186_00, 184_00, 185_00)),
+                     ("MSFT", bar(370_00, 372_00, 369_00, 371_00))], ...],
     initial_cash=1_000_000_00,
-    cost_bps=15,
+    cost_model=nanobook.CostModel(commission_bps=15.0),
+    fill_policy=nanobook.FillPolicy.SignalBarClose,
     periods_per_year=252.0,
     risk_free=0.0,
     stop_cfg={"trailing_stop_pct": 0.05},
 )
-# result["returns"], result["equity_curve"], result["metrics"],
-# result["holdings"], result["symbol_returns"], result["stop_events"]
+# result["returns"], result["equity_curve"], result["metrics"] (a Metrics object),
+# result["holdings"], result["symbol_returns"], result["stop_events"],
+# result["final_cash"], result["initial_cash"], result["skipped_rebalances"],
+# result["executions"], result["cash_snapshots"]
 ```
+
+`fill_policy` is `FillPolicy.SignalBarClose`, `FillPolicy.NextBarOpen` or `FillPolicy.NextBarTypical`. `stop_cfg` accepts the keys `fixed_stop_pct`, `trailing_stop_pct`, `atr_multiple` and `atr_period`. Optional keyword arguments: `fill_schedule`, `quantity_step`, `min_order_value`, `max_order_value`, `no_trade_band_bps`, `max_trades_per_rebalance`, `max_trades_per_day`, `max_trades_per_month`, `max_traded_value_per_month`, `period_day_ordinal`, `period_month_ordinal` and `record_executions` (the ledger keys `executions` and `cash_snapshots` are `None` unless it is `True`). A held symbol without a positive price raises `ValueError`.
+
+`equity_curve` holds the initial equity plus one entry per period, as in the Rust result.
 
 GIL is released during computation for maximum throughput.
 
 Clean aliases (no `py_` prefix) are exported for new integrations:
 `backtest_weights`, `capabilities`, `garch_ewma_forecast`,
 `inverse_cvar_weights`, `inverse_cdar_weights`, and other optimizer helpers.
+`py_backtest_weights` remains available with the same arguments.
 
 ### Capability Probing Pattern
 
@@ -479,10 +546,13 @@ pub trait Broker {
     fn account(&self) -> Result<Account, BrokerError>;
     fn submit_order(&self, order: &BrokerOrder) -> Result<OrderId, BrokerError>;
     fn order_status(&self, id: OrderId) -> Result<BrokerOrderStatus, BrokerError>;
+    fn open_orders(&self) -> Result<Vec<BrokerOrderStatus>, BrokerError>;
     fn cancel_order(&self, id: OrderId) -> Result<(), BrokerError>;
     fn quote(&self, symbol: &Symbol) -> Result<Quote, BrokerError>;
 }
 ```
+
+`OrderId` here is `nanobook_broker::OrderId(pub u64)`, the broker-assigned id, not the matching engine's `nanobook::OrderId`.
 
 ### Key Types
 
@@ -506,7 +576,8 @@ pub struct BrokerOrder {
     pub symbol: Symbol,
     pub side: BrokerSide,          // Buy or Sell
     pub quantity: u64,
-    pub order_type: BrokerOrderType,  // Market or Limit(Price)
+    pub order_type: BrokerOrderType,  // Market | Limit(Price) | Stop(Price) | StopLimit { stop, limit }
+    pub client_order_id: Option<ClientOrderId>,  // idempotency key, see below
 }
 
 pub struct Quote {
@@ -515,8 +586,21 @@ pub struct Quote {
     pub ask_cents: i64,
     pub last_cents: i64,
     pub volume: u64,
+    pub timestamp: SystemTime,     // when the quote was received from the broker
+}
+
+pub struct BrokerOrderStatus {
+    pub id: OrderId,
+    pub status: OrderState,        // Pending | Submitted | PartiallyFilled | Filled | Cancelled | Rejected
+    pub filled_quantity: u64,
+    pub remaining_quantity: u64,
+    pub avg_fill_price_cents: i64,
 }
 ```
+
+`client_order_id` lets a retried submission be recognised as the same order. `ClientOrderId::derive(scope, symbol, side, qty)` builds a deterministic 32-character id from those inputs; `ClientOrderId::new(value)` accepts a caller-supplied id of 1 to 36 characters from `A-Z a-z 0-9 _ . -`. Set `client_order_id: None` to submit without one.
+
+`Quote::is_stale(threshold_sec)` returns `true` when the quote is older than `threshold_sec` seconds, so a caller can refuse to trade on an outdated price.
 
 ### IBKR Adapter
 
@@ -548,11 +632,14 @@ broker.connect()?;
 broker = nanobook.IbkrBroker("127.0.0.1", 4002, client_id=1)
 broker.connect()
 positions = broker.positions()   # List[Dict] with symbol, quantity, avg_cost_cents, ...
-oid = broker.submit_order("AAPL", "buy", 100, order_type="limit", limit_price_cents=185_00)
-quote = broker.quote("AAPL")     # Dict with bid_cents, ask_cents, last_cents, volume
+oid = broker.submit_order("AAPL", "buy", 100, order_type="limit", limit_price_cents=185_00,
+                          client_order_id="rebalance-2026-02-08-AAPL")
+quote = broker.quote("AAPL")     # Dict with symbol, bid_cents, ask_cents, last_cents, volume
 
 broker = nanobook.BinanceBroker(api_key, secret_key, testnet=True, quote_asset="USDT")
 ```
+
+`order_type` is `"market"`, `"limit"`, `"stop"` or `"stop_limit"` for `IbkrBroker` (stop orders take `stop_price_cents`). `BinanceBroker.submit_order` accepts only `"market"` and `"limit"` and has no `stop_price_cents`. The Python quote dict has no `timestamp`, and the Python brokers have no `open_orders` method; both exist only in the Rust API. `BinanceBroker` is present only in wheels built with `maturin develop --release --features binance`.
 
 ---
 
@@ -650,7 +737,7 @@ checks = risk.check_batch(
     positions=[("AAPL", 200), ("MSFT", 100)],
     target_weights=[("AAPL", 0.6), ("MSFT", 0.2)],
 )
-# Each check: {"name": "...", "status": "Pass|Warn|Fail", "detail": "..."}
+# Each check: {"name": "...", "status": "PASS|WARN|FAIL", "detail": "..."}
 ```
 
 ---
@@ -679,9 +766,14 @@ rebalancer positions                  # Show current positions
 rebalancer run target.json            # Plan → confirm → execute
 rebalancer run target.json --dry-run  # Plan only
 rebalancer run target.json --force    # Skip confirmation (cron/automation)
+rebalancer run target.json --force --cron-mode  # Reject a second run for a window already complete
 rebalancer reconcile target.json      # Compare actual vs target
-rebalancer recover target.json       # Recover from crash using audit log
+rebalancer recover target.json        # Recover from crash using audit log
+rebalancer recover target.json --dry-run  # Show the recovery plan only
+rebalancer kill                       # SIGTERM the running rebalancer, check for dangling orders
 ```
+
+All commands read `config.toml` from the current directory; `--config <path>` selects another file.
 
 ### Operations & Recovery
 
@@ -730,6 +822,8 @@ snap = ex.depth(10)
 ex.submit_stop_market("sell", 9500, 100)
 ex.submit_stop_limit("buy", 10500, 10600, 100, "gtc")
 ex.submit_trailing_stop_market("sell", 9500, 100, "percentage", 0.05)
+# trail_type: "fixed" (cents), "percentage" (fraction), or "sma_abs_change"
+# (trail_value = multiplier, requires atr_period=N)
 ```
 
 ### Portfolio
@@ -794,7 +888,7 @@ if let Some(vwap) = Trade::vwap(exchange.trades()) {
 
 ### Persistence
 
-**Feature flag:** `persistence` (includes `serde` and `event-log`)
+**Feature flag:** `persistence` (includes `serde` and `event-log`); `Portfolio::save_json` and `load_json` also need `portfolio`
 
 ```rust
 // Exchange — JSON Lines event sourcing
@@ -828,9 +922,12 @@ cargo run --bin lob
 | `sell <price> <qty> [ioc\|fok]` | `sell 101.00 50 ioc` |
 | `market <buy\|sell> <qty>` | `market buy 200` |
 | `stop <buy\|sell> <price> <qty>` | `stop buy 105.00 100` |
+| `stoplimit <buy\|sell> <stop> <limit> <qty> [ioc\|fok]` | `stoplimit sell 95.00 94.50 100` |
 | `cancel <order_id>` | `cancel 3` |
+| `status <order_id>` | Show order status |
 | `book` / `trades` | Show book or trade history |
-| `save <path>` / `load <path>` | Persistence (requires feature) |
+| `clear` | Reset the exchange |
+| `save <path>` / `load <path>` | Persistence (build with `--features persistence`) |
 
 ---
 
