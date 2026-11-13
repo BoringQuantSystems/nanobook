@@ -60,5 +60,8 @@ Every claim below can be checked in this repository or on a public service.
 - PyPI releases use trusted publishing (no stored token) and carry PEP 740
   attestations, so you can check that a wheel was built by this repository's
   workflow.
+- GitHub Releases carry a `SHA256SUMS` file and a signed build-provenance attestation
+  for every `lob` binary. Check a download with `sha256sum -c SHA256SUMS` and its origin
+  with `gh attestation verify <file> --repo BoringQuantSystems/nanobook`.
 - The [OpenSSF Scorecard](https://scorecard.dev/viewer/?uri=github.com/BoringQuantSystems/nanobook)
   rates the repository's security practices weekly.
