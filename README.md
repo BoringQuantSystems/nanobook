@@ -1,13 +1,12 @@
-<p align="center">
-  <img src="assets/nanobook-banner.png" alt="nanobook banner" width="900">
-</p>
+![nanobook banner](https://raw.githubusercontent.com/BoringQuantSystems/nanobook/main/assets/nanobook-banner.png)
 
 [![CI](https://github.com/BoringQuantSystems/nanobook/actions/workflows/ci.yml/badge.svg)](https://github.com/BoringQuantSystems/nanobook/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/nanobook.svg)](https://crates.io/crates/nanobook)
+[![Rust](https://img.shields.io/crates/msrv/nanobook.svg)](https://crates.io/crates/nanobook)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Lean proofs](https://github.com/BoringQuantSystems/nanobook/actions/workflows/lean.yml/badge.svg)](https://github.com/BoringQuantSystems/nanobook/actions/workflows/lean.yml)
 [![OCaml oracle](https://github.com/BoringQuantSystems/nanobook/actions/workflows/oracle.yml/badge.svg)](https://github.com/BoringQuantSystems/nanobook/actions/workflows/oracle.yml)
-[![crates.io](https://img.shields.io/crates/v/nanobook.svg)](https://crates.io/crates/nanobook)
 [![docs.rs](https://docs.rs/nanobook/badge.svg)](https://docs.rs/nanobook)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![cargo-deny](https://img.shields.io/badge/cargo--deny-audited-brightgreen)](https://github.com/BoringQuantSystems/nanobook/actions/workflows/ci.yml)
 
 `nanobook` is a small execution kernel for the part of a trading system that is
