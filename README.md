@@ -8,7 +8,10 @@
 [![crates.io](https://img.shields.io/crates/v/nanobook.svg)](https://crates.io/crates/nanobook)
 [![docs.rs](https://docs.rs/nanobook/badge.svg)](https://docs.rs/nanobook)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![cargo-deny](https://img.shields.io/badge/cargo--deny-audited-brightgreen)](https://github.com/BoringQuantSystems/nanobook/actions/workflows/ci.yml)
+[![cargo-deny](https://img.shields.io/badge/cargo--deny-audited-brightgreen)](https://github.com/BoringQuantSystems/nanobook/actions/workflows/audit.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/BoringQuantSystems/nanobook/badge)](https://scorecard.dev/viewer/?uri=github.com/BoringQuantSystems/nanobook)
+[![Socket crate](https://socket.dev/api/badge/cargo/package/nanobook)](https://socket.dev/cargo/package/nanobook)
+[![Socket PyPI](https://socket.dev/api/badge/pypi/package/nanobook)](https://socket.dev/pypi/package/nanobook)
 
 > **Order matching proved in Lean 4.** Eleven laws of the order book are
 > machine-checked on a model of the engine, and CI runs the Rust engine against
@@ -86,6 +89,26 @@ engine in `oracle-ocaml/` replays the golden corpus, and CI (`.github/workflows/
 compares its trades with Rust byte for byte. To run it locally, build `corpus-replay`
 (`cargo build --release --features serde --bin corpus-replay`), run the loop in
 `oracle-ocaml/test/corpus/README.md`, and fix any divergence before merging.
+
+## Security and supply chain
+
+This is what installing nanobook asks you to trust. Each point can be checked in the
+repository or on a public service:
+
+- **No `unsafe` code** in the Rust crates: each one starts with `#![forbid(unsafe_code)]`.
+- **One runtime dependency.** The `nanobook` crate with default features depends only on
+  `rustc-hash`; everything else is behind an opt-in feature. The Python package has no
+  Python runtime dependencies and downloads nothing at install time.
+- **Network code is opt-in.** The broker adapters live in `nanobook-broker` behind the
+  `ibkr` and `binance` features and are not in the PyPI wheels.
+- **Audited dependencies.** `cargo deny` and `cargo audit` run on every dependency
+  change and weekly; Dependabot keeps them current; Socket scans every pull request.
+- **Hardened CI.** Every GitHub Action is pinned to a commit hash, workflows get
+  read-only tokens by default, and the OpenSSF Scorecard rates the setup publicly.
+- **Verifiable releases.** PyPI releases use trusted publishing with PEP 740
+  attestations: you can check that a wheel was built by this repository's workflow.
+
+Report a vulnerability privately as described in [SECURITY.md](SECURITY.md).
 
 ## Architecture
 
