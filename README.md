@@ -3,6 +3,8 @@
 </p>
 
 [![CI](https://github.com/BoringQuantSystems/nanobook/actions/workflows/ci.yml/badge.svg)](https://github.com/BoringQuantSystems/nanobook/actions/workflows/ci.yml)
+[![Lean proofs](https://github.com/BoringQuantSystems/nanobook/actions/workflows/lean.yml/badge.svg)](https://github.com/BoringQuantSystems/nanobook/actions/workflows/lean.yml)
+[![OCaml oracle](https://github.com/BoringQuantSystems/nanobook/actions/workflows/oracle.yml/badge.svg)](https://github.com/BoringQuantSystems/nanobook/actions/workflows/oracle.yml)
 [![crates.io](https://img.shields.io/crates/v/nanobook.svg)](https://crates.io/crates/nanobook)
 [![docs.rs](https://docs.rs/nanobook/badge.svg)](https://docs.rs/nanobook)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -15,9 +17,72 @@ that strategy: portfolio accounting, transaction costs, stops, deterministic
 limit-order-book simulation, pre-trade risk checks, and optional IBKR
 rebalancing.
 
+Eleven laws of its order-book matching are proved in Lean, on a model of the
+engine that CI tests against the Rust code on every change.
+
 Use it when you want to ask: "if my strategy emits these target weights, what
 exactly happens to cash, holdings, risk checks, order-book events, and audit
 logs?"
+
+## Matching rules proved in Lean
+
+The matching engine at the heart of nanobook comes with machine-checked proofs.
+Eleven laws of the order book are stated and proved in [Lean 4](https://lean-lang.org),
+a proof assistant whose kernel checks every step. The proofs live in
+[`verification/lean/`](verification/lean/README.md): about 12 000 lines of Lean,
+core library only, with no `sorry` and no unchecked shortcuts.
+
+| Law | What is proved |
+|-----|----------------|
+| 1 | Every reachable book stays well formed: bids descend, asks ascend, no empty level, and each active order is queued exactly once at its own price. |
+| 2 | The book is never crossed: the best bid stays strictly below the best ask. |
+| 3 | A submit conserves quantity: trades sum to the filled quantity, and each trade takes exactly its size off the resting order. |
+| 4 | Trades follow price-time priority. A resting order is skipped only when self-trade prevention cancels it. |
+| 5 | Every trade prints at the resting price, at or inside the incoming limit. |
+| 6 | Matching always stops: the step bound is enough, and extra steps change nothing. |
+| 7 | Fill-or-kill is all or nothing: it fills completely, or it is rejected and the book is untouched. |
+| 8 | Each of the four self-trade policies does exactly what its documentation says. With prevention on, no trade has the same owner on both sides. |
+| 9 | A cancel changes only the cancelled order. Every other order keeps its record and its place in the queue. |
+| 10 | The fast queue (tombstones, stored positions, compaction) always holds the same orders, in the same order, as a plain FIFO list. |
+| 11 | A submitted order's stored record matches its status: filled, resting, cancelled, or rejected. |
+
+**How the proofs reach the Rust code.** The laws are proved about a Lean model of
+the engine. On every pull request, CI rebuilds every proof, checks that each law
+rests only on Lean's three standard axioms, rechecks the whole development with an
+independent kernel checker (`leanchecker --fresh`), replays the 25-case golden
+corpus in Lean against the trades the Rust engine recorded for it, and runs both
+engines on 1000 random event logs: their trade logs must match byte for byte.
+
+When each law was proved, it was also run against a deliberately broken copy of the
+model, to show the proof fails when the behaviour it protects is wrong. The pull
+request of each proof records those runs; CI does not repeat them.
+
+**Bugs the verification work found** (all fixed, each with a regression test):
+
+- a price level's total quantity could overflow and strand orders;
+- a cancel after a partial fill or a compaction could remove the wrong order, and
+  matching could then loop;
+- a finished immediate-or-cancel order, or one stopped by self-trade prevention,
+  stayed active;
+- a fill-or-kill order with self-trade prevention could cancel resting orders and
+  then be rejected. It is now rejected with no effect.
+
+**What is not covered.** Modify orders and stop orders are not in the model yet.
+The model uses unbounded integers, so overflow is covered by Rust tests and checked
+arithmetic, not by the proofs. The portfolio, risk, broker and rebalancer layers are
+tested, not proved.
+
+Check it yourself:
+
+```bash
+verification/lean/check.sh 1000   # proofs, axioms, kernel recheck, corpus, 1000 random logs
+```
+
+A second, independent cross-check runs on every PR too: a small OCaml matching
+engine in `oracle-ocaml/` replays the golden corpus, and CI (`.github/workflows/oracle.yml`)
+compares its trades with Rust byte for byte. To run it locally, build `corpus-replay`
+(`cargo build --release --features serde --bin corpus-replay`), run the loop in
+`oracle-ocaml/test/corpus/README.md`, and fix any divergence before merging.
 
 ## Architecture
 
@@ -33,17 +98,9 @@ logs?"
 │  │  Binance │ PreTrade │ Backtest │ 6M ops/s │  │
 │  └──────────┴──────────┴──────────┴──────────┘  │
 │   Rebalancer CLI: weights → diff → execute      │
+│   LOB matching: 11 laws proved in Lean 4        │
 └─────────────────────────────────────────────────┘
 ```
-
-### OCaml oracle (differential testing)
-
-`oracle-ocaml/` holds a minimal OCaml matching engine used only to cross-check the
-Rust implementation. The golden corpus under `oracle-ocaml/test/corpus/` replays
-JSONL events through both engines; CI (`.github/workflows/oracle.yml`) diffs
-trade output byte-for-byte. Local check: build `corpus-replay`
-(`cargo build --release --features serde --bin corpus-replay`), run the loop in
-`oracle-ocaml/test/corpus/README.md`, and fix any divergence before merging.
 
 ## What You Can Do
 
@@ -51,7 +108,8 @@ trade output byte-for-byte. Local check: build `corpus-replay`
   stop events, and portfolio metrics.
 - Simulate transaction costs, fixed/trailing stops, and deterministic
   limit-order-book execution.
-- Test order-book behavior with replayable events instead of ad hoc mocks.
+- Test order-book behavior with replayable events instead of ad hoc mocks, on a
+  matching engine whose rules are proved in Lean.
 - Run pre-trade risk checks for concentration, leverage, and short exposure.
 - Rebalance an IBKR account from a target-weight file with dry-run, confirmation,
   reconciliation, and audit logs.
@@ -66,11 +124,11 @@ trade output byte-for-byte. Local check: build `corpus-replay`
   GIL instead of turning into another slow Python backtester.
 - The test suite is aimed at the failure modes trading code usually hides:
   edge cases, property tests, reference-parity fixtures, fuzz harnesses, and
-  mutation-testing notes.
+  mutation-testing notes, on top of the Lean proofs of the matching engine.
 - The scope is intentionally narrow: execution mechanics, not a UI, not a
   connector zoo, not a full research stack.
 
-## v0.10 Hardening
+## Hardening
 
 - Checked arithmetic for trade notional and VWAP; NaN/overflow-safe broker conversions.
 - Fallible risk-engine construction instead of config-time panics.
@@ -83,7 +141,7 @@ trade output byte-for-byte. Local check: build `corpus-replay`
 
 | Project | Scope | Execution Model | Python API | Rust Core | Auditability | Niche |
 |---------|-------|-----------------|------------|-----------|--------------|-------|
-| **nanobook** | Execution kernel | Deterministic LOB (6M ops/s) | PyO3 native extension | ✓ Full (LOB, portfolio, risk) | High (event sourcing, property tests) | Research → production bridge |
+| **nanobook** | Execution kernel | Deterministic LOB (6M ops/s) | PyO3 native extension | ✓ Full (LOB, portfolio, risk) | Very high (11 matching laws proved in Lean, event sourcing, property tests) | Research → production bridge |
 | vectorbt | Research framework | Vectorized backtesting | ✓ Pure Python | ✗ | Medium (open source) | Factor research, fast backtests |
 | NautilusTrader | Full platform | Event-driven, multi-venue | ✓ Python bindings | ✓ Partial | High (audit trails) | Institutional quant trading |
 | Hummingbot | Bot platform | Market making, arbitrage | ✓ Pure Python | ✗ | Medium (logging) | Crypto market making |
@@ -93,6 +151,7 @@ trade output byte-for-byte. Local check: build `corpus-replay`
 **Strengths:**
 - Deterministic execution: same inputs → same outputs (event replay)
 - Performance: LOB matching at 6M ops/sec, outside Python GIL
+- Proved matching: 11 order-book laws proved in Lean 4 and checked against the Rust engine on every PR
 - Auditability: event sourcing, property tests, mutation testing
 - Sharp boundary: Python for strategy, Rust for execution
 
@@ -102,15 +161,6 @@ trade output byte-for-byte. Local check: build `corpus-replay`
 - Limited venue coverage: IBKR + Binance only (extensible via broker trait)
 - No FIX protocol: FIX 4.4/5.0 not planned
 - Not an OMS yet: event-sourced OMS on v1.0 roadmap
-
-nanobook is a compact Rust execution kernel for Python strategies:
-limit-order-book matching, portfolio simulation, broker abstraction, pre-trade
-risk, and rebalancer, all in one MIT-licensed workspace.
-
-Python computes **what** to trade — factor rankings, signals, target weights.
-nanobook executes **how** — order routing, risk checks, portfolio simulation,
-and a deterministic matching engine. Clean separation: strategy logic stays
-in Python, execution runs in Rust.
 
 ## Workspace
 
@@ -342,903 +392,14 @@ cargo bench
 
 Engineering decisions that keep the system simple and fast:
 
-- **Single-threaded** — deterministic by design; same inputs always produce same outputs
-- **In-process** — no networking overhead; wrap externally if needed
-- **Execution scope, not compliance** — deterministic STP policies are included; regulatory workflows and circuit breakers are out of scope
-- **No complex order types** — no iceberg or pegged orders
-
-## Documentation
-
-- **[Documentation index](docs/README.md)** — versioning, domain language, operations, audit, and learning notes.
-- **[docs.rs](https://docs.rs/nanobook)** — Rust API docs.
-- **[Versioning policy](SEMVER.md)** — how nanobook handles SemVer while it remains pre-1.0.
-- **[Ubiquitous language](UBIQUITOUS_LANGUAGE.md)** — glossary for order, portfolio, broker, risk, and rebalancer terms.
-- Full developer reference is included below in this README (`## Full Reference`).
-
-## License
-
-MIT
-
-## Full Reference
-
-**Developer Reference** — Full API documentation for the nanobook workspace.
-
----
-
-## Table of Contents
-
-- [Quick Start](#quick-start)
-- [Core Concepts](#core-concepts)
-- [Exchange API](#exchange-api)
-- [Types Reference](#types-reference)
-- [Book Snapshots](#book-snapshots)
-- [Stop Orders & Trailing Stops](#stop-orders--trailing-stops)
-- [Event Replay](#event-replay)
-- [Symbol & MultiExchange](#symbol--multiexchange)
-- [Portfolio Engine](#portfolio-engine)
-- [Strategy Trait](#strategy-trait)
-- [Backtest Bridge](#backtest-bridge)
-- [Broker Abstraction](#broker-abstraction)
-- [Risk Engine](#risk-engine)
-- [Rebalancer CLI](#rebalancer-cli)
-- [Python Bindings](#python-bindings)
-- [Book Analytics](#book-analytics)
-- [Persistence & Serde](#persistence--serde)
-- [CLI Reference](#cli-reference)
-- [Performance](#performance)
-- [Where nanobook Fits](#where-nanobook-fits)
-- [Design Constraints](#design-constraints)
-
----
-
-## Quick Start
-
-```toml
-[dependencies]
-nanobook = "0.19"
-```
-
-```rust
-use nanobook::{Exchange, Side, Price, TimeInForce};
-
-let mut exchange = Exchange::new();
-exchange.submit_limit(Side::Sell, Price(50_00), 100, TimeInForce::GTC);
-let result = exchange.submit_limit(Side::Buy, Price(50_00), 100, TimeInForce::GTC);
-
-assert_eq!(result.trades.len(), 1);
-assert_eq!(result.trades[0].price, Price(50_00));
-```
-
----
-
-## Core Concepts
-
-### Prices
-
-Prices are integers in the **smallest currency unit** (cents for USD), avoiding floating-point errors.
-
-```rust
-let price = Price(100_50);  // $100.50
-assert!(Price(100_00) < Price(101_00));
-```
-
-Display formats as dollars: `Price(10050)` prints as `$100.50`.
-
-Constants: `Price::ZERO`, `Price::MAX` (market buys), `Price::MIN` (market sells).
-
-### Quantities and Timestamps
-
-- `Quantity = u64` — shares or contracts, always positive.
-- `Timestamp = u64` — monotonic nanosecond counter (not system clock), guaranteeing deterministic ordering.
-
-### Determinism
-
-No randomness anywhere. Same sequence of operations always produces identical trades. Event replay reconstructs exact state.
-
----
-
-## Exchange API
-
-`Exchange` is the main entry point, wrapping an `OrderBook` with order submission, cancellation, modification, and queries.
-
-### Order Submission
-
-```rust
-// Limit order — matches against opposite side, remainder handled by TIF
-let result = exchange.submit_limit(Side::Buy, Price(100_00), 100, TimeInForce::GTC);
-
-// Market order — IOC semantics at Price::MAX (buy) or Price::MIN (sell)
-let result = exchange.submit_market(Side::Buy, 500);
-```
-
-### Order Management
-
-```rust
-// Cancel — O(1) via tombstones
-let result = exchange.cancel(order_id);  // CancelResult { success, cancelled_quantity, error }
-
-// Modify — cancel + replace (loses time priority, gets new OrderId)
-let result = exchange.modify(order_id, Price(101_00), 200);
-```
-
-### Queries
-
-```rust
-let (bid, ask) = exchange.best_bid_ask();  // L1 — O(1)
-let spread = exchange.spread();             // Option<i64>
-let snap = exchange.depth(10);              // L2 — top 10 levels
-let full = exchange.full_book();            // L3 — everything
-let order = exchange.get_order(OrderId(1)); // Option<&Order>
-let trades = exchange.trades();             // &[Trade]
-```
-
-### Memory Management
-
-```rust
-exchange.clear_trades();           // Clear trade history
-exchange.clear_order_history();    // Remove filled/cancelled orders
-exchange.compact();                // Reclaim tombstone memory
-```
-
-### Input Validation
-
-The `try_submit_*` methods validate inputs before processing:
-
-```rust
-let err = exchange.try_submit_limit(Side::Buy, Price(0), 100, TimeInForce::GTC);
-assert_eq!(err.unwrap_err(), ValidationError::ZeroPrice);
-```
-
-### Time-in-Force Semantics
-
-| TIF | Partial Fill? | Rests on Book? | No Liquidity |
-|-----|:---:|:---:|---|
-| **GTC** | Yes | Yes (remainder) | Rests entirely |
-| **IOC** | Yes | No (remainder cancelled) | Cancelled |
-| **FOK** | No | No (all-or-nothing) | Cancelled |
-
----
-
-## Types Reference
-
-| Type | Definition | Description | Display |
-|------|-----------|-------------|---------|
-| `Price` | `struct Price(pub i64)` | Price in smallest units (cents) | `$100.50` |
-| `Quantity` | `type Quantity = u64` | Number of shares/contracts | — |
-| `OrderId` | `struct OrderId(pub u64)` | Unique order identifier | `O42` |
-| `TradeId` | `struct TradeId(pub u64)` | Unique trade identifier | `T7` |
-| `Timestamp` | `type Timestamp = u64` | Nanosecond counter (not wall clock) | — |
-
-### Result Types
-
-```rust
-pub struct SubmitResult {
-    pub order_id: OrderId,
-    pub status: OrderStatus,          // New | PartiallyFilled | Filled | Cancelled
-    pub trades: Vec<Trade>,
-    pub filled_quantity: Quantity,
-    pub resting_quantity: Quantity,
-    pub cancelled_quantity: Quantity,
-}
-
-pub struct Trade {
-    pub id: TradeId,
-    pub price: Price,                 // Resting order's price (aggressor gets price improvement)
-    pub quantity: Quantity,
-    pub aggressor_order_id: OrderId,
-    pub passive_order_id: OrderId,
-    pub aggressor_side: Side,
-    pub timestamp: Timestamp,
-}
-```
-
-### Enums
-
-| Enum | Variants | Key Methods |
-|------|----------|-------------|
-| `Side` | `Buy`, `Sell` | `opposite()` |
-| `TimeInForce` | `GTC`, `IOC`, `FOK` | `can_rest()`, `allows_partial()` |
-| `OrderStatus` | `New`, `PartiallyFilled`, `Filled`, `Cancelled` | `is_active()`, `is_terminal()` |
-
----
-
-## Book Snapshots
-
-```rust
-pub struct BookSnapshot {
-    pub bids: Vec<LevelSnapshot>,  // Highest price first
-    pub asks: Vec<LevelSnapshot>,  // Lowest price first
-    pub timestamp: Timestamp,
-}
-
-pub struct LevelSnapshot {
-    pub price: Price,
-    pub quantity: Quantity,
-    pub order_count: usize,
-}
-```
-
-| Method | Returns |
-|--------|---------|
-| `snap.best_bid()` / `best_ask()` | `Option<Price>` |
-| `snap.spread()` | `Option<i64>` |
-| `snap.mid_price()` | `Option<f64>` |
-| `snap.total_bid_quantity()` / `total_ask_quantity()` | `Quantity` |
-| `snap.imbalance()` | `Option<f64>` — [-1.0, 1.0], positive = buy pressure |
-| `snap.weighted_mid()` | `Option<f64>` — leans toward less liquid side |
-
----
-
-## Stop Orders & Trailing Stops
-
-### Stop Orders
-
-```rust
-// Stop-market: triggers market order when last trade price hits stop
-exchange.submit_stop_market(Side::Sell, Price(95_00), 100);
-
-// Stop-limit: triggers limit order at limit_price when stop hits
-exchange.submit_stop_limit(Side::Sell, Price(95_00), Price(94_50), 100, TimeInForce::GTC);
-```
-
-| Side | Triggers When |
-|------|---------------|
-| Buy stop | `last_trade_price >= stop_price` |
-| Sell stop | `last_trade_price <= stop_price` |
-
-Key behaviors: immediate trigger if price already past stop, cascade up to 100 iterations, cancel via `exchange.cancel(stop_id)`.
-
-### Trailing Stops
-
-Three trailing methods — stop price tracks the market and only moves in the favorable direction:
-
-```rust
-// Fixed: triggers if price drops $2.00 from peak
-exchange.submit_trailing_stop_market(Side::Sell, Price(98_00), 100, TrailMethod::Fixed(200));
-
-// Percentage: trail by 5% from peak
-exchange.submit_trailing_stop_market(Side::Sell, Price(95_00), 100, TrailMethod::Percentage(0.05));
-
-// Adaptive trail: 2x simple moving average of |Δ price| over the last
-// 14 trades. NOT Wilder's ATR (no OHLC available at the stop module);
-// for true Wilder ATR, pre-compute via `indicators::atr` on bar data
-// and pass the result as `TrailMethod::Fixed(offset_cents)`.
-exchange.submit_trailing_stop_market(Side::Sell, Price(95_00), 100,
-    TrailMethod::SmaAbsChange { multiplier: 2.0, period: 14 });
-```
-
-Trailing stop-limit variant: `submit_trailing_stop_limit()` — same parameters plus `limit_price` and `TimeInForce`.
-
----
-
-## Event Replay
-
-**Feature flag:** `event-log` (enabled by default)
-
-Every operation is recorded as an `Event`. Replaying events on a fresh exchange produces identical state.
-
-```rust
-// Save events
-let events = exchange.events().to_vec();
-
-// Reconstruct exact state
-let replayed = Exchange::replay(&events);
-assert_eq!(exchange.best_bid_ask(), replayed.best_bid_ask());
-```
-
-Event types: `SubmitLimit`, `SubmitMarket`, `Cancel`, `Modify`.
-
-Disable for max performance:
-
-```toml
-nanobook = { version = "0.19", default-features = false }
-```
-
----
-
-## Symbol & MultiExchange
-
-### Symbol
-
-Fixed-size instrument identifier. `[u8; 8]` inline — `Copy`, no heap allocation, max 8 ASCII bytes.
-
-```rust
-let sym = Symbol::new("AAPL");
-assert!(Symbol::try_new("TOOLONGNAME").is_none());
-```
-
-### MultiExchange
-
-Independent per-symbol order books:
-
-```rust
-let mut multi = MultiExchange::new();
-let aapl = Symbol::new("AAPL");
-
-multi.get_or_create(&aapl).submit_limit(Side::Sell, Price(150_00), 100, TimeInForce::GTC);
-
-for (sym, bid, ask) in multi.best_prices() {
-    println!("{sym}: bid={bid:?} ask={ask:?}");
-}
-```
-
----
-
-## Portfolio Engine
-
-**Feature flag:** `portfolio`
-
-Tracks cash, positions, costs, returns, and equity over time.
-
-```rust
-use nanobook::portfolio::{Portfolio, CostModel};
-
-let cost = CostModel { commission_bps: 5, slippage_bps: 3, min_trade_fee: 1_00 };
-let mut portfolio = Portfolio::new(1_000_000_00, cost);
-
-// Rebalance to target weights
-portfolio.rebalance_simple(&[(Symbol::new("AAPL"), 0.6)], &[(Symbol::new("AAPL"), 150_00)]);
-
-// Record period return and compute metrics
-portfolio.record_return(&[(Symbol::new("AAPL"), 155_00)]);
-let metrics = compute_metrics(portfolio.returns(), 252.0, 0.0);
-```
-
-### Execution Modes
-
-- **SimpleFill** — instant at bar prices: `portfolio.rebalance_simple(targets, prices)`
-- **LOBFill** — route through `Exchange` matching engines: `portfolio.rebalance_lob(targets, exchanges)`
-
-### Position
-
-Per-symbol tracking with VWAP entry price and realized PnL:
-
-```rust
-let mut pos = Position::new(Symbol::new("AAPL"));
-pos.apply_fill(100, 150_00);   // buy 100 @ $150
-pos.apply_fill(-50, 160_00);   // sell 50 @ $160 → $500 realized PnL
-```
-
-### Financial Metrics
-
-`compute_metrics(&returns, periods_per_year, risk_free)` returns: `total_return`, `cagr`, `volatility`, `sharpe`, `sortino`, `max_drawdown`, `calmar`, `num_periods`, `winning_periods`, `losing_periods`.
-
-### Parallel Sweep
-
-**Feature flag:** `parallel` (implies `portfolio`)
-
-```rust
-use nanobook::portfolio::sweep::sweep;
-
-let results = sweep(&params, 12.0, 0.0, |&leverage| {
-    vec![0.01 * leverage, -0.005 * leverage]
-});
-```
-
----
-
-## Strategy Trait
-
-**Feature flag:** `portfolio`
-
-Implement `compute_weights()` for batch-oriented backtesting:
-
-```rust
-impl Strategy for MomentumStrategy {
-    fn compute_weights(
-        &self,
-        bar_index: usize,
-        prices: &[(Symbol, i64)],
-        _portfolio: &Portfolio,
-    ) -> Vec<(Symbol, f64)> {
-        if bar_index < self.lookback { return vec![]; }
-        let w = 1.0 / prices.len() as f64;
-        prices.iter().map(|(sym, _)| (*sym, w)).collect()
-    }
-}
-
-let result = run_backtest(&strategy, &price_series, 1_000_000_00, CostModel::zero(), 12.0, 0.0);
-```
-
-Built-in: `EqualWeight` strategy. Parallel variant: `sweep_strategy()`.
-
----
-
-## Backtest Bridge
-
-The bridge between Python strategy code and Rust execution. Python computes a weight schedule,
-Rust simulates the portfolio at compiled speed.
-
-### Rust API
-
-```rust
-use nanobook::backtest_bridge::backtest_weights;
-
-let result = backtest_weights(
-    &weight_schedule,    // &[Vec<(Symbol, f64)>] — target weights per period
-    &price_schedule,     // &[Vec<(Symbol, i64)>] — prices per period
-    1_000_000_00,        // initial cash in cents
-    15,                  // cost in basis points
-    252.0,               // periods per year
-    0.0,                 // risk-free rate per period
-);
-```
-
-Returns `BacktestBridgeResult`:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `returns` | `Vec<f64>` | Per-period returns |
-| `equity_curve` | `Vec<i64>` | Equity at each period (cents) |
-| `final_cash` | `i64` | Ending cash balance |
-| `metrics` | `Option<Metrics>` | Sharpe, Sortino, max drawdown, etc. |
-| `holdings` | `Vec<Vec<(Symbol, f64)>>` | Per-period holdings weights |
-| `symbol_returns` | `Vec<Vec<(Symbol, f64)>>` | Per-period close-to-close symbol returns |
-| `stop_events` | `Vec<BacktestStopEvent>` | Stop trigger metadata (index, symbol, price, reason) |
-
-### Python API
-
-```python
-result = nanobook.py_backtest_weights(
-    weight_schedule=[[("AAPL", 0.5), ("MSFT", 0.5)], ...],
-    price_schedule=[[("AAPL", 185_00), ("MSFT", 370_00)], ...],
-    initial_cash=1_000_000_00,
-    cost_bps=15,
-    periods_per_year=252.0,
-    risk_free=0.0,
-    stop_cfg={"trailing_stop_pct": 0.05},
-)
-# result["returns"], result["equity_curve"], result["metrics"],
-# result["holdings"], result["symbol_returns"], result["stop_events"]
-```
-
-GIL is released during computation for maximum throughput.
-
-Clean aliases (no `py_` prefix) are exported for new integrations:
-`backtest_weights`, `capabilities`, `garch_ewma_forecast`,
-`inverse_cvar_weights`, `inverse_cdar_weights`, and other optimizer helpers.
-
-### Capability Probing Pattern
-
-Downstream Python applications can probe nanobook capabilities before choosing a Rust-backed fast path or a local fallback:
-
-```python
-import nanobook
-
-def has_nanobook_feature(name: str) -> bool:
-    caps = set(nanobook.py_capabilities()) if hasattr(nanobook, "py_capabilities") else set()
-    if name in caps:
-        return True
-
-    symbol_map = {
-        "backtest_stops": "py_backtest_weights",
-        "garch_ewma_forecast": "py_garch_ewma_forecast",
-        "optimize_min_variance": "py_optimize_min_variance",
-        "optimize_max_sharpe": "py_optimize_max_sharpe",
-        "optimize_risk_parity": "py_optimize_risk_parity",
-        "inverse_cvar_weights": "py_inverse_cvar_weights",
-        "inverse_cdar_weights": "py_inverse_cdar_weights",
-        "backtest_holdings": "py_backtest_weights",
-    }
-    sym = symbol_map.get(name)
-    return bool(sym and hasattr(nanobook, sym))
-```
-
----
-
-## Broker Abstraction
-
-**Crate:** `nanobook-broker`
-
-Generic trait over brokerages with concrete adapters for IBKR and Binance.
-
-### Broker Trait
-
-```rust
-pub trait Broker {
-    fn connect(&mut self) -> Result<(), BrokerError>;
-    fn disconnect(&mut self) -> Result<(), BrokerError>;
-    fn positions(&self) -> Result<Vec<Position>, BrokerError>;
-    fn account(&self) -> Result<Account, BrokerError>;
-    fn submit_order(&self, order: &BrokerOrder) -> Result<OrderId, BrokerError>;
-    fn order_status(&self, id: OrderId) -> Result<BrokerOrderStatus, BrokerError>;
-    fn cancel_order(&self, id: OrderId) -> Result<(), BrokerError>;
-    fn quote(&self, symbol: &Symbol) -> Result<Quote, BrokerError>;
-}
-```
-
-### Key Types
-
-```rust
-pub struct Position {
-    pub symbol: Symbol,
-    pub quantity: i64,             // Positive = long, negative = short
-    pub avg_cost_cents: i64,
-    pub market_value_cents: i64,
-    pub unrealized_pnl_cents: i64,
-}
-
-pub struct Account {
-    pub equity_cents: i64,
-    pub buying_power_cents: i64,
-    pub cash_cents: i64,
-    pub gross_position_value_cents: i64,
-}
-
-pub struct BrokerOrder {
-    pub symbol: Symbol,
-    pub side: BrokerSide,          // Buy or Sell
-    pub quantity: u64,
-    pub order_type: BrokerOrderType,  // Market or Limit(Price)
-}
-
-pub struct Quote {
-    pub symbol: Symbol,
-    pub bid_cents: i64,
-    pub ask_cents: i64,
-    pub last_cents: i64,
-    pub volume: u64,
-}
-```
-
-### IBKR Adapter
-
-**Feature:** `ibkr`
-
-Connects to TWS/Gateway via the `ibapi` crate (blocking API).
-
-```rust
-let mut broker = IbkrBroker::new("127.0.0.1", 4002, 1);  // 4002 = paper, 4001 = live
-broker.connect()?;
-let positions = broker.positions()?;
-let quote = broker.quote(&Symbol::new("AAPL"))?;
-```
-
-### Binance Adapter
-
-**Feature:** `binance`
-
-REST API via `reqwest::blocking`. Converts nanobook symbols (e.g., "BTC") to Binance pairs (e.g., "BTCUSDT").
-
-```rust
-let mut broker = BinanceBroker::new(api_key, secret_key, true);  // testnet
-broker.connect()?;
-```
-
-### Python
-
-```python
-broker = nanobook.IbkrBroker("127.0.0.1", 4002, client_id=1)
-broker.connect()
-positions = broker.positions()   # List[Dict] with symbol, quantity, avg_cost_cents, ...
-oid = broker.submit_order("AAPL", "buy", 100, order_type="limit", limit_price_cents=185_00)
-quote = broker.quote("AAPL")     # Dict with bid_cents, ask_cents, last_cents, volume
-
-broker = nanobook.BinanceBroker(api_key, secret_key, testnet=True, quote_asset="USDT")
-```
-
----
-
-## Risk Engine
-
-**Crate:** `nanobook-risk`
-
-Pre-trade risk validation for single orders and rebalance batches.
-
-### RiskConfig
-
-```rust
-pub struct RiskConfig {
-    pub max_position_pct: f64,       // Max single position as fraction of equity (default 0.25)
-    pub max_order_value_cents: i64,  // Max single order value
-    pub max_batch_value_cents: i64,  // Max rebalance batch value
-    pub max_leverage: f64,           // Max gross exposure / equity (default 1.5)
-    pub max_drawdown_pct: f64,       // Circuit breaker threshold (default 0.20)
-    pub allow_short: bool,           // Allow short positions (default true)
-    pub max_short_pct: f64,          // Max short exposure fraction (default 0.30)
-    pub min_trade_usd: f64,
-    pub max_trade_usd: f64,          // Max single trade USD (default 100,000)
-}
-```
-
-Notes:
-
-- `max_drawdown_pct` is validated at engine construction and preserved in config,
-  but not yet used in execution-time checks.
-
-### Single Order Check
-
-```rust
-let engine = RiskEngine::new(RiskConfig::default()).expect("valid risk config");
-let report = engine.check_order(
-    &Symbol::new("AAPL"),
-    BrokerSide::Buy,
-    100,              // quantity
-    185_00,           // price in cents
-    &account,
-    &current_positions,
-);
-
-if report.has_failures() {
-    // Order violates risk limits — position concentration, short selling, etc.
-}
-```
-
-### Batch Check
-
-Validates a full rebalance against position limits, leverage, and short exposure:
-
-```rust
-let report = engine.check_batch(
-    &orders,              // &[(Symbol, BrokerSide, u64, i64)]
-    &account,
-    &current_positions,
-    &target_weights,      // &[(Symbol, f64)]
-);
-```
-
-### RiskReport
-
-```rust
-pub struct RiskReport {
-    pub checks: Vec<RiskCheck>,
-}
-
-pub struct RiskCheck {
-    pub name: &'static str,
-    pub status: RiskStatus,  // Pass | Warn | Fail
-    pub detail: String,
-}
-
-impl RiskReport {
-    pub fn has_failures(&self) -> bool;
-    pub fn has_warnings(&self) -> bool;
-}
-```
-
-### Python
-
-```python
-risk = nanobook.RiskEngine(max_position_pct=0.25, max_leverage=1.5)
-
-# Single order
-checks = risk.check_order("AAPL", "buy", 100, 185_00,
-                          equity_cents=1_000_000_00,
-                          positions=[("AAPL", 200)])
-
-# Batch (full rebalance)
-checks = risk.check_batch(
-    orders=[("AAPL", "buy", 100, 185_00), ("MSFT", "sell", 50, 370_00)],
-    equity_cents=1_000_000_00,
-    positions=[("AAPL", 200), ("MSFT", 100)],
-    target_weights=[("AAPL", 0.6), ("MSFT", 0.2)],
-)
-# Each check: {"name": "...", "status": "Pass|Warn|Fail", "detail": "..."}
-```
-
----
-
-## Rebalancer CLI
-
-**Crate:** `nanobook-rebalancer`
-
-CLI tool that bridges target weights to IBKR execution with risk checks, rate limiting, and audit trail.
-
-### Pipeline
-
-1. Read target weights from `target.json` (output of your optimizer)
-2. Connect to IBKR Gateway for live positions, prices, account data
-3. Compute CURRENT → TARGET diff (share quantities, limit prices)
-4. Run pre-trade risk checks (position limits, leverage, short exposure)
-5. Show plan, confirm (or `--force` for automation)
-6. Execute limit orders with rate limiting and timeout-based cancellation
-7. Reconcile and log to JSONL audit trail
-
-### Commands
-
-```bash
-rebalancer status                     # Check IBKR connection
-rebalancer positions                  # Show current positions
-rebalancer run target.json            # Plan → confirm → execute
-rebalancer run target.json --dry-run  # Plan only
-rebalancer run target.json --force    # Skip confirmation (cron/automation)
-rebalancer reconcile target.json      # Compare actual vs target
-rebalancer recover target.json       # Recover from crash using audit log
-```
-
-### Operations & Recovery
-
-The rebalancer includes crash recovery via audit log reconstruction. After a process crash or TWS restart, use `rebalancer recover` to reconstruct state and determine the appropriate recovery action (Restart, Resume, ManualReview, or Rollback).
-
-### target.json
-
-```json
-{
-  "timestamp": "2026-02-08T15:30:00Z",
-  "targets": [
-    { "symbol": "AAPL", "weight": 0.40 },
-    { "symbol": "MSFT", "weight": 0.30 },
-    { "symbol": "SPY",  "weight": -0.10 },
-    { "symbol": "QQQ",  "weight": 0.20 }
-  ],
-  "constraints": {
-    "max_position_pct": 0.40,
-    "max_leverage": 1.5
-  }
-}
-```
-
-Positive weights are long, negative are short. Symbols absent from the target but present in the account get closed. See `rebalancer/config.toml.example` for the full configuration reference.
-
----
-
-## Python Bindings
-
-Install: `pip install nanobook` or `cd python && maturin develop --release`
-
-### Exchange
-
-```python
-ex = nanobook.Exchange()
-result = ex.submit_limit("buy", 10050, 100, "gtc")
-result = ex.submit_market("sell", 50)
-ex.cancel(result.order_id)
-bid, ask = ex.best_bid_ask()
-snap = ex.depth(10)
-```
-
-### Stop Orders
-
-```python
-ex.submit_stop_market("sell", 9500, 100)
-ex.submit_stop_limit("buy", 10500, 10600, 100, "gtc")
-ex.submit_trailing_stop_market("sell", 9500, 100, "percentage", 0.05)
-```
-
-### Portfolio
-
-```python
-portfolio = nanobook.Portfolio(1_000_000_00, nanobook.CostModel(commission_bps=10))
-portfolio.rebalance_simple([("AAPL", 0.6)], [("AAPL", 150_00)])
-portfolio.record_return([("AAPL", 155_00)])
-metrics = portfolio.compute_metrics(252.0, 0.0)
-```
-
-### Strategy Callback
-
-```python
-result = nanobook.run_backtest(
-    strategy=lambda bar, prices, portfolio: [("AAPL", 0.5), ("GOOG", 0.5)],
-    price_series=[{"AAPL": 150_00, "GOOG": 280_00}] * 252,
-    initial_cash=1_000_000_00,
-    cost_model=nanobook.CostModel.zero(),
-)
-```
-
-### ITCH Parser
-
-```python
-events = nanobook.parse_itch("data/sample.itch")
-```
-
----
-
-## Book Analytics
-
-### Imbalance
-
-```rust
-let snap = exchange.depth(10);
-if let Some(imb) = snap.imbalance() {
-    // [-1.0, 1.0]: positive = buy pressure
-    println!("Imbalance: {imb:.4}");
-}
-```
-
-### Weighted Midpoint
-
-```rust
-if let Some(wmid) = snap.weighted_mid() {
-    println!("Weighted mid: {wmid:.2}");
-}
-```
-
-### VWAP
-
-```rust
-if let Some(vwap) = Trade::vwap(exchange.trades()) {
-    println!("VWAP: {vwap}");
-}
-```
-
----
-
-## Persistence & Serde
-
-### Persistence
-
-**Feature flag:** `persistence` (includes `serde` and `event-log`)
-
-```rust
-// Exchange — JSON Lines event sourcing
-exchange.save(Path::new("orders.jsonl")).unwrap();
-let loaded = Exchange::load(Path::new("orders.jsonl")).unwrap();
-
-// Portfolio — JSON
-portfolio.save_json(Path::new("portfolio.json")).unwrap();
-let loaded = Portfolio::load_json(Path::new("portfolio.json")).unwrap();
-```
-
-### Serde
-
-**Feature flag:** `serde`
-
-All public types derive `Serialize`/`Deserialize`: `Price`, `OrderId`, `TradeId`, `Symbol`, `Side`, `TimeInForce`, `OrderStatus`, `Order`, `Trade`, `Event`, `SubmitResult`, `CancelResult`, `ModifyResult`, `BookSnapshot`, `LevelSnapshot`, `StopOrder`, `Position`, `CostModel`, and more.
-
----
-
-## CLI Reference
-
-Interactive REPL for the order book:
-
-```bash
-cargo run --bin lob
-```
-
-| Command | Example |
-|---------|---------|
-| `buy <price> <qty> [ioc\|fok]` | `buy 100.50 100` |
-| `sell <price> <qty> [ioc\|fok]` | `sell 101.00 50 ioc` |
-| `market <buy\|sell> <qty>` | `market buy 200` |
-| `stop <buy\|sell> <price> <qty>` | `stop buy 105.00 100` |
-| `cancel <order_id>` | `cancel 3` |
-| `book` / `trades` | Show book or trade history |
-| `save <path>` / `load <path>` | Persistence (requires feature) |
-
----
-
-## Performance
-
-### Benchmarks
-
-Single-threaded (AMD Ryzen / Intel Core):
-
-| Operation | Latency | Throughput | Complexity |
-|-----------|---------|------------|------------|
-| Submit (no match) | **~155 ns** | ~6.4M ops/sec | O(log P) |
-| Submit (with match) | ~197 ns | ~5M ops/sec | O(log P + M) |
-| BBO query | **~1.1 ns** | ~900M ops/sec | O(1) |
-| Cancel (tombstone, deep queue) | ~385 ns | ~2.6M ops/sec | **O(1)** |
-| L2 snapshot (10 levels) | ~255 ns | ~4M ops/sec | O(D) |
-
-Where P = price levels, M = orders matched, D = depth. Numbers are from
-`benches/v0.10-comparison.md` on macOS arm64; expect ±10-20 % across
-hardware and build flags.
-
-### Time Breakdown (Submit, No Match)
-
-```
-submit_limit() ~155 ns:
-├── FxHashMap insert     ~30 ns   order storage
-├── BTreeMap insert      ~30 ns   price level (O(log P))
-├── VecDeque push         ~5 ns   FIFO queue
-├── Event recording      ~10 ns   (optional, for replay)
-├── STP branch           ~20 ns   `owner` field + policy read (Off path)
-└── Overhead             ~60 ns   struct creation, dispatch, etc.
-```
-
-### Optimizations
-
-1. **O(1) cancel** — Tombstone-based, 350x faster than linear scan
-2. **FxHash** — Non-cryptographic hash for OrderId lookups (+25% vs std HashMap)
-3. **Cached BBO** — Best bid/ask cached for O(1) access
-4. **Optional event logging** — disable `event-log` feature for max throughput
-
-### Rust vs Numba
-
-Single-threaded throughput is roughly equivalent (both compile to LLVM IR). Where Rust wins: zero cold-start (vs Numba's ~300 ms JIT), true parallelism via Rayon with no GIL contention, and deterministic memory without GC pauses.
-
----
+| Constraint | Rationale |
+|------------|-----------|
+| **Single-threaded** | Deterministic by design — same inputs always produce same outputs |
+| **In-process** | No networking overhead; wrap externally if needed |
+| **Execution scope, not compliance** | STP policies are supported; regulatory workflows and circuit breakers are out of scope |
+| **No complex orders** | No iceberg or pegged orders |
+| **Integer prices** | Fixed-point arithmetic avoids floating-point rounding |
+| **Statistics in Python** | Spearman/IC/t-stat belong in scipy/Polars — proven, mature |
 
 ## Where nanobook Fits
 
@@ -1260,20 +421,18 @@ portfolio accounting, metrics, risk, Python bindings, broker adapters, and a
 rebalancer in one small workspace. Benchmark on your own hardware before making
 latency-sensitive decisions.
 
----
+## Documentation
 
-## Design Constraints
+- **[Documentation index](docs/README.md)** — versioning, domain language, operations, audit, and learning notes.
+- **[docs.rs](https://docs.rs/nanobook)** — Rust API docs.
+- **[Versioning policy](SEMVER.md)** — how nanobook handles SemVer while it remains pre-1.0.
+- **[Ubiquitous language](UBIQUITOUS_LANGUAGE.md)** — glossary for order, portfolio, broker, risk, and rebalancer terms.
+- **[Developer reference](docs/reference.md)** — full API reference for every layer.
+- **[Lean verification](verification/lean/README.md)** — the model, the laws, and how to recheck them.
 
-Engineering decisions that keep the system simple and fast:
+## License
 
-| Constraint | Rationale |
-|------------|-----------|
-| **Single-threaded** | Deterministic by design — same inputs always produce same outputs |
-| **In-process** | No networking overhead; wrap externally if needed |
-| **Execution scope, not compliance** | STP policies are supported; regulatory workflows and circuit breakers are out of scope |
-| **No complex orders** | No iceberg or pegged orders |
-| **Integer prices** | Fixed-point arithmetic avoids floating-point rounding |
-| **Statistics in Python** | Spearman/IC/t-stat belong in scipy/Polars — proven, mature |
+MIT
 
 ## Disclaimer
 

@@ -1,8 +1,11 @@
 # Matching model
 
-Lean model of the limit book. Levels are plain lists, best price first.
-Each level is a price and a FIFO list of order ids. There are no tombstones
-and no queue positions.
+Lean model of the limit book, with eleven laws proved about it (`Nanobook/Laws.lean`,
+proofs in `Nanobook/Proofs/`). In `Nanobook/Spec.lean`, levels are plain lists, best
+price first, and each level is a price and a FIFO list of order ids.
+`Nanobook/Queue.lean` models the queue the Rust engine actually uses (tombstones,
+stored positions, `popped_from_front`, compaction), and law 10 proves it always
+holds the same orders, in the same order, as the plain lists.
 
 The operations are the corpus dialect: `SubmitLimit`, `SubmitMarket`, and
 `Cancel`, with an owner and one of the four self-trade policies. A market

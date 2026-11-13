@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+- Added machine-checked proofs of the matching engine in Lean 4 (`verification/lean/`). Eleven laws of the order book are proved about a Lean model of the engine: book shape, no crossed book, quantity conservation, price-time priority, trade prices, termination, all-or-nothing fill-or-kill, the four self-trade policies, local cancels, the tombstone queue matching plain FIFO lists, and order records matching their status. CI (`.github/workflows/lean.yml`) rebuilds the proofs, restricts them to Lean's three standard axioms, rechecks them with `leanchecker --fresh`, replays the golden corpus in Lean against the recorded Rust trades, and runs both engines on 1000 random event logs. The fixes below came out of this work.
+
+- Moved the developer reference from the README to `docs/reference.md`. The README now leads with the verification and keeps the overview, install, examples, and performance sections.
+
 - Fixed fill-or-kill orders under self-trade prevention. The fill-or-kill check counted the owner's own resting orders, so the order could pass the check and then be stopped by self-trade prevention: it could be partly filled, cancel the owner's resting order without trading, or be stored as cancelled. The check now counts only size the order could trade under its self-trade policy, and a short order is rejected without changing the book. `OrderBook::can_fully_fill` is unchanged; the new `OrderBook::can_fully_fill_under` takes the owner and the policy.
 
 - Fixed cancels that removed the wrong order. After the front of a price queue had filled, or after `compact`, cancelling an order could mark a different order at that price, leaving queued orders that could not match and could stall matching. A partially filled IOC or self-trade-cancelled order now reads as `Cancelled` with no remaining quantity from `get_order` and can no longer be cancelled; `SubmitResult.status` is unchanged.
