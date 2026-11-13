@@ -10,15 +10,17 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![cargo-deny](https://img.shields.io/badge/cargo--deny-audited-brightgreen)](https://github.com/BoringQuantSystems/nanobook/actions/workflows/ci.yml)
 
+> **Order matching proved in Lean 4.** Eleven laws of the order book are
+> machine-checked on a model of the engine, and CI runs the Rust engine against
+> that model on every push. No `sorry`, three standard axioms, 12 000 lines.
+> [How it is verified](VERIFICATION.md).
+
 `nanobook` is a small execution kernel for the part of a trading system that is
 easy to underestimate: state. Your Python code can keep doing research,
 signals, sizing, and scheduling. nanobook handles the execution mechanics around
 that strategy: portfolio accounting, transaction costs, stops, deterministic
 limit-order-book simulation, pre-trade risk checks, and optional IBKR
 rebalancing.
-
-Eleven laws of its order-book matching are proved in Lean, on a model of the
-engine that CI tests against the Rust code on every change.
 
 Use it when you want to ask: "if my strategy emits these target weights, what
 exactly happens to cash, holdings, risk checks, order-book events, and audit
@@ -72,7 +74,8 @@ The model uses unbounded integers, so overflow is covered by Rust tests and chec
 arithmetic, not by the proofs. The portfolio, risk, broker and rebalancer layers are
 tested, not proved.
 
-Check it yourself:
+The full write-up, with the Lean statements, the deliberate-break results and the
+mutation-testing numbers, is in [VERIFICATION.md](VERIFICATION.md). Check it yourself:
 
 ```bash
 verification/lean/check.sh 1000   # proofs, axioms, kernel recheck, corpus, 1000 random logs
