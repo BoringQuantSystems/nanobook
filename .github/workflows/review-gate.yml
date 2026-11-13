@@ -1,0 +1,76 @@
+# Fails when cubic did not complete a review, or when CodeRabbit was off or errored.
+# Passes with a warning when CodeRabbit is only rate limited.
+# Reads check runs only. Check titles are matched as text: update them here
+# when a vendor renames one.
+name: review-gate
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+permissions:
+  checks: read
+  pull-requests: read   # list the PR commits
+jobs:
+  review-gate:
+    # Bot-authored dependency PRs and draft PRs: the job is skipped, which passes a required check.
+    if: >-
+      github.event.pull_request.user.login != 'dependabot[bot]' &&
+      github.event.pull_request.user.login != 'renovate[bot]' &&
+      github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Wait for both bots, then decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          # Latest check run of one app on this commit, as JSON; "null" when none or on an API error.
+          latest() {
+            gh api "repos/$REPO/commits/$SHA/check-runs?app_id=$1&filter=latest&per_page=100" \
+              --jq '[.check_runs[] | {id, status, conclusion, title: .output.title}] | max_by(.id)' \
+              2>/dev/null || echo null
+          }
+          # True when CodeRabbit finished a review on any commit of this PR.
+          cr_reviewed_before() {
+            local c
+            for c in $(gh api "repos/$REPO/pulls/$PR/commits?per_page=100" --jq '.[].sha' 2>/dev/null); do
+              [ "$(gh api "repos/$REPO/commits/$c/check-runs?app_id=347564&filter=latest" \
+                     --jq '[.check_runs[] | select(.output.title=="Finished" and .conclusion=="success")] | length' 2>/dev/null || echo 0)" != 0 ] && return 0
+            done
+            return 1
+          }
+          cr=null; cu=null
+          for i in $(seq 1 36); do                     # 36 x 30 s = 18 min
+            cr=$(latest 347564)                        # CodeRabbit app
+            cu=$(latest 1082092)                       # cubic app
+            [ "$(jq -r '.status' <<<"$cr")" = completed ] && [ "$(jq -r '.status' <<<"$cu")" = completed ] && break
+            sleep 30
+          done
+          echo "CodeRabbit: $cr"; echo "cubic: $cu"
+          cr_title=$(jq -r 'if .status=="completed" then .title else "missing" end' <<<"$cr")
+          cr_concl=$(jq -r '.conclusion // "none"' <<<"$cr")
+          cu_title=$(jq -r 'if .status=="completed" then .title else "missing" end' <<<"$cu")
+          cu_concl=$(jq -r '.conclusion // "none"' <<<"$cu")
+          if [ "$cu_title" != "AI review completed" ] || [ "$cu_concl" != success ]; then
+            echo "::error::cubic did not complete a review: $cu_title ($cu_concl)"; exit 1
+          fi
+          case "$cr_concl" in
+            failure|cancelled|timed_out|action_required|none) echo "::error::CodeRabbit check did not pass: $cr_title ($cr_concl)"; exit 1 ;;
+          esac
+          case "$cr_title" in
+            "Finished") ;;
+            "Review rate limited") echo "::warning::CodeRabbit rate limited; cubic reviewed." ;;
+            "Path filters excluded"*) echo "::notice::CodeRabbit: $cr_title" ;;
+            # CodeRabbit reviews the opening push only (auto_incremental_review false); cubic reviews every push.
+            # Accept the skip only when CodeRabbit finished a review on an earlier commit of this PR.
+            "Review skipped: incremental reviews are disabled")
+              if cr_reviewed_before; then
+                echo "::warning::CodeRabbit reviews the opening push only; comment '@coderabbitai review' for this commit."
+              else
+                echo "::error::CodeRabbit never finished a review on this PR; comment '@coderabbitai review'."; exit 1
+              fi ;;
+            *) echo "::error::CodeRabbit did not review: $cr_title ($cr_concl)"; exit 1 ;;
+          esac
