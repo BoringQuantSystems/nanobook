@@ -20,6 +20,23 @@ GitHub security advisory once it is ready, crediting you unless you ask otherwis
 
 nanobook is pre-1.0; see [SEMVER.md](SEMVER.md) for what that means for upgrades.
 
+## Check every claim yourself
+
+Each row is a claim, the command that checks it from a clone of this repository, and the
+output we got when preparing 0.20.0.
+
+| Claim | Command | Output for 0.20.0 |
+|---|---|---|
+| No `unsafe` code in the Rust crates | `grep -rn 'unsafe' src broker/src risk/src rebalancer/src` | the five `#![forbid(unsafe_code)]` lines, one comment and one error message that contain the word; no `unsafe` block |
+| One runtime dependency | `cargo tree -p nanobook -e normal --depth 1` | `nanobook` → `rustc-hash` |
+| Dependencies pass the policy | `cargo deny check` | `advisories ok, bans ok, licenses ok, sources ok` |
+| No known vulnerable dependency | `cargo audit` | no findings (348 crates scanned) |
+| The matching laws are proved | `verification/lean/check.sh 0` | 11 laws on `propext`, `Classical.choice`, `Quot.sound` only; `leanchecker accepted Nanobook`; `corpus matches (25 cases)` |
+| The Rust engine matches the model | `verification/lean/differential.sh 1000` | `zero mismatches in 1000 seeds` |
+| The tour's numbers are real | `python python/examples/tour.py` | the output shown in the README |
+| A release binary was built here | `gh attestation verify <file> --repo BoringQuantSystems/nanobook` | `Verification succeeded` (from 0.20.0 on) |
+| The tests catch planted bugs | `cargo mutants` (see VERIFICATION.md for the exact setup) | see "Mutation testing" in VERIFICATION.md |
+
 ## What we check, and where you can verify it
 
 Every claim below can be checked in this repository or on a public service.

@@ -158,6 +158,11 @@ up this way, so the statements are reviewed by people as well.
 - The bridge between Rust and the model is testing (corpus and random replay), not
   proof.
 
+## Check every claim yourself
+
+The table of claims, commands and the outputs we got for 0.20.0 is in
+[SECURITY.md](SECURITY.md#check-every-claim-yourself).
+
 ## Reproduce it
 
 From the repository root:
