@@ -14,7 +14,8 @@ use nanobook_rebalancer::diff::{Action, RebalanceOrder};
 use nanobook_rebalancer::error::Error;
 use nanobook_rebalancer::execution::{
     cancel_order_with_write_ahead, execute_order_with_write_ahead,
-    fetch_positions_with_write_ahead, fetch_quotes_with_write_ahead,
+    fetch_account_summary_with_write_ahead, fetch_positions_with_write_ahead,
+    fetch_quotes_with_write_ahead,
 };
 
 struct FetchStub {
@@ -217,6 +218,38 @@ fn fetch_wrappers_return_stub_positions_and_quotes() {
             Some(30)
         );
         assert!(events.iter().any(|e| e.event == "quotes_result"));
+    }
+}
+
+#[test]
+fn fetch_account_summary_returns_broker_account_and_logs_checkpoints() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("audit.jsonl");
+    let mut audit = AuditLog::open_in(&path, dir.path()).unwrap();
+    let stub = FetchStub::ok();
+    let mut seq = 200u64;
+    let account =
+        fetch_account_summary_with_write_ahead(&stub, &mut audit, &mut seq, "ref").unwrap();
+    assert_eq!(account.equity_cents, 100_000_000);
+    assert_eq!(account.cash_cents, 100_000_000);
+
+    #[cfg(feature = "write_ahead_logging")]
+    {
+        assert_eq!(seq, 202);
+        let events = nanobook_rebalancer::audit::parse_audit_events(&path).unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].event, "account_summary_intent");
+        assert_eq!(events[0].sequence_number, Some(201));
+        assert_eq!(events[1].event, "account_summary_result");
+        assert_eq!(events[1].sequence_number, Some(202));
+        assert_eq!(
+            events[1].data.get("equity").and_then(|v| v.as_f64()),
+            Some(1_000_000.0)
+        );
+        assert_eq!(
+            events[1].data.get("cash").and_then(|v| v.as_f64()),
+            Some(1_000_000.0)
+        );
     }
 }
 

@@ -1517,6 +1517,22 @@ timeout_secs = {timeout_secs}
         );
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn send_sigterm_reports_permission_denied() {
+        // Process 1 belongs to root, so a non-root caller gets EPERM. Root
+        // can signal it (and would terminate it), so skip that case.
+        if nix::unistd::geteuid().is_root() {
+            println!("skipped: running as root, kill(1, SIGTERM) gives no EPERM");
+            return;
+        }
+        let err = send_sigterm(1).unwrap_err();
+        assert!(
+            err.to_string().contains("Permission denied"),
+            "unexpected error: {err}"
+        );
+    }
+
     #[test]
     fn dangling_order_limit_outside_cents_range_saturates() {
         // 1e17 dollars is 1e19 cents, above i64::MAX, so the checked conversion

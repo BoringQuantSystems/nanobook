@@ -121,6 +121,18 @@ fn next_checkpoint_sequence(sequence_number: &mut u64) -> u64 {
     *sequence_number
 }
 
+/// Whether to pause before the order after `index` (zero-based) of `count`.
+/// The last order is not followed by a pause.
+fn pause_after(index: usize, count: usize) -> bool {
+    index + 1 < count
+}
+
+/// Seconds to wait before retry after failed `attempt` (one-based): 1, 2, 4, 8, 16.
+#[cfg_attr(not(feature = "write_ahead_logging"), allow(dead_code))]
+fn retry_backoff_secs(attempt: u32) -> u64 {
+    2u64.pow(attempt - 1)
+}
+
 /// Process-wide graceful shutdown flag set by SIGTERM.
 #[derive(Debug, Clone)]
 pub struct ShutdownFlag {
@@ -619,7 +631,7 @@ pub fn run_with_client(
         }
 
         // Rate limiting between orders
-        if i + 1 < orders.len() {
+        if pause_after(i, orders.len()) {
             orders::rate_limit_delay(config.execution.order_interval_ms);
         }
     }
@@ -1131,7 +1143,7 @@ pub fn execute_order_with_write_ahead(
                 if is_transient_error(&broker_error) {
                     if attempt < max_retries {
                         // Calculate exponential backoff: 1s, 2s, 4s, 8s, 16s
-                        let backoff_secs = 2u64.pow(attempt - 1);
+                        let backoff_secs = retry_backoff_secs(attempt);
                         warn!(
                             "Transient error on attempt {}/{} (will retry in {}s): {}",
                             attempt, max_retries, backoff_secs, broker_error
@@ -1216,6 +1228,24 @@ pub fn execute_order_with_write_ahead(
 mod tests {
     use super::*;
     use nanobook_broker::error::BrokerError;
+
+    #[test]
+    fn pause_after_is_false_only_for_the_last_order() {
+        assert!(!pause_after(0, 0));
+        assert!(!pause_after(0, 1));
+        assert!(pause_after(0, 2));
+        assert!(pause_after(0, 3));
+        assert!(pause_after(1, 3));
+        assert!(!pause_after(2, 3));
+        assert!(!pause_after(3, 3));
+        assert!(!pause_after(4, 3));
+    }
+
+    #[test]
+    fn retry_backoff_doubles_from_one_second() {
+        let secs: Vec<u64> = (1..=5).map(retry_backoff_secs).collect();
+        assert_eq!(secs, vec![1, 2, 4, 8, 16]);
+    }
 
     #[test]
     fn test_is_transient_error_connection() {

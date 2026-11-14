@@ -2674,6 +2674,39 @@ mod tests {
 
     #[cfg(feature = "write_ahead_logging")]
     #[test]
+    fn reconcile_order_intent_zero_quantity_ignores_zero_remaining() {
+        use nanobook::Price;
+        use nanobook_broker::mock::{FillMode, MockBroker};
+        use nanobook_broker::types::{BrokerOrder, BrokerOrderType};
+        use nanobook_broker::{Broker, BrokerSide};
+
+        let mut broker = MockBroker::builder()
+            .fill_mode(FillMode::ImmediateFull)
+            .build();
+        broker.connect().unwrap();
+        broker
+            .submit_order(&BrokerOrder {
+                symbol: Symbol::new("AAPL"),
+                side: BrokerSide::Buy,
+                quantity: 50,
+                order_type: BrokerOrderType::Limit(Price(16_000)),
+                client_order_id: None,
+            })
+            .unwrap();
+        let open = broker.open_orders().unwrap();
+        assert_eq!(open.len(), 1);
+        assert_eq!(open[0].remaining_quantity, 0);
+
+        let mut sleeps = Vec::new();
+        let matched =
+            reconcile_order_intent_with(&broker, &Symbol::new("AAPL"), 0, &mut |d| sleeps.push(d))
+                .unwrap();
+        assert_eq!(matched, None);
+        assert!(sleeps.is_empty());
+    }
+
+    #[cfg(feature = "write_ahead_logging")]
+    #[test]
     fn reconcile_order_intent_retries_five_times() {
         let broker = FailOpenBroker {
             calls: std::cell::Cell::new(0),
