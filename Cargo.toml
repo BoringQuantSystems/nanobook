@@ -20,6 +20,21 @@ readme = "README.md"
 keywords = ["orderbook", "trading", "matching-engine", "risk-management", "formal-verification"]
 categories = ["simulation", "algorithms"]
 authors = ["Ricardo Frantz"]
+# Ship only what a Rust user builds and reads. The 0.19.3 crate was 6.3 MB because it
+# also carried the OCaml oracle, docs, mockups and CI files; those stay in the repository.
+include = [
+    "/src/**",
+    "/benches/**",
+    "/tests/**",
+    "/examples/*.rs",
+    "/examples/itch-replay/replay.rs",
+    "/README.md",
+    "/CHANGELOG.md",
+    "/LICENSE",
+    "/SECURITY.md",
+    "/SEMVER.md",
+    "/VERIFICATION.md",
+]
 
 [dependencies]
 rustc-hash = "2.1"  # FxHash - fast non-cryptographic hash
