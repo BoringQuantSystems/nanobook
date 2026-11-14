@@ -7,8 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
-nanobook and the Python package move from 0.19.3 to 0.20.0. nanobook-broker,
-nanobook-risk and nanobook-rebalancer do not change and are not republished.
+nanobook and the Python package move from 0.19.3 to 0.20.0, and nanobook-broker
+from 0.10.1 to 0.10.2. nanobook-risk and nanobook-rebalancer are republished only if
+their code changes before the release.
 
 ### Highlight: matching rules proved in Lean 4
 
@@ -43,6 +44,16 @@ tests, fuzzing or mutation testing.
 
 ### Changed
 
+- **`deflated_sharpe` follows Bailey and López de Prado (2014).** It now takes the
+  sample length `n_observations` (T) and the variance of the Sharpe ratios across the
+  trials `trials_sharpe_variance` (V): `deflated_sharpe(sharpe, n_trials,
+  n_observations, trials_sharpe_variance, skewness, kurtosis)`, and the same in
+  Python. Before, `n_trials` stood in for T and the Sharpe ratio's own standard error
+  for √V, so results did not match the paper. One trial now returns the
+  probabilistic Sharpe ratio against zero, a probability, instead of the raw Sharpe
+  ratio; negative Sharpe ratios are accepted. The tests reproduce the paper's worked
+  example (DSR 0.9004, p. 99). *Check your code if* you call `deflated_sharpe` or
+  `py_deflated_sharpe`: the call needs the two new arguments.
 - **Fill-or-kill under self-trade prevention is rejected with no effect.** The
   fill-or-kill check now counts only the size the order could actually trade under
   its self-trade policy. Before, it counted the owner's own resting orders, so the
@@ -75,6 +86,13 @@ tests, fuzzing or mutation testing.
   rejecting** (see Changed).
 - `Trade::vwap` returns `None` when the quantity sum does not fit, instead of
   overflowing.
+- **nanobook-broker: an IBKR connection loss during an order was not reported.**
+  Codes 1100 to 1102 never reached their check, so `execute_limit_order` did not
+  return `ConnectionLost` with the partial fill. It does now. Found by mutation
+  testing.
+- The ITCH parser read the Stock Directory (`R`) symbol from the tracking-number
+  and timestamp bytes. `ItchMessage::StockDirectory` now carries the real symbol
+  (ITCH 5.0 offset 11). Found by mutation testing.
 - The OCaml reference oracle mishandled a cancel after a partial fill and could hang
   on corpus case 21; CI now has a 60 s timeout per corpus case.
 
@@ -91,6 +109,17 @@ tests, fuzzing or mutation testing.
 
 ### Security
 
+- **No `unsafe` code in the Rust crates.** The one `unsafe` block (`Symbol::as_str`)
+  now uses a checked UTF-8 conversion of at most 8 bytes, and `nanobook`,
+  `nanobook-broker`, `nanobook-risk` and `nanobook-rebalancer` start with
+  `#![forbid(unsafe_code)]`.
+- **Security policy and public rating.** `SECURITY.md` explains private reporting
+  (GitHub private vulnerability reporting is enabled), supported versions, and every
+  supply-chain check with where to verify it. An OpenSSF Scorecard workflow publishes
+  the repository's security rating weekly.
+- **Verifiable release binaries.** GitHub Releases now carry a `SHA256SUMS` file and a
+  signed build-provenance attestation for every `lob` binary
+  (`gh attestation verify <file> --repo BoringQuantSystems/nanobook`).
 - **Dependency updates for RustSec advisories.** The lock file now pins rustix
   1.1.6 (RUSTSEC-2026-0486; only in tests, through tempfile) and quinn-udp 0.5.16
   (RUSTSEC-2026-0538; only in nanobook-broker built with the `binance` feature).
