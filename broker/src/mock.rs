@@ -2,7 +2,7 @@
 //!
 //! Use this in integration tests to simulate broker responses without network calls.
 //!
-//! ```ignore
+//! ```
 //! use nanobook_broker::mock::{MockBroker, FillMode};
 //! use nanobook::Symbol;
 //!

@@ -466,7 +466,7 @@ impl Portfolio {
         &self.returns
     }
 
-    /// The equity curve (one entry per `record_return` call).
+    /// The equity curve: the initial cash, then one entry per `record_return` call.
     pub fn equity_curve(&self) -> &[i64] {
         &self.equity_curve
     }

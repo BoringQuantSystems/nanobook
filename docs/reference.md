@@ -66,7 +66,7 @@ Constants: `Price::ZERO`, `Price::MAX` (market buys), `Price::MIN` (market sells
 ### Quantities and Timestamps
 
 - `Quantity = u64` — shares or contracts, always positive.
-- `Timestamp = u64` — monotonic nanosecond counter (not system clock), guaranteeing deterministic ordering.
+- `Timestamp = u64` — event counter assigned by the exchange, starting at 1 and increasing by 1 (not wall-clock time), guaranteeing deterministic ordering.
 
 ### Determinism
 
@@ -144,7 +144,7 @@ assert_eq!(err.unwrap_err(), ValidationError::ZeroPrice);
 | `Quantity` | `type Quantity = u64` | Number of shares/contracts | — |
 | `OrderId` | `struct OrderId(pub u64)` | Unique order identifier | `O42` |
 | `TradeId` | `struct TradeId(pub u64)` | Unique trade identifier | `T7` |
-| `Timestamp` | `type Timestamp = u64` | Nanosecond counter (not wall clock) | — |
+| `Timestamp` | `type Timestamp = u64` | Event counter, +1 per event (not wall clock) | — |
 
 ### Result Types
 

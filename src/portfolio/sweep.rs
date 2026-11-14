@@ -17,8 +17,8 @@ use super::strategy::{BacktestResult, Strategy, run_backtest};
 ///
 /// # Example
 ///
-/// ```ignore
-/// use nanobook::portfolio::sweep;
+/// ```
+/// use nanobook::portfolio::sweep::sweep;
 ///
 /// let params = vec![0.5_f64, 1.0, 1.5, 2.0]; // e.g., leverage levels
 /// let results = sweep(&params, 12.0, 0.0, |&leverage| {
@@ -55,9 +55,20 @@ where
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```
 /// use nanobook::portfolio::sweep::sweep_strategy;
+/// use nanobook::portfolio::{CostModel, Portfolio, Strategy};
+/// use nanobook::Symbol;
 ///
+/// struct MyStrategy { weight: f64 }
+/// impl Strategy for MyStrategy {
+///     fn compute_weights(&self, _bar: usize, prices: &[(Symbol, i64)], _p: &Portfolio) -> Vec<(Symbol, f64)> {
+///         prices.iter().map(|&(sym, _)| (sym, self.weight)).collect()
+///     }
+/// }
+///
+/// let prices = vec![vec![(Symbol::new("AAPL"), 185_00)], vec![(Symbol::new("AAPL"), 187_00)]];
+/// let (initial_cash, cost_model) = (1_000_000_00, CostModel::zero());
 /// let params = vec![0.5_f64, 1.0, 1.5];
 /// let results = sweep_strategy(&params, &prices, initial_cash, cost_model, 12.0, 0.0, |&weight| {
 ///     MyStrategy { weight }
