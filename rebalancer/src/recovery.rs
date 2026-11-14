@@ -2699,4 +2699,13 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn audit_dollars_to_cents_converts_and_saturates() {
+        assert_eq!(audit_dollars_to_cents(160.25), 16_025);
+        assert_eq!(audit_dollars_to_cents(0.0), 0);
+        // Out of the checked range: saturating fallback.
+        assert_eq!(audit_dollars_to_cents(1e17), i64::MAX);
+        assert_eq!(audit_dollars_to_cents(-1e17), i64::MIN);
+    }
 }

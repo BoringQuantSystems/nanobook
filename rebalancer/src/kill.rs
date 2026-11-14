@@ -1497,4 +1497,40 @@ timeout_secs = {timeout_secs}
         assert_eq!(dangling.len(), 1);
         assert_eq!(dangling[0].limit_price_cents, 16_025);
     }
+
+    #[test]
+    fn forceful_cancel_default_backoff_doubles_between_attempts() {
+        // open_orders fails on attempts 0 and 1, then succeeds with nothing open.
+        // The default backoff sleeps 1 s after attempt 0 and 2 s after attempt 1.
+        let broker = TestBroker::with_orders(&[]);
+        broker.fail_open_attempts.set(2);
+        let started = std::time::Instant::now();
+        let report = forceful_cancel_open_orders(&broker);
+        let elapsed = started.elapsed();
+
+        assert_eq!(report.attempts, 3);
+        assert_eq!(report.errors.len(), 2);
+        assert!(report.succeeded());
+        assert!(
+            elapsed >= Duration::from_millis(2_900),
+            "expected about 3 s of backoff, slept {elapsed:?}"
+        );
+    }
+
+    #[test]
+    fn dangling_order_limit_outside_cents_range_saturates() {
+        // 1e17 dollars is 1e19 cents, above i64::MAX, so the checked conversion
+        // fails and the saturating fallback `(dollars * 100.0).round() as i64`
+        // is used. A different operator in the fallback gives another value.
+        let temp_file = NamedTempFile::new().unwrap();
+        let audit_log = r#"{"event":"order_submitted","ts":"2024-01-01T00:00:00Z","symbol":"AAPL","action":"Buy","shares":1,"limit":1e17,"ibkr_id":1}
+{"event":"order_submitted","ts":"2024-01-01T00:00:01Z","symbol":"MSFT","action":"Sell","shares":1,"limit":-1e17,"ibkr_id":2}"#;
+        std::fs::write(temp_file.path(), audit_log).unwrap();
+
+        let mut dangling = verify_no_dangling_orders(temp_file.path()).unwrap();
+        dangling.sort_by_key(|order| order.ibkr_id);
+        assert_eq!(dangling.len(), 2);
+        assert_eq!(dangling[0].limit_price_cents, i64::MAX);
+        assert_eq!(dangling[1].limit_price_cents, i64::MIN);
+    }
 }

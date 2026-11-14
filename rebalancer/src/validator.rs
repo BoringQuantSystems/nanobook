@@ -295,15 +295,10 @@ pub fn validate_broker_connectivity(config: &Config) -> Vec<ValidationIssue> {
     }
 }
 
-#[allow(dead_code)]
-fn _path_exists(path: &Path) -> bool {
-    path.exists()
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
-        ValidationIssue, format_validation_issues, should_run_startup_validation,
+        ValidationIssue, find_toml_field, format_validation_issues, should_run_startup_validation,
         validate_available_log_space, validate_broker_connectivity, validate_disk_space,
         validate_file_permissions, validate_network_timeout, validate_required_fields,
         validate_risk_limits, validate_static, validate_static_or_error,
@@ -553,5 +548,27 @@ mod tests {
         let config = valid_config(dir.path());
         assert!(validate_available_log_space(1_000_000_000, &config).is_empty());
         assert_eq!(validate_available_log_space(999_999_999, &config).len(), 1);
+    }
+
+    #[test]
+    fn find_toml_field_matches_section_and_key_together() {
+        let contents = "[a]\nx = 1\ny = 2\n[b]\nx = 3\n";
+        assert_eq!(find_toml_field(contents, "a.x"), Some((2, "1")));
+        assert_eq!(find_toml_field(contents, "a.y"), Some((3, "2")));
+        // Same key in another section must not match section a, and a key
+        // present only in another section must not match at all.
+        assert_eq!(find_toml_field(contents, "b.x"), Some((5, "3")));
+        assert_eq!(find_toml_field(contents, "b.y"), None);
+        assert_eq!(find_toml_field(contents, "c.x"), None);
+        assert_eq!(find_toml_field(contents, "nodot"), None);
+    }
+
+    #[test]
+    fn find_toml_field_does_not_take_an_array_value_for_a_section_header() {
+        // `ports = [1, 2]` ends with `]` but does not start with `[`: it is a
+        // key line, and the fields after it still belong to section a.
+        let contents = "[a]\nports = [1, 2]\nx = 3\n";
+        assert_eq!(find_toml_field(contents, "a.ports"), Some((2, "[1, 2]")));
+        assert_eq!(find_toml_field(contents, "a.x"), Some((3, "3")));
     }
 }

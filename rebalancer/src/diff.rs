@@ -661,4 +661,26 @@ mod tests {
             "$502.00 commission + $200.40 slippage = $702.40"
         );
     }
+
+    #[test]
+    fn classify_trade_zero_change_falls_through_to_rebalance() {
+        // No arm matches a zero change, whatever the current position is.
+        for current in [0, 4, -4, i64::MIN] {
+            assert_eq!(
+                classify_trade(current, 0),
+                (Action::Buy, "rebalance"),
+                "classify_trade({current}, 0)"
+            );
+        }
+    }
+
+    #[test]
+    fn classify_trade_short_arms_do_not_take_abs_of_min() {
+        // The "flip to long" arm must stop at its sign tests before calling
+        // `c.abs()`, which overflows for i64::MIN.
+        assert_eq!(
+            classify_trade(i64::MIN, -1),
+            (Action::SellShort, "increase short")
+        );
+    }
 }

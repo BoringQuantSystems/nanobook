@@ -58,3 +58,27 @@ fn kill_without_pid_file_exits_nonzero() {
     );
     assert_eq!(output.status.code(), Some(3));
 }
+
+#[test]
+fn aborted_error_is_printed_as_its_bare_message() {
+    // `Error::Aborted` has its own arm in main: the message is printed as is,
+    // without the "Error: execution aborted:" prefix of the generic arm.
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("config.toml"), sample_config()).unwrap();
+    let output = Command::new(bin())
+        .current_dir(dir.path())
+        .args(["--config", "config.toml", "--skip-validation", "kill"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(3));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.lines().any(|l| l.starts_with("PID file not found")),
+        "stderr was: {stderr}"
+    );
+    assert!(!stderr.contains("Error: "), "stderr was: {stderr}");
+    assert!(
+        !stderr.contains("execution aborted"),
+        "stderr was: {stderr}"
+    );
+}

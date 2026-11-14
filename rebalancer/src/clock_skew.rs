@@ -272,4 +272,15 @@ mod tests {
             SkewResult::Ok
         );
     }
+
+    #[test]
+    fn identical_timestamps_are_never_skew_even_with_negative_thresholds() {
+        // A zero difference is neither a backward nor a forward jump. With a
+        // negative threshold and a negative rate limit, a `<=` or `>=` boundary
+        // would classify it as a jump, because 0 > -1 and -0.0 > -1.0.
+        let ts = Utc::now();
+        let mut detector = ClockSkewDetector::with_thresholds(-1, -1.0);
+        assert_eq!(detector.check(ts), SkewResult::Ok);
+        assert_eq!(detector.check(ts), SkewResult::Ok);
+    }
 }
