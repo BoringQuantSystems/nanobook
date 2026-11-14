@@ -29,6 +29,57 @@ Use it when you want to ask: "if my strategy emits these target weights, what
 exactly happens to cash, holdings, risk checks, order-book events, and audit
 logs?"
 
+## See it work
+
+`python/examples/tour.py` shows what nanobook does in five short scenes. It runs offline in
+under a second, with no API keys:
+
+From a clone of this repository, with nanobook 0.20 or later installed:
+
+```bash
+pip install "nanobook>=0.20"
+python python/examples/tour.py        # add --figure (with matplotlib) to draw the chart below
+```
+
+Trimmed output of one run (synthetic, seeded prices):
+
+```text
+=== Scene 1: From weights to a backtest ===
+3 synthetic stocks, 252 daily bars, inverse-volatility weights, rebalanced every 21 days,
+10 bps commission + 5 bps slippage.
+  final equity     $1,127,584.21  (start $1,000,000.00)
+  Sharpe           1.22
+  max drawdown     9.88 %
+  backtest time    0.70 ms
+cost effect: trading costs took $4,182.84 of final equity.
+
+=== Scene 2: The order book does the right thing ===
+fill-or-kill buy 100 @ $102.00, only 20 are available:
+  result Cancelled, filled 0, trades 0
+  book unchanged: True; stored record: None
+immediate-or-cancel buy 100 @ $102.00, 20 fill and the rest cannot rest:
+  get_order -> status 'cancelled', filled 20, remaining 0
+
+=== Scene 3: Risk checks stop bad orders ===
+batch B: buy $90,000 AAA + $95,000 BBB (1.85x):
+  FAIL  Leverage           1.85x > 1.50x limit
+order C: sell 10 CCC @ $50.00 while holding none (a short):
+  FAIL  Short selling      short selling not allowed
+
+=== Scene 4: What a rebalance does, without a broker ===
+period 21, second rebalance (the change from drifted holdings):
+  sell  550.0000 CCC @ $217.91  notional $119,850.50  cost $119.85
+
+=== Scene 5: Proof, not promises ===
+  law  7: A fill-or-kill submit trades its whole quantity, or trades nothing and leaves
+          every order and level unchanged.
+  ... eleven laws, and the command that rechecks them: verification/lean/check.sh 0
+```
+
+<p align="center">
+  <img src="assets/tour-equity.png" alt="Equity of the tour backtest, gross and net of trading costs" width="700">
+</p>
+
 ## Matching rules proved in Lean
 
 The matching engine at the heart of nanobook comes with machine-checked proofs.
