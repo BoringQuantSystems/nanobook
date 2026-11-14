@@ -95,6 +95,12 @@ tests, fuzzing or mutation testing.
   (ITCH 5.0 offset 11). Found by mutation testing.
 - The OCaml reference oracle mishandled a cancel after a partial fill and could hang
   on corpus case 21; CI now has a 60 s timeout per corpus case.
+- **nanobook-rebalancer: closing a long sold above mid.** Closing a long now uses mid minus offset. Closing a short now uses mid plus offset.
+- **nanobook-rebalancer: `Error::Aborted` exited with code 0.** Kill-switch failures and a failed confirm prompt now exit with code 3. A risk failure still exits with code 2.
+- **nanobook-rebalancer: recovery and kill read audit `limit` as cents.** The writers store dollars. A 160.25 limit now reconstructs as 16025 cents.
+- **nanobook-rebalancer: the runner did not write `rebalancer.pid`.** `run` now writes the PID file at start and removes it on every exit path.
+- **nanobook-rebalancer: the close loop sent a limit-0 order when the quote was 0.** It now skips that symbol.
+- **nanobook-rebalancer: recovery matched the first open order with remaining quantity.** It now matches remaining quantity of the incomplete intent.
 
 ### Added
 
@@ -106,6 +112,14 @@ tests, fuzzing or mutation testing.
 - **Lean verification.** The Lean model, proofs and replay tools (`verification/lean/`), the corpus
   generator (`examples/corpus_gen.rs`), the Rust-versus-Lean replay
   (`verification/lean/differential.sh`), and golden corpus cases 19 to 25.
+- **nanobook-rebalancer `run_with_client`.** The run path now accepts an injected broker and confirm callback. Tests cover confirmation, `--force`, and PID-file lifetime.
+- **nanobook-rebalancer tests for mutation groups G1 to G31, seams S1 and S2, and gated paths T1 and T2.**
+
+### Known issues
+
+- **nanobook-rebalancer: `constraints.min_trade_usd` in target.json does not change the run minimum.** The run still reads `config.risk.min_trade_usd`.
+- **nanobook-rebalancer: `TargetSpec::window_id` hashes with `DefaultHasher`.** The id can change after a Rust upgrade, so a cron window can fire twice.
+- **nanobook-rebalancer: without `write_ahead_logging`, the runner does not write `order_submitted`.** Graceful kill then cannot report a dangling order.
 
 ### Security
 
