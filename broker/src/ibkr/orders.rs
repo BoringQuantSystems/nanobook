@@ -95,7 +95,7 @@ fn is_connection_lost(code: i32) -> bool {
 /// the connection codes. Before 0.20.0 the guard admitted only the first two,
 /// so the connection check below it could never run.
 fn is_order_notice(code: i32) -> bool {
-    code < 0 || code >= 2000 || is_connection_lost(code)
+    !(0..2000).contains(&code) || is_connection_lost(code)
 }
 
 pub fn map_ibkr_order_status(status: &str) -> OrderState {
@@ -958,11 +958,17 @@ mod tests {
     #[test]
     fn connection_codes_reach_the_order_loop() {
         for code in [1100, 1101, 1102] {
-            assert!(is_order_notice(code), "code {code} must reach the order loop");
+            assert!(
+                is_order_notice(code),
+                "code {code} must reach the order loop"
+            );
             assert!(is_connection_lost(code), "code {code} is a connection loss");
         }
         for code in [1099, 1103, 2104, -1, 0, 201] {
-            assert!(!is_connection_lost(code), "code {code} is not a connection loss");
+            assert!(
+                !is_connection_lost(code),
+                "code {code} is not a connection loss"
+            );
         }
         assert!(is_order_notice(-1) && is_order_notice(2104));
         assert!(!is_order_notice(201) && !is_order_notice(1099));

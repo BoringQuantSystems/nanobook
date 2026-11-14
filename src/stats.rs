@@ -766,7 +766,11 @@ mod tests {
     fn deflated_sharpe_matches_the_paper_example() {
         let sr = 2.5 / 250f64.sqrt();
         let v = 0.5 / 250.0;
-        let cases = [(100, -3.0, 10.0, 0.9004), (46, -3.0, 10.0, 0.9505), (88, 0.0, 3.0, 0.9505)];
+        let cases = [
+            (100, -3.0, 10.0, 0.9004),
+            (46, -3.0, 10.0, 0.9505),
+            (88, 0.0, 3.0, 0.9505),
+        ];
         for (n, skew, kurt, want) in cases {
             let dsr = deflated_sharpe(sr, n, 1250, v, skew, kurt);
             assert!((dsr - want).abs() < 5e-5, "N={n}: got {dsr}, paper {want}");
