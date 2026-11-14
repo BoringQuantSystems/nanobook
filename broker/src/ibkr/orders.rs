@@ -84,6 +84,20 @@ use log::{debug, info, warn};
 use crate::error::BrokerError;
 use crate::types::*;
 
+/// IBKR system codes 1100 (connectivity lost), 1101 and 1102 (connectivity
+/// restored, data lost or kept). During an order they end the wait with
+/// `ConnectionLost`, so the caller reconciles the partial fill.
+fn is_connection_lost(code: i32) -> bool {
+    (1100..=1102).contains(&code)
+}
+
+/// Notices the order loop acts on: errors (code < 0), warnings (>= 2000) and
+/// the connection codes. Before 0.20.0 the guard admitted only the first two,
+/// so the connection check below it could never run.
+fn is_order_notice(code: i32) -> bool {
+    code < 0 || code >= 2000 || is_connection_lost(code)
+}
+
 pub fn map_ibkr_order_status(status: &str) -> OrderState {
     match status {
         "Submitted" | "PreSubmitted" | "PendingSubmit" | "ApiPending" => OrderState::Submitted,
@@ -510,10 +524,9 @@ pub fn execute_limit_order(
                 commission = comm.commission;
                 debug!("Commission: ${:.4}", commission);
             }
-            PlaceOrder::Message(notice) if notice.code < 0 || notice.code >= 2000 => {
+            PlaceOrder::Message(notice) if is_order_notice(notice.code) => {
                 warn!("Order {order_id} error {}: {}", notice.code, notice.message);
-                // Detect disconnect errors (IBKR error code 1100, 1101, 1102)
-                if notice.code == 1100 || notice.code == 1101 || notice.code == 1102 {
+                if is_connection_lost(notice.code) {
                     warn!(
                         "AUDIT: Connection lost during order {order_id} execution (filled={})",
                         filled
@@ -940,6 +953,19 @@ mod tests {
         assert_eq!(ib_order.total_quantity, 10.0);
         assert_eq!(ib_order.aux_price, Some(182.50));
         assert_eq!(ib_order.limit_price, Some(181.00));
+    }
+
+    #[test]
+    fn connection_codes_reach_the_order_loop() {
+        for code in [1100, 1101, 1102] {
+            assert!(is_order_notice(code), "code {code} must reach the order loop");
+            assert!(is_connection_lost(code), "code {code} is a connection loss");
+        }
+        for code in [1099, 1103, 2104, -1, 0, 201] {
+            assert!(!is_connection_lost(code), "code {code} is not a connection loss");
+        }
+        assert!(is_order_notice(-1) && is_order_notice(2104));
+        assert!(!is_order_notice(201) && !is_order_notice(1099));
     }
 
     #[test]
