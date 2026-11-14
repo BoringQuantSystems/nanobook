@@ -32,7 +32,7 @@
 
 use crate::error::{Error, Result};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Default PID file path.
 pub const DEFAULT_PID_FILE: &str = "rebalancer.pid";
@@ -75,6 +75,31 @@ pub fn pid_file_exists(path: &Path) -> bool {
 pub fn remove_pid_file(path: &Path) -> Result<()> {
     fs::remove_file(path).map_err(Error::Audit)?;
     Ok(())
+}
+
+/// Write a PID file and remove it when this guard drops.
+pub struct PidFileGuard {
+    path: PathBuf,
+}
+
+impl PidFileGuard {
+    /// Write `path` with the current process id.
+    pub fn create(path: PathBuf) -> Result<Self> {
+        write_pid_file(&path)?;
+        Ok(Self { path })
+    }
+}
+
+impl Drop for PidFileGuard {
+    fn drop(&mut self) {
+        if let Err(error) = remove_pid_file(&self.path) {
+            tracing::warn!(
+                path = %self.path.display(),
+                error = %error,
+                "failed to remove PID file"
+            );
+        }
+    }
 }
 
 #[cfg(test)]

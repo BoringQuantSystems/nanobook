@@ -250,4 +250,26 @@ mod tests {
             other => panic!("Expected BackwardJump, got {:?}", other),
         }
     }
+
+    #[test]
+    fn boundary_equal_to_thresholds_is_ok() {
+        let ts1 = Utc::now();
+        let mut backward = ClockSkewDetector::with_thresholds(30, 2.0);
+        backward.check(ts1);
+        assert_eq!(backward.check(ts1 - Duration::seconds(30)), SkewResult::Ok);
+
+        let mut forward_rate = ClockSkewDetector::with_thresholds(30, 0.5);
+        forward_rate.check(ts1);
+        assert_eq!(
+            forward_rate.check(ts1 + Duration::seconds(30)),
+            SkewResult::Ok
+        );
+
+        let mut equal_rate = ClockSkewDetector::with_thresholds(30, 2.0);
+        equal_rate.check(ts1);
+        assert_eq!(
+            equal_rate.check(ts1 + Duration::seconds(60)),
+            SkewResult::Ok
+        );
+    }
 }

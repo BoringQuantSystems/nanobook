@@ -400,4 +400,72 @@ max_jump_rate_sec_per_sec = 2.0
         let config: Config = toml::from_str(&toml).unwrap();
         assert_eq!(config.account.account_type, AccountType::Cash);
     }
+
+    #[test]
+    fn omitted_keys_use_documented_defaults() {
+        let config: Config = toml::from_str(
+            r#"
+[connection]
+host = "127.0.0.1"
+port = 4002
+client_id = 1
+[account]
+id = "DU1"
+type = "cash"
+[execution]
+[risk]
+[cost]
+[logging]
+"#,
+        )
+        .unwrap();
+        assert_eq!(config.connection.timeout_secs, 30);
+        assert_eq!(config.execution.order_interval_ms, 100);
+        assert_eq!(config.execution.limit_offset_bps, 5);
+        assert_eq!(config.execution.order_timeout_secs, 300);
+        assert_eq!(config.execution.max_orders_per_run, 50);
+        assert_eq!(config.execution.quote_staleness_threshold_sec, 30);
+        assert_eq!(config.risk.max_position_pct, 0.25);
+        assert_eq!(config.risk.max_leverage, 1.5);
+        assert_eq!(config.risk.min_trade_usd, 100.0);
+        assert_eq!(config.risk.max_trade_usd, 100_000.0);
+        assert!(config.risk.allow_short);
+        assert_eq!(config.risk.max_short_pct, 0.30);
+        assert_eq!(config.cost.commission_per_share, 0.0035);
+        assert_eq!(config.cost.commission_min, 0.35);
+        assert_eq!(config.cost.slippage_bps, 5);
+        assert_eq!(config.logging.dir, "./logs");
+        assert_eq!(config.logging.audit_file, "audit.jsonl");
+        assert_eq!(config.logging.clock_skew_threshold_sec, 30);
+        assert_eq!(config.logging.max_jump_rate_sec_per_sec, 2.0);
+        assert_eq!(config.kill.timeout_secs, 30);
+        assert!(config.validate().is_ok());
+        let risk = RiskConfig::default();
+        assert_eq!(risk.max_position_pct, 0.25);
+        assert_eq!(risk.max_leverage, 1.5);
+        assert_eq!(risk.min_trade_usd, 100.0);
+        assert_eq!(risk.max_trade_usd, 100_000.0);
+        assert!(risk.allow_short);
+        assert_eq!(risk.max_short_pct, 0.30);
+    }
+
+    #[test]
+    fn validate_boundary_values() {
+        let mut config: Config = toml::from_str(example_toml()).unwrap();
+        config.risk.max_position_pct = 1.0;
+        assert!(config.validate().is_ok());
+        config.risk.min_trade_usd = 0.0;
+        assert!(config.validate().is_ok());
+        config.risk.min_trade_usd = -0.01;
+        assert!(config.validate().is_err());
+        config.risk.min_trade_usd = 0.0;
+        config.risk.max_short_pct = 0.0;
+        assert!(config.validate().is_ok());
+        config.risk.max_short_pct = 1.0;
+        assert!(config.validate().is_ok());
+        config.risk.max_short_pct = -0.01;
+        assert!(config.validate().is_err());
+        config.risk.max_short_pct = 1.01;
+        assert!(config.validate().is_err());
+    }
 }

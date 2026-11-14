@@ -302,6 +302,12 @@ pub fn compare_broker_state(
     })
 }
 
+/// Convert an audit `limit` dollar amount to cents.
+fn audit_dollars_to_cents(limit_dollars: f64) -> i64 {
+    f64_cents_checked(limit_dollars, "limit")
+        .unwrap_or_else(|_| (limit_dollars * 100.0).round() as i64)
+}
+
 /// Query the broker for an order matching the given criteria with retry logic.
 ///
 /// This function attempts to find an order in the broker's open orders
@@ -323,41 +329,59 @@ pub fn compare_broker_state(
 #[cfg(feature = "write_ahead_logging")]
 pub fn reconcile_order_intent(
     broker: &dyn Broker,
-    _symbol: &Symbol,
-    _quantity: i64,
+    symbol: &Symbol,
+    quantity: i64,
+) -> Result<Option<u64>> {
+    reconcile_order_intent_with(broker, symbol, quantity, &mut std::thread::sleep)
+}
+
+/// Query the broker for an open order whose remaining quantity matches `quantity`.
+///
+/// `BrokerOrderStatus` has no symbol or side, so remaining quantity is the
+/// match key. `symbol` is recorded in the log line.
+#[cfg(feature = "write_ahead_logging")]
+pub fn reconcile_order_intent_with(
+    broker: &dyn Broker,
+    symbol: &Symbol,
+    quantity: i64,
+    sleep: &mut dyn FnMut(Duration),
 ) -> Result<Option<u64>> {
     const MAX_RETRIES: usize = 5;
-    const BASE_DELAY_MS: u64 = 1000; // 1 second
+    const BASE_DELAY_MS: u64 = 1000;
+
+    let expected_remaining = u64::try_from(quantity).unwrap_or(0);
 
     for attempt in 0..MAX_RETRIES {
         match broker.open_orders() {
             Ok(orders) => {
-                // Search for order with matching symbol and quantity
-                // Note: This is a heuristic match since broker API doesn't provide client_order_id
                 for order in &orders {
-                    // We can only match by order ID since BrokerOrderStatus doesn't include symbol
-                    // In a real implementation, we would need to maintain a local order cache
-                    // For now, we return the first open order as a best-effort match
-                    // This is a limitation of the current broker API
-                    if order.remaining_quantity > 0 {
+                    if order.remaining_quantity > 0
+                        && order.remaining_quantity == expected_remaining
+                    {
+                        tracing::debug!(
+                            symbol = %symbol,
+                            quantity,
+                            broker_order_id = order.id.0,
+                            remaining = order.remaining_quantity,
+                            "matched open order by remaining quantity"
+                        );
                         return Ok(Some(order.id.0));
                     }
                 }
-                // Order not found
                 return Ok(None);
             }
             Err(e) => {
-                // Retry on network failures
                 if attempt < MAX_RETRIES - 1 {
                     let delay_ms = BASE_DELAY_MS * 2_u64.pow(attempt as u32);
                     tracing::warn!(
+                        symbol = %symbol,
                         "Broker query failed (attempt {}/{}), retrying in {}ms: {}",
                         attempt + 1,
                         MAX_RETRIES,
                         delay_ms,
                         e
                     );
-                    std::thread::sleep(Duration::from_millis(delay_ms));
+                    sleep(Duration::from_millis(delay_ms));
                 } else {
                     return Err(Error::Recovery(format!(
                         "Broker query failed after {} attempts: {}",
@@ -368,7 +392,6 @@ pub fn reconcile_order_intent(
         }
     }
 
-    // This should never be reached, but required for type checking
     Err(Error::Recovery(
         "Unexpected error in broker reconciliation".to_string(),
     ))
@@ -741,14 +764,13 @@ pub fn reconstruct_state(
                             let symbol = o.get("symbol").and_then(|s| s.as_str()).unwrap_or("");
                             let action = o.get("action").and_then(|a| a.as_str()).unwrap_or("");
                             let shares = o.get("shares").and_then(|s| s.as_i64()).unwrap_or(0);
-                            let limit =
-                                o.get("limit").and_then(|l| l.as_f64()).unwrap_or(0.0) as i64;
+                            let limit = o.get("limit").and_then(|l| l.as_f64()).unwrap_or(0.0);
                             RecoveredOrder {
                                 symbol: Symbol::try_new(symbol)
                                     .unwrap_or(Symbol::try_new("UNKNOWN").unwrap()),
                                 action: action.to_string(),
                                 shares,
-                                limit_price_cents: limit,
+                                limit_price_cents: audit_dollars_to_cents(limit),
                                 ibkr_id: 0,
                                 client_order_id: None,
                                 submitted: false,
@@ -797,7 +819,7 @@ pub fn reconstruct_state(
                                 .unwrap_or(Symbol::try_new("UNKNOWN").unwrap()),
                             action: action.to_string(),
                             shares,
-                            limit_price_cents: limit as i64,
+                            limit_price_cents: audit_dollars_to_cents(limit),
                             ibkr_id: 0,
                             client_order_id,
                             submitted: false,
@@ -1225,6 +1247,61 @@ mod tests {
         assert_eq!(state.checkpoint, Checkpoint::RunStarted);
         assert_eq!(state.sequence_number, 0);
         assert_eq!(action, RecoveryAction::Restart);
+    }
+
+    #[test]
+    fn reconstruct_diff_limit_converts_dollars_to_cents() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("limit_audit.jsonl");
+        let workdir = dir.path();
+        {
+            let mut log = AuditLog::open_in(&path, workdir).unwrap();
+            log.log_checkpoint(
+                Checkpoint::DiffComputed,
+                1,
+                serde_json::json!({
+                    "orders": [{
+                        "symbol": "AAPL",
+                        "action": "Buy",
+                        "shares": 50,
+                        "limit": 160.25,
+                        "description": "open"
+                    }]
+                }),
+            )
+            .unwrap();
+        }
+        let (state, _) = reconstruct_state(&path).unwrap();
+        assert_eq!(state.orders.len(), 1);
+        assert_eq!(state.orders[0].limit_price_cents, 16_025);
+    }
+
+    #[cfg(feature = "write_ahead_logging")]
+    #[test]
+    fn reconcile_order_intent_matches_quantity() {
+        use nanobook::Price;
+        use nanobook_broker::mock::{FillMode, MockBroker};
+        use nanobook_broker::types::{BrokerOrder, BrokerOrderType};
+        use nanobook_broker::{Broker, BrokerSide};
+
+        let mut broker = MockBroker::builder()
+            .fill_mode(FillMode::ImmediatePartial(0.5))
+            .build();
+        broker.connect().unwrap();
+        broker
+            .submit_order(&BrokerOrder {
+                symbol: Symbol::new("AAPL"),
+                side: BrokerSide::Buy,
+                quantity: 50,
+                order_type: BrokerOrderType::Limit(Price(16_000)),
+                client_order_id: None,
+            })
+            .unwrap();
+
+        let matched = reconcile_order_intent(&broker, &Symbol::new("AAPL"), 50).unwrap();
+        let other = reconcile_order_intent(&broker, &Symbol::new("MSFT"), 25).unwrap();
+        assert_eq!(matched, Some(1));
+        assert_eq!(other, None);
     }
 
     #[test]
@@ -2311,6 +2388,315 @@ mod tests {
         assert_eq!(
             state.orders[0].client_order_id,
             Some("test_client_order_123".to_string())
+        );
+    }
+
+    #[cfg(feature = "write_ahead_logging")]
+    fn recovered_order(
+        symbol: &str,
+        ibkr_id: i32,
+        client_order_id: Option<&str>,
+        submitted: bool,
+        filled: bool,
+        failed: bool,
+    ) -> RecoveredOrder {
+        RecoveredOrder {
+            symbol: Symbol::new(symbol),
+            action: "Buy".into(),
+            shares: 50,
+            limit_price_cents: 16_000,
+            ibkr_id,
+            client_order_id: client_order_id.map(str::to_string),
+            submitted,
+            filled,
+            failed,
+            failure_reason: None,
+        }
+    }
+
+    #[cfg(feature = "write_ahead_logging")]
+    #[test]
+    fn determine_recovery_action_sequence_comparisons() {
+        let mut state = RecoveredState::new();
+        state.last_cancel_intent_sequence = Some(5);
+        state.last_cancel_result_sequence = Some(6);
+        assert_eq!(state.determine_recovery_action(), RecoveryAction::Restart);
+        state.last_cancel_intent_sequence = Some(7);
+        state.last_cancel_result_sequence = Some(6);
+        assert_eq!(
+            state.determine_recovery_action(),
+            RecoveryAction::ManualReview
+        );
+
+        let live = recovered_order("AAPL", 1, Some("a"), true, false, false);
+        let mut positions = RecoveredState::new();
+        positions.orders = vec![live.clone()];
+        positions.last_positions_intent_sequence = Some(5);
+        positions.last_positions_result_sequence = Some(6);
+        assert_eq!(
+            positions.determine_recovery_action(),
+            RecoveryAction::ManualReview
+        );
+        positions.last_positions_intent_sequence = Some(7);
+        positions.last_positions_result_sequence = Some(6);
+        assert_eq!(
+            positions.determine_recovery_action(),
+            RecoveryAction::Restart
+        );
+
+        let mut quotes = RecoveredState::new();
+        quotes.orders = vec![live.clone()];
+        quotes.last_quotes_intent_sequence = Some(5);
+        quotes.last_quotes_result_sequence = Some(6);
+        assert_eq!(
+            quotes.determine_recovery_action(),
+            RecoveryAction::ManualReview
+        );
+        quotes.last_quotes_intent_sequence = Some(7);
+        quotes.last_quotes_result_sequence = Some(6);
+        assert_eq!(quotes.determine_recovery_action(), RecoveryAction::Restart);
+
+        let mut account = RecoveredState::new();
+        account.orders = vec![live];
+        account.last_account_summary_intent_sequence = Some(5);
+        account.last_account_summary_result_sequence = Some(6);
+        assert_eq!(
+            account.determine_recovery_action(),
+            RecoveryAction::ManualReview
+        );
+        account.last_account_summary_intent_sequence = Some(7);
+        account.last_account_summary_result_sequence = Some(6);
+        assert_eq!(account.determine_recovery_action(), RecoveryAction::Restart);
+    }
+
+    #[cfg(feature = "write_ahead_logging")]
+    #[test]
+    fn compare_broker_state_orphans_missing_and_incomplete() {
+        use nanobook::Price;
+        use nanobook_broker::mock::{FillMode, MockBroker};
+        use nanobook_broker::types::{BrokerOrder, BrokerOrderType};
+        use nanobook_broker::{Broker, BrokerSide};
+
+        let mut broker = MockBroker::builder()
+            .fill_mode(FillMode::ImmediatePartial(0.5))
+            .build();
+        broker.connect().unwrap();
+        for symbol in ["AAPL", "MSFT"] {
+            broker
+                .submit_order(&BrokerOrder {
+                    symbol: Symbol::new(symbol),
+                    side: BrokerSide::Buy,
+                    quantity: 50,
+                    order_type: BrokerOrderType::Limit(Price(16_000)),
+                    client_order_id: None,
+                })
+                .unwrap();
+        }
+
+        let mut recovered = RecoveredState::new();
+        recovered.orders = vec![
+            recovered_order("AAPL", 1, Some("a"), true, false, false),
+            recovered_order("MSFT", 7, Some("m"), true, false, false),
+            recovered_order("SPY", 9, Some("s"), true, true, false),
+            recovered_order("QQQ", 0, Some("q"), false, false, false),
+            recovered_order("IWM", 0, Some("i"), false, false, true),
+            recovered_order("DIA", 0, None, false, false, false),
+        ];
+        let report = compare_broker_state(&broker, &recovered).unwrap();
+        assert_eq!(report.discrepancies.len(), 3);
+        assert!(matches!(
+            &report.discrepancies[0],
+            Discrepancy::OrphanOrder {
+                broker_order_id: 2,
+                ..
+            }
+        ));
+        assert!(matches!(
+            &report.discrepancies[1],
+            Discrepancy::MissingOrder { symbol, .. } if symbol == "MSFT"
+        ));
+        assert!(matches!(
+            &report.discrepancies[2],
+            Discrepancy::IncompleteIntent { symbol, .. } if symbol == "QQQ"
+        ));
+        assert!(report.has_critical_issues);
+
+        let mut empty_broker = MockBroker::builder()
+            .fill_mode(FillMode::ImmediatePartial(0.5))
+            .build();
+        empty_broker.connect().unwrap();
+        let mut flags = RecoveredState::new();
+        flags.positions_intent_logged = true;
+        flags.quotes_intent_logged = true;
+        flags.account_summary_intent_logged = true;
+        flags.cancel_intent_logged = true;
+        let report = compare_broker_state(&empty_broker, &flags).unwrap();
+        assert_eq!(report.discrepancies.len(), 4);
+        assert!(matches!(
+            report.discrepancies[0],
+            Discrepancy::IncompletePositionsIntent { .. }
+        ));
+        assert!(matches!(
+            report.discrepancies[1],
+            Discrepancy::IncompleteQuotesIntent { .. }
+        ));
+        assert!(matches!(
+            report.discrepancies[2],
+            Discrepancy::IncompleteAccountSummaryIntent { .. }
+        ));
+        assert!(matches!(
+            report.discrepancies[3],
+            Discrepancy::IncompleteCancelIntent { .. }
+        ));
+
+        flags.positions_result_logged = true;
+        flags.quotes_result_logged = true;
+        flags.account_summary_result_logged = true;
+        flags.cancel_result_logged = true;
+        let report = compare_broker_state(&empty_broker, &flags).unwrap();
+        assert!(report.discrepancies.is_empty());
+        assert!(!report.has_critical_issues);
+    }
+
+    #[cfg(feature = "write_ahead_logging")]
+    struct FailOpenBroker {
+        calls: std::cell::Cell<usize>,
+    }
+
+    #[cfg(feature = "write_ahead_logging")]
+    impl nanobook_broker::Broker for FailOpenBroker {
+        fn connect(&mut self) -> std::result::Result<(), nanobook_broker::error::BrokerError> {
+            Ok(())
+        }
+        fn disconnect(&mut self) -> std::result::Result<(), nanobook_broker::error::BrokerError> {
+            Ok(())
+        }
+        fn positions(
+            &self,
+        ) -> std::result::Result<
+            Vec<nanobook_broker::types::Position>,
+            nanobook_broker::error::BrokerError,
+        > {
+            Ok(Vec::new())
+        }
+        fn account(
+            &self,
+        ) -> std::result::Result<nanobook_broker::types::Account, nanobook_broker::error::BrokerError>
+        {
+            Ok(nanobook_broker::types::Account {
+                equity_cents: 0,
+                buying_power_cents: 0,
+                cash_cents: 0,
+                gross_position_value_cents: 0,
+            })
+        }
+        fn submit_order(
+            &self,
+            _order: &nanobook_broker::types::BrokerOrder,
+        ) -> std::result::Result<nanobook_broker::types::OrderId, nanobook_broker::error::BrokerError>
+        {
+            Ok(nanobook_broker::types::OrderId(1))
+        }
+        fn order_status(
+            &self,
+            id: nanobook_broker::types::OrderId,
+        ) -> std::result::Result<
+            nanobook_broker::types::BrokerOrderStatus,
+            nanobook_broker::error::BrokerError,
+        > {
+            Ok(nanobook_broker::types::BrokerOrderStatus {
+                id,
+                status: nanobook_broker::types::OrderState::Submitted,
+                filled_quantity: 0,
+                remaining_quantity: 1,
+                avg_fill_price_cents: 0,
+            })
+        }
+        fn open_orders(
+            &self,
+        ) -> std::result::Result<
+            Vec<nanobook_broker::types::BrokerOrderStatus>,
+            nanobook_broker::error::BrokerError,
+        > {
+            self.calls.set(self.calls.get() + 1);
+            Err(nanobook_broker::error::BrokerError::Connection(
+                "open orders unavailable".into(),
+            ))
+        }
+        fn cancel_order(
+            &self,
+            _id: nanobook_broker::types::OrderId,
+        ) -> std::result::Result<(), nanobook_broker::error::BrokerError> {
+            Ok(())
+        }
+        fn quote(
+            &self,
+            symbol: &Symbol,
+        ) -> std::result::Result<nanobook_broker::types::Quote, nanobook_broker::error::BrokerError>
+        {
+            Ok(nanobook_broker::types::Quote {
+                symbol: *symbol,
+                bid_cents: 0,
+                ask_cents: 0,
+                last_cents: 0,
+                volume: 0,
+                timestamp: std::time::SystemTime::now(),
+            })
+        }
+    }
+
+    #[cfg(feature = "write_ahead_logging")]
+    #[test]
+    fn reconcile_order_intent_ignores_filled_remaining_zero() {
+        use nanobook::Price;
+        use nanobook_broker::mock::{FillMode, MockBroker};
+        use nanobook_broker::types::{BrokerOrder, BrokerOrderType};
+        use nanobook_broker::{Broker, BrokerSide};
+
+        let mut broker = MockBroker::builder()
+            .fill_mode(FillMode::ImmediateFull)
+            .build();
+        broker.connect().unwrap();
+        broker
+            .submit_order(&BrokerOrder {
+                symbol: Symbol::new("AAPL"),
+                side: BrokerSide::Buy,
+                quantity: 50,
+                order_type: BrokerOrderType::Limit(Price(16_000)),
+                client_order_id: None,
+            })
+            .unwrap();
+        assert_eq!(
+            reconcile_order_intent(&broker, &Symbol::new("AAPL"), 50).unwrap(),
+            None
+        );
+    }
+
+    #[cfg(feature = "write_ahead_logging")]
+    #[test]
+    fn reconcile_order_intent_retries_five_times() {
+        let broker = FailOpenBroker {
+            calls: std::cell::Cell::new(0),
+        };
+        let mut sleeps = Vec::new();
+        let err =
+            reconcile_order_intent_with(&broker, &Symbol::new("AAPL"), 50, &mut |d| sleeps.push(d))
+                .unwrap_err();
+        match err {
+            Error::Recovery(m) => {
+                assert!(m.starts_with("Broker query failed after 5 attempts"));
+            }
+            other => panic!("expected Recovery, got {other:?}"),
+        }
+        assert_eq!(broker.calls.get(), 5);
+        assert_eq!(
+            sleeps,
+            vec![
+                Duration::from_millis(1000),
+                Duration::from_millis(2000),
+                Duration::from_millis(4000),
+                Duration::from_millis(8000),
+            ]
         );
     }
 }

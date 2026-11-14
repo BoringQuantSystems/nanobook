@@ -58,7 +58,7 @@ use crate::pid_file::{self, pid_file_exists, read_pid_file};
 use nanobook_broker::Broker;
 #[cfg(feature = "guaranteed_kill_switch")]
 use nanobook_broker::ibkr::IbkrBroker;
-use nanobook_broker::types::{BrokerOrderStatus, OrderState};
+use nanobook_broker::types::{BrokerOrderStatus, OrderState, f64_cents_checked};
 use serde_json::Value;
 use std::path::Path;
 use std::thread;
@@ -128,7 +128,9 @@ pub fn verify_no_dangling_orders(audit_path: &Path) -> Result<Vec<DanglingOrder>
                     .unwrap_or("unknown")
                     .to_string();
                 let shares = event.get("shares").and_then(|s| s.as_i64()).unwrap_or(0);
-                let limit = event.get("limit").and_then(|l| l.as_f64()).unwrap_or(0.0) as i64;
+                let limit_dollars = event.get("limit").and_then(|l| l.as_f64()).unwrap_or(0.0);
+                let limit = f64_cents_checked(limit_dollars, "limit")
+                    .unwrap_or_else(|_| (limit_dollars * 100.0).round() as i64);
 
                 // Parse timestamp
                 let ts_str = event.get("ts").and_then(|t| t.as_str()).unwrap_or("");
@@ -563,7 +565,7 @@ where
     }
 }
 
-#[cfg(not(feature = "guaranteed_kill_switch"))]
+#[cfg_attr(feature = "guaranteed_kill_switch", allow(dead_code))]
 fn run_graceful_kill(config: &Config, timeout: Duration) -> Result<()> {
     let pid_path = Path::new(pid_file::DEFAULT_PID_FILE);
     let audit_path = config.audit_path();
@@ -640,7 +642,6 @@ mod tests {
         Account, BrokerOrder, BrokerOrderStatus, OrderId, OrderState, Position, Quote,
     };
     use std::cell::{Cell, RefCell};
-    #[cfg(feature = "guaranteed_kill_switch")]
     use std::sync::{Mutex, OnceLock};
     use std::time::SystemTime;
     use tempfile::NamedTempFile;
@@ -766,7 +767,6 @@ mod tests {
         assert_eq!(active_kill_workflow(), KillWorkflow::TwoPhase);
     }
 
-    #[cfg(feature = "guaranteed_kill_switch")]
     fn process_state_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         LOCK.get_or_init(|| Mutex::new(()))
@@ -1308,5 +1308,193 @@ timeout_secs = {timeout_secs}
         let symbols: Vec<&str> = dangling.iter().map(|o| o.symbol.as_str()).collect();
         assert!(symbols.contains(&"AAPL"));
         assert!(symbols.contains(&"MSFT"));
+    }
+
+    #[test]
+    fn kill_timeout_cli_overrides_config() {
+        let config = test_config_with_kill_timeout(17);
+        assert_eq!(
+            kill_timeout_from_sources(&config, Some(23)),
+            Duration::from_secs(23)
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn wait_for_live_process_times_out() {
+        let mut child = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .unwrap();
+        let result = wait_for_process_exit(child.id(), Duration::from_millis(100));
+        let _ = child.kill();
+        let _ = child.wait();
+        assert!(!result.unwrap());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn wait_for_reaped_process_reports_exited() {
+        let mut child = std::process::Command::new("sleep")
+            .arg("1")
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+        let handle = std::thread::spawn(move || {
+            let _ = child.wait();
+        });
+        let result = wait_for_process_exit(pid, Duration::from_secs(10));
+        handle.join().unwrap();
+        assert!(result.unwrap());
+    }
+
+    #[test]
+    fn forceful_cancel_sleeps_between_failed_attempts_only() {
+        let broker = TestBroker::with_orders(&[1]);
+        broker.fail_cancel.set(true);
+        let mut sleeps = Vec::new();
+        let report = forceful_cancel_open_orders_with_retry(&broker, 2, |a| sleeps.push(a));
+        assert_eq!(report.attempts, 3);
+        assert_eq!(sleeps, vec![0, 1]);
+        assert_eq!(report.remaining_order_ids, vec![1]);
+        assert_eq!(report.errors.len(), 3);
+        assert!(!report.succeeded());
+    }
+
+    struct CwdGuard(std::path::PathBuf);
+    impl Drop for CwdGuard {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.0);
+        }
+    }
+
+    #[test]
+    fn run_kill_without_pid_file_is_aborted() {
+        let _lock = match process_state_lock().lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let _cwd = CwdGuard(std::env::current_dir().unwrap());
+        std::env::set_current_dir(dir.path()).unwrap();
+        let mut config = test_config_with_kill_timeout(30);
+        config.logging.dir = dir.path().join("logs").display().to_string();
+        let err = run_kill(&config).unwrap_err();
+        match err {
+            Error::Aborted(m) => assert!(m.contains("PID file not found")),
+            other => panic!("expected Aborted, got {other:?}"),
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn graceful_kill_clean_exit() {
+        let _lock = match process_state_lock().lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let _cwd = CwdGuard(std::env::current_dir().unwrap());
+        std::env::set_current_dir(dir.path()).unwrap();
+        let mut config = test_config_with_kill_timeout(30);
+        config.logging.dir = dir.path().join("logs").display().to_string();
+        let mut child = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .unwrap();
+        std::fs::write("rebalancer.pid", child.id().to_string()).unwrap();
+        let handle = std::thread::spawn(move || {
+            let _ = child.wait();
+        });
+        run_graceful_kill(&config, Duration::from_secs(10)).unwrap();
+        handle.join().unwrap();
+        let events = crate::audit::parse_audit_events(&config.audit_path()).unwrap();
+        let completed = events.iter().find(|e| e.event == "kill_completed").unwrap();
+        assert_eq!(
+            completed.data.get("method").and_then(|v| v.as_str()),
+            Some("graceful")
+        );
+        assert_eq!(
+            completed
+                .data
+                .get("orders_remaining_count")
+                .and_then(|v| v.as_u64()),
+            Some(0)
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn graceful_kill_dangling_orders() {
+        let _lock = match process_state_lock().lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let _cwd = CwdGuard(std::env::current_dir().unwrap());
+        std::env::set_current_dir(dir.path()).unwrap();
+        let mut config = test_config_with_kill_timeout(30);
+        let logs = dir.path().join("logs");
+        std::fs::create_dir_all(&logs).unwrap();
+        config.logging.dir = logs.display().to_string();
+        std::fs::write(
+            logs.join("audit.jsonl"),
+            r#"{"event":"order_submitted","ts":"2024-01-01T00:00:00Z","symbol":"AAPL","action":"Buy","shares":100,"limit":150.00,"ibkr_id":1}
+"#,
+        )
+        .unwrap();
+        let mut child = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .unwrap();
+        std::fs::write("rebalancer.pid", child.id().to_string()).unwrap();
+        let handle = std::thread::spawn(move || {
+            let _ = child.wait();
+        });
+        let err = run_graceful_kill(&config, Duration::from_secs(10)).unwrap_err();
+        handle.join().unwrap();
+        match err {
+            Error::Aborted(m) => assert!(m.contains("dangling orders")),
+            other => panic!("expected Aborted, got {other:?}"),
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn graceful_kill_timeout() {
+        let _lock = match process_state_lock().lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let _cwd = CwdGuard(std::env::current_dir().unwrap());
+        std::env::set_current_dir(dir.path()).unwrap();
+        let mut config = test_config_with_kill_timeout(30);
+        config.logging.dir = dir.path().join("logs").display().to_string();
+        let mut child = std::process::Command::new("sh")
+            .args(["-c", "trap \"\" TERM; sleep 30"])
+            .spawn()
+            .unwrap();
+        std::fs::write("rebalancer.pid", child.id().to_string()).unwrap();
+        let err = run_graceful_kill(&config, Duration::from_secs(1)).unwrap_err();
+        let _ = child.kill();
+        let _ = child.wait();
+        match err {
+            Error::Aborted(m) => assert!(m.contains("did not exit within 1 seconds")),
+            other => panic!("expected Aborted, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dangling_limit_converts_dollars_to_cents() {
+        let temp_file = NamedTempFile::new().unwrap();
+        std::fs::write(
+            temp_file.path(),
+            r#"{"event":"order_submitted","ts":"2024-01-01T00:00:00Z","symbol":"AAPL","action":"Buy","shares":100,"limit":160.25,"ibkr_id":1}"#,
+        )
+        .unwrap();
+        let dangling = verify_no_dangling_orders(temp_file.path()).unwrap();
+        assert_eq!(dangling.len(), 1);
+        assert_eq!(dangling[0].limit_price_cents, 16_025);
     }
 }

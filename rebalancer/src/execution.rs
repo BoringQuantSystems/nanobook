@@ -2,6 +2,7 @@
 //!
 //! This is the main workflow that ties together all components.
 
+use std::path::{Path, PathBuf};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -227,10 +228,52 @@ pub fn run(config: &Config, target: &TargetSpec, opts: &RunOptions) -> Result<()
         connect_ibkr(config)?
     };
 
+    let workdir = std::env::current_dir()?;
+    run_with_client(
+        config,
+        target,
+        opts,
+        client.as_ref(),
+        &shutdown,
+        &workdir,
+        &mut prompt_yes_no,
+    )
+}
+
+fn prompt_yes_no() -> Result<bool> {
+    dialoguer::Confirm::new()
+        .with_prompt("Execute?")
+        .default(false)
+        .interact()
+        .map_err(|e| Error::Aborted(format!("confirmation prompt failed: {e}")))
+}
+
+fn resolve_audit_path(config: &Config, workdir: &Path) -> PathBuf {
+    let path = config.audit_path();
+    if path.is_absolute() {
+        path
+    } else {
+        workdir.join(path)
+    }
+}
+
+/// Run steps 2 to 13 with an injected broker and confirmation callback.
+pub fn run_with_client(
+    config: &Config,
+    target: &TargetSpec,
+    opts: &RunOptions,
+    client: &dyn BrokerGateway,
+    shutdown: &ShutdownFlag,
+    workdir: &Path,
+    confirm: &mut dyn FnMut() -> Result<bool>,
+) -> Result<()> {
+    let _pid_guard =
+        crate::pid_file::PidFileGuard::create(workdir.join(crate::pid_file::DEFAULT_PID_FILE))?;
+
     // 2. Open audit log
-    let audit_path = config.audit_path();
+    let audit_path = resolve_audit_path(config, workdir);
     let existing_checkpoint_sequence = audit::max_checkpoint_sequence(&audit_path)?;
-    let mut audit = AuditLog::open(&audit_path)?;
+    let mut audit = AuditLog::open_in(&audit_path, workdir)?;
     let run_sequence_number = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|e| Error::Config(format!("clock error: {e}")))?
@@ -263,7 +306,7 @@ pub fn run(config: &Config, target: &TargetSpec, opts: &RunOptions) -> Result<()
         let _span =
             tracing::info_span!("fetch_account_summary", account = %config.account.id).entered();
         fetch_account_summary_with_write_ahead(
-            client.as_ref(),
+            client,
             &mut audit,
             &mut checkpoint_sequence,
             &target_spec_ref,
@@ -282,7 +325,7 @@ pub fn run(config: &Config, target: &TargetSpec, opts: &RunOptions) -> Result<()
         let _span =
             tracing::info_span!("fetch_positions", equity_cents = summary.equity_cents).entered();
         fetch_positions_with_write_ahead(
-            client.as_ref(),
+            client,
             &mut audit,
             &mut checkpoint_sequence,
             &target_spec_ref,
@@ -309,7 +352,7 @@ pub fn run(config: &Config, target: &TargetSpec, opts: &RunOptions) -> Result<()
     let quotes = {
         let _span = tracing::info_span!("fetch_quotes", symbol_count = all_symbols.len()).entered();
         fetch_quotes_with_write_ahead(
-            client.as_ref(),
+            client,
             &mut audit,
             &mut checkpoint_sequence,
             &target_spec_ref,
@@ -426,11 +469,7 @@ pub fn run(config: &Config, target: &TargetSpec, opts: &RunOptions) -> Result<()
 
     // 10. Confirm execution
     if !opts.force {
-        let confirmed = dialoguer::Confirm::new()
-            .with_prompt("Execute?")
-            .default(false)
-            .interact()
-            .map_err(|e| Error::Aborted(format!("confirmation prompt failed: {e}")))?;
+        let confirmed = confirm()?;
 
         if !confirmed {
             println!("Aborted.");
@@ -494,7 +533,7 @@ pub fn run(config: &Config, target: &TargetSpec, opts: &RunOptions) -> Result<()
         let order_sequence = next_checkpoint_sequence(&mut checkpoint_sequence);
 
         let execution_result = execute_order_with_write_ahead(
-            client.as_ref(),
+            client,
             &mut audit,
             order,
             &client_order_id,
@@ -557,7 +596,7 @@ pub fn run(config: &Config, target: &TargetSpec, opts: &RunOptions) -> Result<()
             let mut cancelled = remaining_orders_after(i, orders.len());
             if let Some(order_id) = current_order_to_cancel {
                 cancel_order_with_write_ahead(
-                    client.as_ref(),
+                    client,
                     &mut audit,
                     &mut checkpoint_sequence,
                     u64::try_from(order_id).unwrap_or_default(),
@@ -591,7 +630,7 @@ pub fn run(config: &Config, target: &TargetSpec, opts: &RunOptions) -> Result<()
     let _reconcile_span = tracing::info_span!("reconcile", submitted, filled, failed).entered();
     info!("Running post-execution reconciliation...");
     let final_broker_positions = fetch_positions_with_write_ahead(
-        client.as_ref(),
+        client,
         &mut audit,
         &mut checkpoint_sequence,
         &target_spec_ref,
@@ -601,7 +640,7 @@ pub fn run(config: &Config, target: &TargetSpec, opts: &RunOptions) -> Result<()
 
     // Fetch final quotes and extract mid prices
     let final_quotes = fetch_quotes_with_write_ahead(
-        client.as_ref(),
+        client,
         &mut audit,
         &mut checkpoint_sequence,
         &target_spec_ref,
@@ -611,7 +650,7 @@ pub fn run(config: &Config, target: &TargetSpec, opts: &RunOptions) -> Result<()
     let final_prices = quote_mid_prices(&final_quotes);
 
     let final_summary = fetch_account_summary_with_write_ahead(
-        client.as_ref(),
+        client,
         &mut audit,
         &mut checkpoint_sequence,
         &target_spec_ref,
@@ -651,7 +690,7 @@ pub fn run(config: &Config, target: &TargetSpec, opts: &RunOptions) -> Result<()
 
     println!(
         "\n{submitted} submitted, {filled} filled, {failed} failed. Audit logged to {}",
-        config.audit_path().display()
+        audit_path.display()
     );
 
     Ok(())
@@ -1303,5 +1342,93 @@ mod tests {
         // Test enforce_max_orders_per_run which is not feature-gated
         assert!(enforce_max_orders_per_run(3, 5).is_ok());
         assert!(enforce_max_orders_per_run(10, 5).is_err());
+    }
+
+    fn quote(symbol: &str, bid: i64, ask: i64, last: i64) -> Quote {
+        Quote {
+            symbol: Symbol::new(symbol),
+            bid_cents: bid,
+            ask_cents: ask,
+            last_cents: last,
+            volume: 0,
+            timestamp: std::time::SystemTime::now(),
+        }
+    }
+
+    #[test]
+    fn quote_mid_cents_uses_bid_ask_then_sides_then_last() {
+        assert_eq!(
+            quote_mid_cents(&quote("AAPL", 10_000, 10_004, 9_000)),
+            10_002
+        );
+        assert_eq!(quote_mid_cents(&quote("AAPL", 10_000, 0, 9_000)), 10_000);
+        assert_eq!(quote_mid_cents(&quote("AAPL", 0, 10_004, 9_000)), 10_004);
+        assert_eq!(quote_mid_cents(&quote("AAPL", 0, 0, 9_000)), 9_000);
+    }
+
+    #[test]
+    fn quote_mid_prices_preserves_input_order() {
+        let q1 = quote("AAPL", 10_000, 10_004, 9_000);
+        let q2 = quote("MSFT", 39_990, 40_010, 40_000);
+        let prices = quote_mid_prices(&[q1, q2]);
+        assert_eq!(
+            prices,
+            vec![(Symbol::new("AAPL"), 10_002), (Symbol::new("MSFT"), 40_000)]
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn sigterm_sets_shutdown_flag() {
+        let flag = ShutdownFlag::new();
+        flag.install_sigterm_handler().unwrap();
+        assert!(!flag.is_requested());
+        signal_hook::low_level::raise(signal_hook::consts::SIGTERM).unwrap();
+        let start = std::time::Instant::now();
+        while !flag.is_requested() && start.elapsed() < Duration::from_secs(2) {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(flag.is_requested());
+    }
+
+    #[test]
+    fn enforce_max_orders_equal_limit_is_ok() {
+        assert!(enforce_max_orders_per_run(5, 5).is_ok());
+        let err = enforce_max_orders_per_run(6, 5).unwrap_err();
+        match err {
+            Error::RiskFailed(m) => {
+                assert_eq!(m, "6 orders generated, but max_orders_per_run is 5");
+            }
+            other => panic!("expected RiskFailed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn to_current_positions_copies_symbol_qty_and_avg_cost() {
+        let input = vec![
+            Position {
+                symbol: Symbol::new("AAPL"),
+                quantity: 100,
+                avg_cost_cents: 15_025,
+                market_value_cents: 0,
+                unrealized_pnl_cents: 0,
+            },
+            Position {
+                symbol: Symbol::new("MSFT"),
+                quantity: -30,
+                avg_cost_cents: 40_000,
+                market_value_cents: 0,
+                unrealized_pnl_cents: 0,
+            },
+        ];
+        let out = to_current_positions(&input);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].symbol, Symbol::new("AAPL"));
+        assert_eq!(out[0].quantity, 100);
+        assert_eq!(out[0].avg_cost_cents, 15_025);
+        assert_eq!(out[1].symbol, Symbol::new("MSFT"));
+        assert_eq!(out[1].quantity, -30);
+        assert_eq!(out[1].avg_cost_cents, 40_000);
+        assert!(to_current_positions(&[]).is_empty());
     }
 }

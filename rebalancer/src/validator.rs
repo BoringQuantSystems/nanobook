@@ -304,9 +304,10 @@ fn _path_exists(path: &Path) -> bool {
 mod tests {
     use super::{
         ValidationIssue, format_validation_issues, should_run_startup_validation,
-        validate_available_log_space, validate_broker_connectivity, validate_file_permissions,
-        validate_network_timeout, validate_required_fields, validate_risk_limits, validate_static,
-        validate_static_or_error, validate_static_with_source,
+        validate_available_log_space, validate_broker_connectivity, validate_disk_space,
+        validate_file_permissions, validate_network_timeout, validate_required_fields,
+        validate_risk_limits, validate_static, validate_static_or_error,
+        validate_static_with_source,
     };
     use crate::config::{
         AccountConfig, AccountType, Config, ConnectionConfig, CostConfig, ExecutionConfig,
@@ -518,5 +519,39 @@ mod tests {
         assert!(text.contains("risk.max_leverage"));
         assert!(text.contains("20 is too high"));
         assert!(text.contains("fix: use <= 10"));
+    }
+
+    #[test]
+    fn min_trade_usd_rejects_negative_and_accepts_zero() -> std::io::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let mut config = valid_config(dir.path());
+        config.risk.min_trade_usd = -1.0;
+        let issues = validate_risk_limits(&config);
+        assert!(issues.iter().any(|i| i.field == "risk.min_trade_usd"));
+        config.risk.min_trade_usd = 0.0;
+        let issues = validate_risk_limits(&config);
+        assert!(issues.iter().all(|i| i.field != "risk.min_trade_usd"));
+        Ok(())
+    }
+
+    #[test]
+    fn disk_space_reports_missing_log_directory() {
+        let config = valid_config(Path::new("/nonexistent-nanobook-test-dir/logs"));
+        let issues = validate_disk_space(&config);
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].field, "logging.dir");
+        assert!(
+            issues[0]
+                .message
+                .starts_with("cannot determine available space for")
+        );
+    }
+
+    #[test]
+    fn available_log_space_boundary() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = valid_config(dir.path());
+        assert!(validate_available_log_space(1_000_000_000, &config).is_empty());
+        assert_eq!(validate_available_log_space(999_999_999, &config).len(), 1);
     }
 }

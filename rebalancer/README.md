@@ -43,6 +43,33 @@ selects another file. `config.toml.example` in this crate lists every setting:
 connection, account, order pacing, risk limits, costs and logging. Port 4002 is
 the IB Gateway paper-trading account.
 
+## Exit codes
+
+- `0` — success
+- `1` — general error (config, connection, order, and the rest)
+- `2` — a pre-trade risk check failed
+- `3` — aborted: kill-switch failure, or the confirmation prompt could not run
+
+`rebalancer kill` exits 3 when the PID file is missing, the process does not
+exit in time, or dangling orders remain.
+
+## PID file
+
+`rebalancer run` writes `rebalancer.pid` in the working directory when it starts
+and removes that file when it exits, including after an error. `rebalancer kill`
+reads the PID from that file.
+
+## Limit prices
+
+A buy, including covering a short, is limited at mid plus the offset in
+`limit_offset_bps`. A sell, including closing a long, is limited at mid minus
+the offset. A close with a quote price of 0 or less is skipped.
+
+## Audit money fields
+
+`limit`, `avg_cost` and `equity` in the audit JSONL are dollars. Recovery and
+kill convert them back to cents with rounding (`160.25` → `16025`).
+
 ## target.json
 
 ```json
