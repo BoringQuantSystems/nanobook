@@ -9,6 +9,10 @@ on:
 permissions:
   checks: read
   pull-requests: read   # list the PR commits
+# A newer push to the same PR cancels the run that still polls the older commit.
+concurrency:
+  group: review-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 jobs:
   review-gate:
     # Bot-authored dependency PRs and draft PRs: the job is skipped, which passes a required check.
@@ -30,7 +34,7 @@ jobs:
           # Latest check run of one app on this commit, as JSON; "null" when none or on an API error.
           # gh prints an HTTP error body to stdout, so on failure the value is replaced, not appended to;
           # the error text on stderr stays in the log. $2 (optional) is the exact check name:
-          # CodeRabbit publishes other checks under the same app, e.g. CodeRabbit Security.
+          # CodeRabbit publishes other checks under the same app, for example CodeRabbit Security.
           latest() {
             local out
             out=$(gh api "repos/$REPO/commits/$SHA/check-runs?app_id=$1${2:+&check_name=$2}&filter=latest&per_page=100" \
@@ -40,9 +44,12 @@ jobs:
           # True when CodeRabbit finished a review on any commit of this PR
           # (the commits endpoint returns at most 250 commits).
           cr_reviewed_before() {
-            local c n
-            for c in $(gh api --paginate "repos/$REPO/pulls/$PR/commits?per_page=100" --jq '.[].sha'); do
-              n=$(gh api "repos/$REPO/commits/$c/check-runs?app_id=347564&check_name=CodeRabbit&filter=latest" \
+            local shas c n
+            shas=$(gh api --paginate "repos/$REPO/pulls/$PR/commits?per_page=100" --jq '.[].sha') \
+              || { echo "::error::could not list the PR commits"; exit 1; }
+            for c in $shas; do
+              # filter=all: a later failed attempt on a commit does not hide its finished review
+              n=$(gh api "repos/$REPO/commits/$c/check-runs?app_id=347564&check_name=CodeRabbit&filter=all&per_page=100" \
                     --jq '[.check_runs[] | select(.output.title=="Finished" and .conclusion=="success")] | length') || n=0
               [ "$n" != 0 ] && return 0
             done
@@ -77,7 +84,7 @@ jobs:
               if cr_reviewed_before; then
                 echo "::warning::CodeRabbit reviews the opening push only; comment '@coderabbitai review' for this commit."
               else
-                echo "::error::CodeRabbit never finished a review on this PR; comment '@coderabbitai review', then re-run this job once that review has finished."; exit 1
+                echo "::error::CodeRabbit never finished a review on this PR; comment '@coderabbitai full review', then re-run this job once that review has finished."; exit 1
               fi ;;
             *) echo "::error::CodeRabbit did not review: $cr_title ($cr_concl)"; exit 1 ;;
           esac
