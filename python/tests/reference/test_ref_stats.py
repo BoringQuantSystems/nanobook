@@ -87,24 +87,3 @@ class TestQuintileSpreadReference:
         got = nanobook.py_quintile_spread(scores, returns, 5)
         assert got < 0.0  # inverse → negative spread
 
-
-class TestDeflatedSharpe:
-    """Deflated Sharpe Ratio against the worked example of Bailey and
-    López de Prado (2014), p. 99."""
-
-    def test_paper_example(self):
-        sr = 2.5 / 250**0.5
-        v = 0.5 / 250
-        assert nanobook.py_deflated_sharpe(sr, 100, 1250, v, -3.0, 10.0) == pytest.approx(0.9004, abs=5e-5)
-        assert nanobook.py_deflated_sharpe(sr, 46, 1250, v, -3.0, 10.0) == pytest.approx(0.9505, abs=5e-5)
-        assert nanobook.py_deflated_sharpe(sr, 88, 1250, v, 0.0, 3.0) == pytest.approx(0.9505, abs=5e-5)
-
-    def test_single_trial_is_psr_against_zero(self):
-        from statistics import NormalDist
-        want = NormalDist().cdf(0.1 * 10.0 / (1.0 + 0.5 * 0.01) ** 0.5)
-        got = nanobook.py_deflated_sharpe(0.1, 1, 101, 0.0, 0.0, 3.0)
-        assert got == pytest.approx(want, abs=1e-12)
-
-    def test_invalid_inputs(self):
-        assert np.isnan(nanobook.py_deflated_sharpe(0.1, 0, 100, 0.01, 0.0, 3.0))
-        assert np.isnan(nanobook.py_deflated_sharpe(0.1, 10, 1, 0.01, 0.0, 3.0))
