@@ -1,5 +1,7 @@
 //! CLI entry point for the nanobook rebalancer.
 
+#![forbid(unsafe_code)]
+
 use std::path::PathBuf;
 use std::process;
 

@@ -4,6 +4,8 @@
 //! and prices, computes the diff, and executes limit orders with risk checks
 //! and an audit trail.
 
+#![forbid(unsafe_code)]
+
 pub mod audit;
 pub mod broker;
 pub mod clock_skew;

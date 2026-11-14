@@ -32,8 +32,8 @@ impl fmt::Display for Price {
 /// Quantity of shares/contracts. Always positive.
 pub type Quantity = u64;
 
-/// Timestamp in nanoseconds since exchange start.
-/// Monotonically increasing, assigned by exchange.
+/// Event sequence number assigned by the exchange.
+/// Starts at 1 and increases by 1 per stamped event; it is not wall-clock time.
 pub type Timestamp = u64;
 
 /// Unique order identifier assigned by exchange.
@@ -121,12 +121,13 @@ impl Symbol {
     /// Returns the symbol as a string slice.
     #[inline]
     pub fn as_str(&self) -> &str {
-        // SAFETY: `Symbol` fields are private. The only constructors copy bytes from
-        // valid `str` inputs, and `from_str_truncated` backs up to `valid_up_to()`
-        // when an 8-byte prefix would split a multi-byte UTF-8 scalar. Therefore
-        // `buf[..len]` is always valid UTF-8 for every safe `Symbol` value.
-        debug_assert!(std::str::from_utf8(&self.buf[..self.len as usize]).is_ok());
-        unsafe { std::str::from_utf8_unchecked(&self.buf[..self.len as usize]) }
+        // `Symbol` fields are private. The only constructors copy bytes from valid
+        // `str` inputs, and `from_str_truncated` backs up to `valid_up_to()` when an
+        // 8-byte prefix would split a multi-byte UTF-8 scalar, so `buf[..len]` is
+        // always valid UTF-8. The check costs at most 8 bytes and keeps the crate
+        // free of `unsafe`.
+        std::str::from_utf8(&self.buf[..self.len as usize])
+            .expect("Symbol always holds valid UTF-8")
     }
 }
 

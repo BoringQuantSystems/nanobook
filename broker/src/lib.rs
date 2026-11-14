@@ -6,6 +6,8 @@
 //! - **IBKR** (feature `ibkr`): Interactive Brokers via TWS API
 //! - **Binance** (feature `binance`): Binance spot REST API
 
+#![forbid(unsafe_code)]
+
 pub mod error;
 pub mod mock;
 pub mod types;

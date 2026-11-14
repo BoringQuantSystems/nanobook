@@ -3,6 +3,8 @@
 //! Validates orders against configurable risk limits before execution.
 //! Uses generic broker types so it can be called from Python or any broker adapter.
 
+#![forbid(unsafe_code)]
+
 pub mod checks;
 pub mod config;
 pub mod error;
