@@ -1,4 +1,4 @@
-![nanobook banner](https://raw.githubusercontent.com/BoringQuantSystems/nanobook/main/assets/nanobook-banner.png)
+![nanobook banner](https://raw.githubusercontent.com/BoringQuantSystems/nanobook/main/assets/readme-banner-v3.jpg)
 
 [![CI](https://github.com/BoringQuantSystems/nanobook/actions/workflows/ci.yml/badge.svg)](https://github.com/BoringQuantSystems/nanobook/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/nanobook.svg)](https://crates.io/crates/nanobook)
