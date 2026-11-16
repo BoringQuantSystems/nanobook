@@ -101,7 +101,11 @@ impl PidFileGuard {
             .map_err(Error::Audit)?;
         match file.try_lock_exclusive() {
             Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+            // Unix reports a held lock as WouldBlock; Windows as ERROR_LOCK_VIOLATION (33).
+            Err(error)
+                if error.kind() == std::io::ErrorKind::WouldBlock
+                    || error.raw_os_error() == fs2::lock_contended_error().raw_os_error() =>
+            {
                 return Err(Error::Aborted(format!(
                     "PID file {} is in use by another rebalancer",
                     path.display()
@@ -225,7 +229,17 @@ mod tests {
         );
         let _ = child.kill();
         let _ = child.wait();
-        let guard = PidFileGuard::create(path.clone()).unwrap();
+        // Windows may release a killed process's lock a moment after the process exits.
+        let started = std::time::Instant::now();
+        let guard = loop {
+            match PidFileGuard::create(path.clone()) {
+                Ok(guard) => break guard,
+                Err(_) if started.elapsed() < std::time::Duration::from_secs(5) => {
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                }
+                Err(error) => panic!("lock not released after the holder exited: {error}"),
+            }
+        };
         assert_eq!(read_pid_file(&path).unwrap(), std::process::id());
         drop(guard);
         assert!(!pid_file_exists(&path));

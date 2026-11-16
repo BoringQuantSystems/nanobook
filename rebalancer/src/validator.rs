@@ -237,6 +237,17 @@ pub fn validate_file_permissions(config: &Config) -> Vec<ValidationIssue> {
 pub fn validate_disk_space(config: &Config) -> Vec<ValidationIssue> {
     let audit_path = config.audit_path();
     let dir = audit_path.parent().unwrap_or_else(|| Path::new("."));
+    // Windows answers for the volume even when the directory is missing, so check it first.
+    if !dir.is_dir() {
+        return vec![ValidationIssue::new(
+            "logging.dir",
+            format!(
+                "cannot determine available space for {}: directory does not exist",
+                dir.display()
+            ),
+            "verify the logging directory exists and the filesystem is accessible",
+        )];
+    }
     match fs2::available_space(dir) {
         Ok(bytes) => validate_available_log_space(bytes, config),
         Err(error) => vec![ValidationIssue::new(
