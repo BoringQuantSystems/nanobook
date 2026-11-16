@@ -26,14 +26,13 @@
 //!
 //! # Cleanup
 //!
-//! The guard holds an exclusive lock for its lifetime. A second start that
-//! uses the same path fails while the lock is held. A crash releases the
-//! lock. The next start then replaces the stale file.
+//! The guard holds an exclusive lock on `<pid file>.lock` for its lifetime.
+//! A second start that uses the same path fails while the lock is held. A
+//! crash releases the lock. The next start then replaces the stale PID file.
 
 use crate::error::{Error, Result};
 use fs2::FileExt;
 use std::fs::{self, File, OpenOptions};
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 /// Default PID file path.
@@ -79,27 +78,38 @@ pub fn remove_pid_file(path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Write a PID file, hold its lock, and remove the file on drop.
+/// The lock file that guards `pid_path`: the same path with `.lock` appended.
+///
+/// The lock sits on a separate file because a Windows lock also blocks reads,
+/// and `--kill` must read the PID file while the rebalancer runs.
+pub fn lock_path(pid_path: &Path) -> PathBuf {
+    let mut name = pid_path.as_os_str().to_owned();
+    name.push(".lock");
+    PathBuf::from(name)
+}
+
+/// Write a PID file, hold the lock on its `.lock` file, and remove the PID file on drop.
 #[derive(Debug)]
 pub struct PidFileGuard {
     path: PathBuf,
-    file: Option<File>,
+    lock: Option<File>,
 }
 
 impl PidFileGuard {
-    /// Write `path` with the current process id and lock the file.
+    /// Lock `<path>.lock`, then write `path` with the current process id.
     ///
     /// The lock stays held until drop. A second guard for the same path
-    /// fails. Drop removes the file before it releases the lock.
+    /// fails. Drop removes the PID file before it releases the lock. The
+    /// empty lock file stays on disk.
     pub fn create(path: PathBuf) -> Result<Self> {
-        let file = OpenOptions::new()
+        let lock = OpenOptions::new()
             .create(true)
             .truncate(false)
             .read(true)
             .write(true)
-            .open(&path)
+            .open(lock_path(&path))
             .map_err(Error::Audit)?;
-        match file.try_lock_exclusive() {
+        match lock.try_lock_exclusive() {
             Ok(()) => {}
             // Unix reports a held lock as WouldBlock; Windows as ERROR_LOCK_VIOLATION (33).
             Err(error)
@@ -113,18 +123,17 @@ impl PidFileGuard {
             }
             Err(error) => return Err(Error::Audit(error)),
         }
-        file.set_len(0).map_err(Error::Audit)?;
-        writeln!(&file, "{}", std::process::id()).map_err(Error::Audit)?;
+        write_pid_file(&path)?;
         Ok(Self {
             path,
-            file: Some(file),
+            lock: Some(lock),
         })
     }
 }
 
 impl Drop for PidFileGuard {
     fn drop(&mut self) {
-        if self.file.is_none() {
+        if self.lock.is_none() {
             return;
         }
         match fs::remove_file(&self.path) {
@@ -138,7 +147,7 @@ impl Drop for PidFileGuard {
                 );
             }
         }
-        self.file.take();
+        self.lock.take();
     }
 }
 
@@ -222,6 +231,8 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
 
+        // --kill reads the PID file while the holder runs.
+        assert_eq!(read_pid_file(&path).unwrap(), child.id());
         let error = PidFileGuard::create(path.clone()).unwrap_err();
         assert!(
             error.to_string().contains("in use by another rebalancer"),
