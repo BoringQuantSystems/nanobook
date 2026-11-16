@@ -1526,6 +1526,16 @@ timeout_secs = {timeout_secs}
             println!("skipped: running as root, kill(1, SIGTERM) gives no EPERM");
             return;
         }
+        // Signal 0 checks permission and does not deliver a signal. Skip when
+        // this user may signal pid 1, so the test does not stop the init process.
+        match nix::sys::signal::kill(nix::unistd::Pid::from_raw(1), None) {
+            Ok(()) => {
+                println!("skipped: this user may signal pid 1");
+                return;
+            }
+            Err(nix::errno::Errno::EPERM) => {}
+            Err(error) => panic!("kill(1, 0) returned {error}, not EPERM"),
+        }
         let err = send_sigterm(1).unwrap_err();
         assert!(
             err.to_string().contains("Permission denied"),
