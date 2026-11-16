@@ -66,7 +66,7 @@ Constants: `Price::ZERO`, `Price::MAX` (market buys), `Price::MIN` (market sells
 ### Quantities and Timestamps
 
 - `Quantity = u64` — shares or contracts, always positive.
-- `Timestamp = u64` — event counter assigned by the exchange, starting at 1 and increasing by 1 (not wall-clock time), guaranteeing deterministic ordering.
+- `Timestamp = u64` — sequence number assigned by the exchange, starting at 1. Each new order, stop order, and trade takes the next value. A cancellation does not take a value. Not wall-clock time. The sequence orders those events.
 
 ### Determinism
 

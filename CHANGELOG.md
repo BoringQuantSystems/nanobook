@@ -31,8 +31,9 @@ order book are stated and proved in Lean 4 about a model of the engine
     FIFO list;
 11. a submitted order's stored record matches its status.
 
-The proofs are about the model, not the Rust code itself. On every push and pull
-request, CI (`.github/workflows/lean.yml`) rebuilds them, allows only Lean's three
+The proofs are about the model, not the Rust code itself. On a push to `main`,
+on a pull request into `main`, and on a manual run, CI (`.github/workflows/lean.yml`)
+rebuilds them, allows only Lean's three
 standard axioms, rechecks everything with `leanchecker --fresh`, replays the golden
 corpus in Lean against the trades Rust recorded for it, and runs the Rust engine and
 the Lean model on 1000 random event logs whose trade logs must match byte for byte.
