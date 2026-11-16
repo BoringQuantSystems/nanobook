@@ -26,12 +26,14 @@
 //!
 //! # Cleanup
 //!
-//! If the rebalancer crashes or is killed via SIGKILL, the PID file may not be
-//! cleaned up automatically. In such cases, the file should be removed manually
-//! before starting a new rebalancer instance to avoid conflicts.
+//! The guard holds an exclusive lock for its lifetime. A second start that
+//! uses the same path fails while the lock is held. A crash releases the
+//! lock. The next start then replaces the stale file.
 
 use crate::error::{Error, Result};
-use std::fs;
+use fs2::FileExt;
+use std::fs::{self, File, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 /// Default PID file path.
@@ -77,28 +79,62 @@ pub fn remove_pid_file(path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Write a PID file and remove it when this guard drops.
+/// Write a PID file, hold its lock, and remove the file on drop.
+#[derive(Debug)]
 pub struct PidFileGuard {
     path: PathBuf,
+    file: Option<File>,
 }
 
 impl PidFileGuard {
-    /// Write `path` with the current process id.
+    /// Write `path` with the current process id and lock the file.
+    ///
+    /// The lock stays held until drop. A second guard for the same path
+    /// fails. Drop removes the file before it releases the lock.
     pub fn create(path: PathBuf) -> Result<Self> {
-        write_pid_file(&path)?;
-        Ok(Self { path })
+        let file = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(&path)
+            .map_err(Error::Audit)?;
+        match file.try_lock_exclusive() {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                return Err(Error::Aborted(format!(
+                    "PID file {} is in use by another rebalancer",
+                    path.display()
+                )));
+            }
+            Err(error) => return Err(Error::Audit(error)),
+        }
+        file.set_len(0).map_err(Error::Audit)?;
+        writeln!(&file, "{}", std::process::id()).map_err(Error::Audit)?;
+        Ok(Self {
+            path,
+            file: Some(file),
+        })
     }
 }
 
 impl Drop for PidFileGuard {
     fn drop(&mut self) {
-        if let Err(error) = remove_pid_file(&self.path) {
-            tracing::warn!(
-                path = %self.path.display(),
-                error = %error,
-                "failed to remove PID file"
-            );
+        if self.file.is_none() {
+            return;
         }
+        match fs::remove_file(&self.path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                tracing::warn!(
+                    path = %self.path.display(),
+                    error = %error,
+                    "failed to remove PID file"
+                );
+            }
+        }
+        self.file.take();
     }
 }
 
@@ -149,5 +185,49 @@ mod tests {
         fs::write(path, "not-a-number").unwrap();
         let result = read_pid_file(path);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn a_second_guard_cannot_replace_a_live_pid_file() {
+        if std::env::var_os("NANOBOOK_PID_HOLDER").is_some() {
+            let path = PathBuf::from(std::env::var("NANOBOOK_PID_PATH").unwrap());
+            let guard = PidFileGuard::create(path.clone()).unwrap();
+            fs::write(path.with_extension("ready"), b"1").unwrap();
+            std::thread::sleep(std::time::Duration::from_secs(30));
+            drop(guard);
+            return;
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("rebalancer.pid");
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("pid_file::tests::a_second_guard_cannot_replace_a_live_pid_file")
+            .arg("--exact")
+            .env("NANOBOOK_PID_HOLDER", "1")
+            .env("NANOBOOK_PID_PATH", &path)
+            .spawn()
+            .unwrap();
+        let ready = path.with_extension("ready");
+        let started = std::time::Instant::now();
+        while !ready.exists() {
+            if started.elapsed() > std::time::Duration::from_secs(10) {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("holder did not lock the PID file");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+
+        let error = PidFileGuard::create(path.clone()).unwrap_err();
+        assert!(
+            error.to_string().contains("in use by another rebalancer"),
+            "{error}"
+        );
+        let _ = child.kill();
+        let _ = child.wait();
+        let guard = PidFileGuard::create(path.clone()).unwrap();
+        assert_eq!(read_pid_file(&path).unwrap(), std::process::id());
+        drop(guard);
+        assert!(!pid_file_exists(&path));
     }
 }
