@@ -249,7 +249,8 @@ fn child_recover_with_broker(config: &Config, scenario: &str) {
         .fill_mode(FillMode::ImmediateFull)
         .build();
     broker.connect().unwrap();
-    let _ = run_recover(config, &spec(), true, Some(&broker));
+    // A dry run does not reconcile. This child checks the real recover path.
+    let _ = run_recover(config, &spec(), false, Some(&broker));
 }
 
 #[test]

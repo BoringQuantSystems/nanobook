@@ -91,9 +91,12 @@ fn is_connection_lost(code: i32) -> bool {
     (1100..=1102).contains(&code)
 }
 
-/// Notices the order loop acts on: errors (code < 0), warnings (>= 2000) and
-/// the connection codes. Before 0.20.0 the guard admitted only the first two,
-/// so the connection check below it could never run.
+/// Notices this loop acts on: errors (code < 0), warnings (>= 2000) and
+/// connection codes 1100 to 1102.
+///
+/// ibapi 2.12 sends an error with request id -1 to the global order-update
+/// stream only. This loop reads the per-order subscription. A normal 1100
+/// to 1102 notice does not reach `is_connection_lost`.
 fn is_order_notice(code: i32) -> bool {
     !(0..2000).contains(&code) || is_connection_lost(code)
 }

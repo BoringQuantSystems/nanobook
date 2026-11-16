@@ -637,21 +637,18 @@ fn test_broker_reconciliation_finds_order() {
     // Recover state
     let (state, _) = reconstruct_state(&audit_path).unwrap();
 
-    // Create MockBroker with the order
+    // 50 shares open, none filled. The mock fill mode is based on 100 shares.
     let mut broker = MockBroker::builder()
-        .fill_mode(FillMode::ImmediatePartial(0.5))
         .with_position(Symbol::new("AAPL"), 100, 150_00)
         .build();
     broker.connect().unwrap();
-
-    let order = BrokerOrder {
-        symbol: Symbol::new("AAPL"),
-        side: BrokerSide::Buy,
-        quantity: 50,
-        order_type: BrokerOrderType::Market,
-        client_order_id: None,
-    };
-    broker.submit_order(&order).unwrap();
+    broker.set_open_order_statuses(vec![nanobook_broker::types::BrokerOrderStatus {
+        id: nanobook_broker::types::OrderId(1),
+        status: nanobook_broker::types::OrderState::Submitted,
+        filled_quantity: 0,
+        remaining_quantity: 50,
+        avg_fill_price_cents: 0,
+    }]);
 
     // Run broker reconciliation
     #[cfg(feature = "write_ahead_logging")]

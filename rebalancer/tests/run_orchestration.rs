@@ -8,7 +8,7 @@ use nanobook_broker::error::BrokerError;
 use nanobook_broker::ibkr::orders::{OrderOutcome, OrderResult};
 use nanobook_broker::types::{Account, Position, Quote};
 use nanobook_broker::{BrokerSide, ClientOrderId};
-use nanobook_rebalancer::audit::parse_audit_events;
+use nanobook_rebalancer::audit::{self, parse_audit_events};
 use nanobook_rebalancer::broker::BrokerGateway;
 use nanobook_rebalancer::config::Config;
 use nanobook_rebalancer::error::{Error, Result};
@@ -422,6 +422,48 @@ fn shutdown_after_partial_cancels_current_and_skips_rest() {
             .and_then(|v| v.as_u64()),
         Some(3)
     );
+}
+
+#[test]
+fn cron_mode_refuses_a_completed_window_before_orders() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = config(dir.path());
+    let spec = spec_three();
+    let window_id = spec.window_id();
+    {
+        let mut audit = audit::AuditLog::open_in(&config.audit_path(), dir.path()).unwrap();
+        audit::log_cron_completed(&mut audit, 42, &window_id, 1, 1, 0).unwrap();
+    }
+    let shutdown = ShutdownFlag::new();
+    let broker = ScriptedBroker::new(dir.path(), shutdown.clone(), Vec::new());
+    let mut confirm = || -> Result<bool> { panic!("confirm must not be called") };
+    match run_with_client(
+        &config,
+        &spec,
+        &opts(true, false, true),
+        &broker,
+        &shutdown,
+        dir.path(),
+        &mut confirm,
+    ) {
+        Err(Error::IdempotencyRejection {
+            window_id: got_window,
+            sequence_number,
+        }) => {
+            assert_eq!(got_window, window_id);
+            assert_eq!(sequence_number, 42);
+        }
+        other => panic!("expected IdempotencyRejection, got {other:?}"),
+    }
+    assert!(broker.executes.borrow().is_empty());
+    assert!(!dir.path().join(DEFAULT_PID_FILE).exists());
+    let events = parse_audit_events(&config.audit_path()).unwrap();
+    assert!(
+        events
+            .iter()
+            .any(|event| event.event == "idempotency_rejection")
+    );
+    assert!(events.iter().all(|event| event.event != "run_started"));
 }
 
 #[test]

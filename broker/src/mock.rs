@@ -102,6 +102,7 @@ impl MockBrokerBuilder {
             next_order_id: AtomicU64::new(1),
             submitted_orders: Mutex::new(Vec::new()),
             open_orders: Mutex::new(Vec::new()),
+            open_order_statuses: Mutex::new(None),
         }
     }
 }
@@ -117,6 +118,8 @@ pub struct MockBroker {
     next_order_id: AtomicU64,
     submitted_orders: Mutex<Vec<RecordedOrder>>,
     open_orders: Mutex<Vec<OrderId>>,
+    /// When set, `open_orders` returns these rows instead of `fill_mode`.
+    open_order_statuses: Mutex<Option<Vec<BrokerOrderStatus>>>,
 }
 
 impl MockBroker {
@@ -136,6 +139,17 @@ impl MockBroker {
             .lock()
             .expect("submitted_orders mutex poisoned")
             .clone()
+    }
+
+    /// Make `open_orders` return `orders`.
+    ///
+    /// `FillMode` builds every row from 100 shares. Call this when the
+    /// caller needs an explicit filled quantity and remaining quantity.
+    pub fn set_open_order_statuses(&self, orders: Vec<BrokerOrderStatus>) {
+        *self
+            .open_order_statuses
+            .lock()
+            .expect("open_order_statuses mutex poisoned") = Some(orders);
     }
 
     fn fill_status(&self) -> (OrderState, u64, u64) {
@@ -235,6 +249,15 @@ impl Broker for MockBroker {
     fn open_orders(&self) -> Result<Vec<BrokerOrderStatus>, BrokerError> {
         if !self.connected {
             return Err(BrokerError::NotConnected);
+        }
+
+        if let Some(orders) = self
+            .open_order_statuses
+            .lock()
+            .expect("open_order_statuses mutex poisoned")
+            .clone()
+        {
+            return Ok(orders);
         }
 
         let open_ids = self.open_orders.lock().expect("open_orders mutex poisoned");

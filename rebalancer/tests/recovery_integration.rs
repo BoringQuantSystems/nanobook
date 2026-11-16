@@ -589,21 +589,18 @@ fn test_broker_reconciliation_incomplete_intent_found() {
         .unwrap();
     }
 
-    // Create MockBroker with the order actually submitted
+    // 50 shares open, none filled. The mock fill mode is based on 100 shares.
     let mut broker = MockBroker::builder()
-        .fill_mode(FillMode::ImmediatePartial(0.5))
         .with_position(Symbol::new("AAPL"), 100, 150_00)
         .build();
     broker.connect().unwrap();
-
-    let order = BrokerOrder {
-        symbol: Symbol::new("AAPL"),
-        side: BrokerSide::Buy,
-        quantity: 50,
-        order_type: BrokerOrderType::Market,
-        client_order_id: None,
-    };
-    broker.submit_order(&order).unwrap();
+    broker.set_open_order_statuses(vec![nanobook_broker::types::BrokerOrderStatus {
+        id: nanobook_broker::types::OrderId(1),
+        status: nanobook_broker::types::OrderState::Submitted,
+        filled_quantity: 0,
+        remaining_quantity: 50,
+        avg_fill_price_cents: 0,
+    }]);
 
     // Reconstruct state
     let (state, _) = reconstruct_state(&audit_path).unwrap();
@@ -958,25 +955,21 @@ fn reconcile_skips_already_submitted_intents() {
 #[cfg(feature = "write_ahead_logging")]
 #[test]
 fn reconcile_appends_submitted_and_failed_in_sequence() {
-    use nanobook::Price;
     use nanobook_rebalancer::recovery::reconcile_incomplete_intents;
 
     let dir = tempfile::tempdir().unwrap();
     let audit_path = dir.path().join("audit.jsonl");
     log_run_started_and_intents(&audit_path, dir.path());
-    let mut broker = MockBroker::builder()
-        .fill_mode(FillMode::ImmediatePartial(0.5))
-        .build();
+    let mut broker = MockBroker::builder().build();
     broker.connect().unwrap();
-    broker
-        .submit_order(&BrokerOrder {
-            symbol: Symbol::new("AAPL"),
-            side: BrokerSide::Buy,
-            quantity: 50,
-            order_type: BrokerOrderType::Limit(Price(16_000)),
-            client_order_id: None,
-        })
-        .unwrap();
+    // AAPL's 50 shares are still open. MSFT's 25 shares are not.
+    broker.set_open_order_statuses(vec![nanobook_broker::types::BrokerOrderStatus {
+        id: nanobook_broker::types::OrderId(1),
+        status: nanobook_broker::types::OrderState::Submitted,
+        filled_quantity: 0,
+        remaining_quantity: 50,
+        avg_fill_price_cents: 16_000,
+    }]);
     let (state, _) = reconstruct_state(&audit_path).unwrap();
     reconcile_incomplete_intents(&broker, &state, &audit_path).unwrap();
     let events = parse_audit_events(&audit_path).unwrap();
@@ -1207,7 +1200,7 @@ audit_file = "audit.jsonl"
     }
     let mut broker = MockBroker::builder().build();
     broker.connect().unwrap();
-    run_recover(&config, &spec, true, Some(&broker)).unwrap();
+    run_recover(&config, &spec, false, Some(&broker)).unwrap();
     let events = parse_audit_events(&config.audit_path()).unwrap();
     assert_eq!(events.len(), 3);
     let last = events.last().unwrap();
@@ -1220,4 +1213,62 @@ audit_file = "audit.jsonl"
         last.data.get("reconciled").and_then(|v| v.as_bool()),
         Some(true)
     );
+}
+
+#[cfg(feature = "write_ahead_logging")]
+#[test]
+fn run_recover_dry_run_does_not_write_the_audit() {
+    let dir = tempfile::tempdir().unwrap();
+    let config: Config = toml::from_str(&format!(
+        r#"
+[connection]
+host = "127.0.0.1"
+port = 4002
+client_id = 1
+[account]
+id = "DU1"
+type = "cash"
+[execution]
+[risk]
+[cost]
+[logging]
+dir = "{}"
+audit_file = "audit.jsonl"
+"#,
+        dir.path().display()
+    ))
+    .unwrap();
+    let spec = TargetSpec::from_json(
+        r#"{
+            "timestamp": "2026-02-08T15:30:00Z",
+            "targets": [{ "symbol": "AAPL", "weight": 0.5 }]
+        }"#,
+    )
+    .unwrap();
+    {
+        let mut log = AuditLog::open_in(&config.audit_path(), dir.path()).unwrap();
+        log.log_checkpoint(
+            nanobook_rebalancer::audit::Checkpoint::RunStarted,
+            1,
+            serde_json::json!({"target": "test"}),
+        )
+        .unwrap();
+        log.log_checkpoint(
+            nanobook_rebalancer::audit::Checkpoint::OrderIntent,
+            2,
+            serde_json::json!({
+                "symbol": "AAPL",
+                "action": "Buy",
+                "shares": 50,
+                "limit": 160.0,
+                "client_order_id": "c",
+            }),
+        )
+        .unwrap();
+    }
+    let before = std::fs::read(config.audit_path()).unwrap();
+    let mut broker = MockBroker::builder().build();
+    broker.connect().unwrap();
+    run_recover(&config, &spec, true, Some(&broker)).unwrap();
+    assert_eq!(std::fs::read(config.audit_path()).unwrap(), before);
 }

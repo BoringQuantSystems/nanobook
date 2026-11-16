@@ -279,6 +279,25 @@ pub fn run_with_client(
     workdir: &Path,
     confirm: &mut dyn FnMut() -> Result<bool>,
 ) -> Result<()> {
+    if opts.cron_mode {
+        let audit_path = resolve_audit_path(config, workdir);
+        if audit_path.exists() {
+            let window_id = target.window_id();
+            let mut audit_check = AuditLog::open_in(&audit_path, workdir)?;
+            if let Some(existing_seq) = audit_check.check_window_already_complete(&window_id)? {
+                warn!(
+                    "Rebalance window {} already completed with sequence number {} — refusing to run",
+                    window_id, existing_seq
+                );
+                audit::log_idempotency_rejection(&mut audit_check, &window_id, existing_seq)?;
+                return Err(Error::IdempotencyRejection {
+                    window_id,
+                    sequence_number: existing_seq,
+                });
+            }
+        }
+    }
+
     let _pid_guard =
         crate::pid_file::PidFileGuard::create(workdir.join(crate::pid_file::DEFAULT_PID_FILE))?;
 

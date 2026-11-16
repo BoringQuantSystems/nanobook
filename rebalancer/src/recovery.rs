@@ -7,6 +7,8 @@ use crate::error::{Error, Result};
 use crate::target::TargetSpec;
 use nanobook::Symbol;
 use nanobook_broker::Broker;
+#[cfg(feature = "write_ahead_logging")]
+use nanobook_broker::types::BrokerOrderStatus;
 use nanobook_broker::types::f64_cents_checked;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "write_ahead_logging")]
@@ -308,24 +310,10 @@ fn audit_dollars_to_cents(limit_dollars: f64) -> i64 {
         .unwrap_or_else(|_| (limit_dollars * 100.0).round() as i64)
 }
 
-/// Query the broker for an order matching the given criteria with retry logic.
+/// Find one open order whose filled and remaining shares sum to `quantity`.
 ///
-/// This function attempts to find an order in the broker's open orders
-/// that matches the given symbol and quantity. It uses heuristic matching
-/// since the broker API doesn't support querying by client_order_id.
-/// It retries on network failures with exponential backoff.
-///
-/// # Arguments
-///
-/// * `broker` - The broker connection to query
-/// * `symbol` - The symbol to search for
-/// * `quantity` - The order quantity to match
-///
-/// # Returns
-///
-/// * `Ok(Some(order_id))` - Order found at broker matching the criteria
-/// * `Ok(None)` - Order not found at broker
-/// * `Err(Error)` - Broker query failed after all retries
+/// `BrokerOrderStatus` has no symbol. A filled order does not match.
+/// Two matches return an error. `symbol` is only a log field.
 #[cfg(feature = "write_ahead_logging")]
 pub fn reconcile_order_intent(
     broker: &dyn Broker,
@@ -335,10 +323,9 @@ pub fn reconcile_order_intent(
     reconcile_order_intent_with(broker, symbol, quantity, &mut std::thread::sleep)
 }
 
-/// Query the broker for an open order whose remaining quantity matches `quantity`.
+/// Find one open order whose filled and remaining shares sum to `quantity`.
 ///
-/// `BrokerOrderStatus` has no symbol or side, so remaining quantity is the
-/// match key. `symbol` is recorded in the log line.
+/// The open-order query retries five times. `sleep` receives each delay.
 #[cfg(feature = "write_ahead_logging")]
 pub fn reconcile_order_intent_with(
     broker: &dyn Broker,
@@ -346,73 +333,76 @@ pub fn reconcile_order_intent_with(
     quantity: i64,
     sleep: &mut dyn FnMut(Duration),
 ) -> Result<Option<u64>> {
+    let expected = u64::try_from(quantity).unwrap_or(0);
+    let orders = fetch_open_orders(broker, sleep)?;
+    let mut matched = None;
+    for order in &orders {
+        if !order_matches_original_quantity(order, expected) {
+            continue;
+        }
+        if matched.is_some() {
+            return Err(Error::Recovery(format!(
+                "More than one open order matches quantity {quantity}"
+            )));
+        }
+        matched = Some(order.id.0);
+        tracing::debug!(
+            symbol = %symbol,
+            quantity,
+            broker_order_id = order.id.0,
+            filled = order.filled_quantity,
+            remaining = order.remaining_quantity,
+            "matched open order by original quantity"
+        );
+    }
+    Ok(matched)
+}
+
+/// An open order matches when its filled and remaining shares sum to `expected`.
+#[cfg(feature = "write_ahead_logging")]
+fn order_matches_original_quantity(order: &BrokerOrderStatus, expected: u64) -> bool {
+    order.remaining_quantity > 0
+        && order.filled_quantity.checked_add(order.remaining_quantity) == Some(expected)
+}
+
+/// Read open orders. Retry five times on a broker error.
+#[cfg(feature = "write_ahead_logging")]
+fn fetch_open_orders(
+    broker: &dyn Broker,
+    sleep: &mut dyn FnMut(Duration),
+) -> Result<Vec<BrokerOrderStatus>> {
     const MAX_RETRIES: usize = 5;
     const BASE_DELAY_MS: u64 = 1000;
 
-    let expected_remaining = u64::try_from(quantity).unwrap_or(0);
-
-    for attempt in 0..MAX_RETRIES {
+    let mut attempt = 0;
+    loop {
         match broker.open_orders() {
-            Ok(orders) => {
-                for order in &orders {
-                    if order.remaining_quantity > 0
-                        && order.remaining_quantity == expected_remaining
-                    {
-                        tracing::debug!(
-                            symbol = %symbol,
-                            quantity,
-                            broker_order_id = order.id.0,
-                            remaining = order.remaining_quantity,
-                            "matched open order by remaining quantity"
-                        );
-                        return Ok(Some(order.id.0));
-                    }
-                }
-                return Ok(None);
+            Ok(orders) => return Ok(orders),
+            Err(error) if attempt + 1 < MAX_RETRIES => {
+                let delay_ms = BASE_DELAY_MS * 2_u64.pow(attempt as u32);
+                tracing::warn!(
+                    "Broker query failed (attempt {}/{}), retrying in {}ms: {}",
+                    attempt + 1,
+                    MAX_RETRIES,
+                    delay_ms,
+                    error
+                );
+                sleep(Duration::from_millis(delay_ms));
+                attempt += 1;
             }
-            Err(e) => {
-                if attempt < MAX_RETRIES - 1 {
-                    let delay_ms = BASE_DELAY_MS * 2_u64.pow(attempt as u32);
-                    tracing::warn!(
-                        symbol = %symbol,
-                        "Broker query failed (attempt {}/{}), retrying in {}ms: {}",
-                        attempt + 1,
-                        MAX_RETRIES,
-                        delay_ms,
-                        e
-                    );
-                    sleep(Duration::from_millis(delay_ms));
-                } else {
-                    return Err(Error::Recovery(format!(
-                        "Broker query failed after {} attempts: {}",
-                        MAX_RETRIES, e
-                    )));
-                }
+            Err(error) => {
+                return Err(Error::Recovery(format!(
+                    "Broker query failed after {MAX_RETRIES} attempts: {error}"
+                )));
             }
         }
     }
-
-    Err(Error::Recovery(
-        "Unexpected error in broker reconciliation".to_string(),
-    ))
 }
 
-/// Reconcile incomplete order intents with the broker and update audit log.
+/// Read open orders once and match each incomplete intent.
 ///
-/// This function scans for incomplete intents (orders with client_order_id
-/// but neither submitted nor failed), queries the broker for each, and
-/// updates the audit log with the reconciliation results.
-///
-/// # Arguments
-///
-/// * `broker` - The broker connection to query
-/// * `recovered_state` - The reconstructed state from audit log
-/// * `audit_log_path` - Path to the audit log file for updates
-///
-/// # Returns
-///
-/// * `Ok(())` - All incomplete intents reconciled successfully
-/// * `Err(Error)` - Reconciliation failed for one or more intents
+/// An order claimed by two intents matches none of them. No match appends
+/// `OrderFailed`. One unshared match appends `OrderSubmitted`.
 #[cfg(feature = "write_ahead_logging")]
 pub fn reconcile_incomplete_intents(
     broker: &dyn Broker,
@@ -425,70 +415,102 @@ pub fn reconcile_incomplete_intents(
     let mut failed_count = 0;
     let mut next_sequence = recovered_state.sequence_number + 1;
 
-    // Get the parent directory as workdir for audit log validation
     let workdir = audit_log_path
         .parent()
         .ok_or_else(|| Error::Recovery("Invalid audit log path".to_string()))?;
 
-    for order in &recovered_state.orders {
-        // Check if this is an incomplete intent
-        if order.client_order_id.is_some() && !order.submitted && !order.failed {
-            let symbol = &order.symbol;
-            let quantity = order.shares;
+    let incomplete: Vec<&RecoveredOrder> = recovered_state
+        .orders
+        .iter()
+        .filter(|order| order.client_order_id.is_some() && !order.submitted && !order.failed)
+        .collect();
 
-            tracing::info!(
-                "Reconciling incomplete intent for {} (client_order_id: {:?})",
-                symbol.as_str(),
-                order.client_order_id
-            );
-
-            match reconcile_order_intent(broker, symbol, quantity) {
-                Ok(Some(broker_order_id)) => {
-                    // Order found at broker - append OrderSubmitted event
-                    tracing::info!(
-                        "Order found at broker with ID {}, appending OrderSubmitted event",
-                        broker_order_id
-                    );
-                    let mut audit = AuditLog::open_in(audit_log_path, workdir)?;
-                    audit.log_checkpoint(
-                        Checkpoint::OrderSubmitted,
-                        next_sequence,
-                        serde_json::json!({
-                            "symbol": symbol.as_str(),
-                            "ibkr_id": broker_order_id,
-                            "reconciled": true,
-                        }),
-                    )?;
-                    next_sequence += 1;
-                    reconciled_count += 1;
-                }
-                Ok(None) => {
-                    // Order not found at broker - append OrderFailed event
-                    tracing::info!("Order not found at broker, appending OrderFailed event",);
-                    let mut audit = AuditLog::open_in(audit_log_path, workdir)?;
-                    audit.log_checkpoint(
-                        Checkpoint::OrderFailed,
-                        next_sequence,
-                        serde_json::json!({
-                            "symbol": symbol.as_str(),
-                            "reason": "not_found_at_broker",
-                            "reconciled": true,
-                        }),
-                    )?;
-                    next_sequence += 1;
-                    reconciled_count += 1;
-                }
-                Err(e) => {
-                    // Broker query failed - log error and continue
-                    tracing::error!(
-                        "Failed to reconcile intent for {} (client_order_id: {:?}): {}",
-                        symbol.as_str(),
-                        order.client_order_id,
-                        e
-                    );
-                    failed_count += 1;
-                }
+    let open_orders = if incomplete.is_empty() {
+        Vec::new()
+    } else {
+        match fetch_open_orders(broker, &mut std::thread::sleep) {
+            Ok(orders) => orders,
+            Err(error) => {
+                tracing::error!("Open-order query failed: {}", error);
+                failed_count = incomplete.len();
+                tracing::info!(
+                    "Broker reconciliation complete: {} reconciled, {} failed",
+                    reconciled_count,
+                    failed_count
+                );
+                return Err(Error::Recovery(format!(
+                    "Failed to reconcile {failed_count} incomplete intents"
+                )));
             }
+        }
+    };
+
+    let candidates: Vec<Vec<u64>> = incomplete
+        .iter()
+        .map(|order| {
+            let expected = u64::try_from(order.shares).unwrap_or(0);
+            open_orders
+                .iter()
+                .filter(|status| order_matches_original_quantity(status, expected))
+                .map(|status| status.id.0)
+                .collect()
+        })
+        .collect();
+
+    for (order, ids) in incomplete.into_iter().zip(candidates.iter()) {
+        let symbol = &order.symbol;
+        tracing::info!(
+            "Reconciling incomplete intent for {} (client_order_id: {:?})",
+            symbol.as_str(),
+            order.client_order_id
+        );
+
+        let unique = ids.len() == 1
+            && candidates
+                .iter()
+                .filter(|other| other.contains(&ids[0]))
+                .count()
+                == 1;
+        if ids.is_empty() {
+            tracing::info!("Order not found at broker, appending OrderFailed event");
+            let mut audit = AuditLog::open_in(audit_log_path, workdir)?;
+            audit.log_checkpoint(
+                Checkpoint::OrderFailed,
+                next_sequence,
+                serde_json::json!({
+                    "symbol": symbol.as_str(),
+                    "reason": "not_found_at_broker",
+                    "reconciled": true,
+                }),
+            )?;
+            next_sequence += 1;
+            reconciled_count += 1;
+        } else if unique {
+            let broker_order_id = ids[0];
+            tracing::info!(
+                "Order found at broker with ID {}, appending OrderSubmitted event",
+                broker_order_id
+            );
+            let mut audit = AuditLog::open_in(audit_log_path, workdir)?;
+            audit.log_checkpoint(
+                Checkpoint::OrderSubmitted,
+                next_sequence,
+                serde_json::json!({
+                    "symbol": symbol.as_str(),
+                    "ibkr_id": broker_order_id,
+                    "reconciled": true,
+                }),
+            )?;
+            next_sequence += 1;
+            reconciled_count += 1;
+        } else {
+            tracing::error!(
+                symbol = %symbol,
+                quantity = order.shares,
+                matches = ids.len(),
+                "Intent has no unique open order"
+            );
+            failed_count += 1;
         }
     }
 
@@ -1140,9 +1162,10 @@ pub fn run_recover(
         None
     };
 
-    // Attempt broker reconciliation for incomplete intents if feature is enabled
+    // Attempt broker reconciliation for incomplete intents if feature is enabled.
+    // A dry run prints the plan and does not append audit events.
     #[cfg(feature = "write_ahead_logging")]
-    if let Some(broker) = broker {
+    if !dry_run && let Some(broker) = broker {
         // Check if there are incomplete intents to reconcile
         let has_incomplete_intents = recovered_state
             .orders
@@ -1279,29 +1302,103 @@ mod tests {
     #[cfg(feature = "write_ahead_logging")]
     #[test]
     fn reconcile_order_intent_matches_quantity() {
-        use nanobook::Price;
-        use nanobook_broker::mock::{FillMode, MockBroker};
-        use nanobook_broker::types::{BrokerOrder, BrokerOrderType};
-        use nanobook_broker::{Broker, BrokerSide};
+        use nanobook_broker::Broker;
+        use nanobook_broker::mock::MockBroker;
+        use nanobook_broker::types::{BrokerOrderStatus, OrderId, OrderState};
 
-        let mut broker = MockBroker::builder()
-            .fill_mode(FillMode::ImmediatePartial(0.5))
-            .build();
+        let mut broker = MockBroker::builder().build();
         broker.connect().unwrap();
-        broker
-            .submit_order(&BrokerOrder {
-                symbol: Symbol::new("AAPL"),
-                side: BrokerSide::Buy,
-                quantity: 50,
-                order_type: BrokerOrderType::Limit(Price(16_000)),
-                client_order_id: None,
-            })
-            .unwrap();
+        broker.set_open_order_statuses(vec![BrokerOrderStatus {
+            id: OrderId(1),
+            status: OrderState::Submitted,
+            filled_quantity: 0,
+            remaining_quantity: 50,
+            avg_fill_price_cents: 16_000,
+        }]);
 
         let matched = reconcile_order_intent(&broker, &Symbol::new("AAPL"), 50).unwrap();
         let other = reconcile_order_intent(&broker, &Symbol::new("MSFT"), 25).unwrap();
         assert_eq!(matched, Some(1));
         assert_eq!(other, None);
+    }
+
+    #[cfg(feature = "write_ahead_logging")]
+    #[test]
+    fn reconcile_order_intent_matches_partial_original_quantity() {
+        use nanobook_broker::Broker;
+        use nanobook_broker::mock::MockBroker;
+        use nanobook_broker::types::{BrokerOrderStatus, OrderId, OrderState};
+
+        let mut broker = MockBroker::builder().build();
+        broker.connect().unwrap();
+        // 50-share order, 25 filled, 25 still open.
+        broker.set_open_order_statuses(vec![BrokerOrderStatus {
+            id: OrderId(4),
+            status: OrderState::PartiallyFilled,
+            filled_quantity: 25,
+            remaining_quantity: 25,
+            avg_fill_price_cents: 16_000,
+        }]);
+
+        let matched = reconcile_order_intent(&broker, &Symbol::new("AAPL"), 50).unwrap();
+        assert_eq!(matched, Some(4));
+        let remainder_only = reconcile_order_intent(&broker, &Symbol::new("AAPL"), 25).unwrap();
+        assert_eq!(remainder_only, None);
+
+        // 20 shares filled and 30 left is a 50-share order, not a 30-share order.
+        broker.set_open_order_statuses(vec![BrokerOrderStatus {
+            id: OrderId(8),
+            status: OrderState::PartiallyFilled,
+            filled_quantity: 20,
+            remaining_quantity: 30,
+            avg_fill_price_cents: 16_000,
+        }]);
+        assert_eq!(
+            reconcile_order_intent(&broker, &Symbol::new("AAPL"), 30).unwrap(),
+            None
+        );
+        assert_eq!(
+            reconcile_order_intent(&broker, &Symbol::new("AAPL"), 50).unwrap(),
+            Some(8)
+        );
+    }
+
+    #[cfg(feature = "write_ahead_logging")]
+    #[test]
+    fn reconcile_order_intent_rejects_two_orders_of_the_same_quantity() {
+        use nanobook_broker::Broker;
+        use nanobook_broker::mock::MockBroker;
+        use nanobook_broker::types::{BrokerOrderStatus, OrderId, OrderState};
+
+        let mut broker = MockBroker::builder().build();
+        broker.connect().unwrap();
+        broker.set_open_order_statuses(vec![
+            BrokerOrderStatus {
+                id: OrderId(4),
+                status: OrderState::Submitted,
+                filled_quantity: 0,
+                remaining_quantity: 50,
+                avg_fill_price_cents: 0,
+            },
+            BrokerOrderStatus {
+                id: OrderId(5),
+                status: OrderState::Submitted,
+                filled_quantity: 0,
+                remaining_quantity: 50,
+                avg_fill_price_cents: 0,
+            },
+        ]);
+
+        let err = reconcile_order_intent(&broker, &Symbol::new("AAPL"), 50).unwrap_err();
+        match err {
+            Error::Recovery(message) => {
+                assert!(
+                    message.contains("More than one open order matches quantity 50"),
+                    "{message}"
+                );
+            }
+            other => panic!("expected Recovery, got {other:?}"),
+        }
     }
 
     #[test]
@@ -1936,26 +2033,22 @@ mod tests {
     #[cfg(feature = "write_ahead_logging")]
     #[test]
     fn reconcile_order_intent_found() {
-        use nanobook_broker::mock::{FillMode, MockBroker};
-        use nanobook_broker::{BrokerOrder, BrokerOrderType, BrokerSide};
+        use nanobook_broker::Broker;
+        use nanobook_broker::mock::MockBroker;
+        use nanobook_broker::types::{BrokerOrderStatus, OrderId, OrderState};
 
         let mut broker = MockBroker::builder()
-            .fill_mode(FillMode::ImmediatePartial(0.5))
             .with_position(Symbol::new("AAPL"), 100, 150_00)
             .build();
         broker.connect().unwrap();
+        broker.set_open_order_statuses(vec![BrokerOrderStatus {
+            id: OrderId(1),
+            status: OrderState::Submitted,
+            filled_quantity: 0,
+            remaining_quantity: 50,
+            avg_fill_price_cents: 0,
+        }]);
 
-        // Submit an order
-        let order = BrokerOrder {
-            symbol: Symbol::new("AAPL"),
-            side: BrokerSide::Buy,
-            quantity: 50,
-            order_type: BrokerOrderType::Market,
-            client_order_id: None,
-        };
-        broker.submit_order(&order).unwrap();
-
-        // Query for the order
         let result = reconcile_order_intent(&broker, &Symbol::new("AAPL"), 50).unwrap();
         assert!(result.is_some());
     }

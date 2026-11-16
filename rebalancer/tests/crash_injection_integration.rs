@@ -6,9 +6,9 @@
 #[cfg(feature = "write_ahead_logging")]
 use nanobook::Symbol;
 #[cfg(feature = "write_ahead_logging")]
-use nanobook_broker::mock::{FillMode, MockBroker};
+use nanobook_broker::Broker;
 #[cfg(feature = "write_ahead_logging")]
-use nanobook_broker::{Broker, BrokerOrder, BrokerOrderType, BrokerSide};
+use nanobook_broker::mock::{FillMode, MockBroker};
 use nanobook_rebalancer::audit::{AuditLog, Checkpoint, parse_audit_events};
 use nanobook_rebalancer::recovery::{RecoveryAction, reconstruct_state};
 
@@ -223,22 +223,18 @@ fn test_crash_after_broker_call_before_order_submitted_logging() {
     #[cfg(not(feature = "write_ahead_logging"))]
     assert_eq!(action, RecoveryAction::ManualReview);
 
-    // Create MockBroker with the order already submitted (simulating broker call succeeded)
+    // 50 shares open, none filled. The mock fill mode is based on 100 shares.
     let mut broker = MockBroker::builder()
-        .fill_mode(FillMode::ImmediatePartial(0.5))
         .with_position(Symbol::new("AAPL"), 100, 150_00)
         .build();
     broker.connect().unwrap();
-
-    // Submit the order to broker (simulating the broker call that happened before crash)
-    let order = BrokerOrder {
-        symbol: Symbol::new("AAPL"),
-        side: BrokerSide::Buy,
-        quantity: 50,
-        order_type: BrokerOrderType::Market,
-        client_order_id: None,
-    };
-    broker.submit_order(&order).unwrap();
+    broker.set_open_order_statuses(vec![nanobook_broker::types::BrokerOrderStatus {
+        id: nanobook_broker::types::OrderId(1),
+        status: nanobook_broker::types::OrderState::Submitted,
+        filled_quantity: 0,
+        remaining_quantity: 50,
+        avg_fill_price_cents: 0,
+    }]);
 
     // Run broker reconciliation
     #[cfg(feature = "write_ahead_logging")]
