@@ -183,7 +183,7 @@ allow_short = true
 max_short_pct = 1.0
 [cost]
 [logging]
-dir = "{}"
+dir = '{}'
 audit_file = "audit.jsonl"
 "#,
         workdir.join("logs").display()

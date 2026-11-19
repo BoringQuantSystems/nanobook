@@ -1164,7 +1164,7 @@ type = "cash"
 [risk]
 [cost]
 [logging]
-dir = "{}"
+dir = '{}'
 audit_file = "audit.jsonl"
 "#,
         dir.path().display()
@@ -1232,7 +1232,7 @@ type = "cash"
 [risk]
 [cost]
 [logging]
-dir = "{}"
+dir = '{}'
 audit_file = "audit.jsonl"
 "#,
         dir.path().display()
