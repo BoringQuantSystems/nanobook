@@ -404,6 +404,46 @@ mod tests {
         assert_eq!(ws.endpoint(), "wss://stream.testnet.binance.vision/ws");
     }
 
+    #[test]
+    fn is_connected_follows_the_connected_flag() {
+        let ws = BinanceWebSocket::new("key", "secret", true);
+        assert!(!ws.is_connected());
+
+        ws.connected.store(true, Ordering::SeqCst);
+        assert!(ws.is_connected());
+    }
+
+    #[test]
+    fn events_returns_the_buffered_events() {
+        let mut ws = BinanceWebSocket::new("key", "secret", true);
+        assert!(ws.events().is_empty());
+
+        ws.events.push(execution_report_event());
+        assert_eq!(ws.events(), &[execution_report_event()]);
+    }
+
+    #[test]
+    fn reconnect_attempts_reports_the_counter() {
+        let mut ws = BinanceWebSocket::new("key", "secret", true);
+        ws.reconnect_attempts = 3;
+
+        assert_eq!(ws.reconnect_attempts(), 3);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn heartbeat_times_out_when_the_interval_has_elapsed_exactly() {
+        let mut ws = BinanceWebSocket::new("key", "secret", true);
+        ws.set_heartbeat_interval(Duration::from_secs(10));
+        ws.update_heartbeat();
+
+        tokio::time::advance(Duration::from_millis(9_999)).await;
+        assert!(ws.check_heartbeat());
+
+        // Elapsed time equal to the interval is a timeout.
+        tokio::time::advance(Duration::from_millis(1)).await;
+        assert!(!ws.check_heartbeat());
+    }
+
     #[tokio::test]
     async fn subscribe_checks_the_heartbeat_before_the_connection() {
         let mut ws = BinanceWebSocket::new("key", "secret", true);

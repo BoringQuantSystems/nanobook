@@ -495,4 +495,28 @@ mod tests {
         let ids: Vec<OrderId> = broker.open_orders().unwrap().iter().map(|o| o.id).collect();
         assert_eq!(ids, vec![OrderId(2)]);
     }
+
+    #[test]
+    fn set_open_order_statuses_replaces_the_rows_open_orders_returns() {
+        let mut broker = MockBroker::builder().build();
+        broker.connect().unwrap();
+        broker.submit_order(&market_order()).unwrap();
+
+        // 25 of 80 shares filled; FillMode alone would report 100/0 rows.
+        broker.set_open_order_statuses(vec![BrokerOrderStatus {
+            id: OrderId(7),
+            status: OrderState::PartiallyFilled,
+            filled_quantity: 25,
+            remaining_quantity: 55,
+            avg_fill_price_cents: 12_345,
+        }]);
+
+        let open = broker.open_orders().unwrap();
+        assert_eq!(open.len(), 1);
+        assert_eq!(open[0].id, OrderId(7));
+        assert_eq!(open[0].status, OrderState::PartiallyFilled);
+        assert_eq!(open[0].filled_quantity, 25);
+        assert_eq!(open[0].remaining_quantity, 55);
+        assert_eq!(open[0].avg_fill_price_cents, 12_345);
+    }
 }
