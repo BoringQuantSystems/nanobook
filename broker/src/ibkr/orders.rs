@@ -886,8 +886,20 @@ pub fn reconcile_partial_fill(
         order_id, symbol, pre_disconnect_filled, expected_total, baseline_position
     );
 
-    // Find the position for this symbol
-    let current_position = current_positions.iter().find(|p| p.symbol == symbol);
+    // Find the position for this symbol. A symbol missing from the positions is
+    // flat. If a position was held before the order, flat is a change (closed
+    // out), so compare it as quantity 0 instead of reporting "not found".
+    let flat = Position {
+        symbol,
+        quantity: 0,
+        avg_cost_cents: 0,
+        market_value_cents: 0,
+        unrealized_pnl_cents: 0,
+    };
+    let current_position = current_positions
+        .iter()
+        .find(|p| p.symbol == symbol)
+        .or((baseline_position != 0).then_some(&flat));
 
     match current_position {
         Some(pos) => {
@@ -1365,6 +1377,22 @@ mod tests {
         let result =
             reconcile_partial_fill(1, symbol, 0, 100, 75, &position(100), BrokerSide::Buy).unwrap();
         assert_eq!(result.filled_shares, 25);
+        assert_eq!(result.status, OrderOutcome::PartialFill);
+    }
+
+    #[test]
+    fn test_reconcile_counts_a_position_missing_from_the_list_as_flat() {
+        // 75 shares were held before a sell of 100. After the reconnect the
+        // symbol is not in the list at all: the position was sold down to flat,
+        // 75 shares of this order filled. Reporting "not found" would give 0.
+        let symbol = nanobook::Symbol::try_new("AAPL").unwrap();
+        let result = reconcile_partial_fill(1, symbol, 0, 100, 75, &[], BrokerSide::Sell).unwrap();
+        assert_eq!(result.filled_shares, 75);
+        assert_eq!(result.status, OrderOutcome::PartialFill);
+
+        // A short of 30 covered by a buy of 30 (flat): 30 filled.
+        let result = reconcile_partial_fill(1, symbol, 0, 30, -30, &[], BrokerSide::Buy).unwrap();
+        assert_eq!(result.filled_shares, 30);
         assert_eq!(result.status, OrderOutcome::PartialFill);
     }
 
