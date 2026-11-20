@@ -260,4 +260,33 @@ mod tests {
         drop(guard);
         assert!(!pid_file_exists(&path));
     }
+
+    #[test]
+    fn lock_error_maps_a_held_lock_to_aborted_and_any_other_failure_to_audit() {
+        use std::io::{Error as IoError, ErrorKind};
+
+        let path = Path::new("run/rebalancer.pid");
+
+        // A held lock: the kind alone, and the platform's own contention error.
+        for held in [
+            IoError::from(ErrorKind::WouldBlock),
+            fs2::lock_contended_error(),
+        ] {
+            match lock_error(held, path) {
+                Error::Aborted(message) => assert_eq!(
+                    message,
+                    "PID file run/rebalancer.pid is in use by another rebalancer"
+                ),
+                other => panic!("expected Aborted, got {other:?}"),
+            }
+        }
+
+        // Any other failure keeps its io error.
+        for kind in [ErrorKind::PermissionDenied, ErrorKind::Other] {
+            match lock_error(IoError::from(kind), path) {
+                Error::Audit(error) => assert_eq!(error.kind(), kind),
+                other => panic!("expected Audit({kind:?}), got {other:?}"),
+            }
+        }
+    }
 }

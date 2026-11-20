@@ -169,6 +169,73 @@ fn reconciliation_summary_counts_intents_missing_at_the_broker() {
 }
 
 #[test]
+fn reconciliation_summary_counts_intents_found_at_the_broker() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("audit.jsonl");
+    write_two_incomplete_intents(&path, dir.path(), 50, 25);
+
+    let mut broker = MockBroker::builder().build();
+    broker.connect().unwrap();
+    broker.set_open_order_statuses(vec![open_status(7, 50), open_status(8, 25)]);
+
+    let (state, _) = reconstruct_state(&path).unwrap();
+    let capture = LogCapture::default();
+    capture
+        .run(|| reconcile_incomplete_intents(&broker, &state, &path))
+        .unwrap();
+
+    let text = capture.text();
+    assert!(
+        text.contains("Broker reconciliation complete: 2 reconciled, 0 failed"),
+        "log was: {text}"
+    );
+}
+
+#[test]
+fn open_order_with_nothing_remaining_does_not_match_an_intent() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("audit.jsonl");
+    write_two_incomplete_intents(&path, dir.path(), 50, 25);
+
+    let mut broker = MockBroker::builder().build();
+    broker.connect().unwrap();
+    // Order 7 was 50 shares, 20 filled and 30 still open: it is the AAPL intent.
+    // Order 8 is a finished 25-share order: its filled shares equal the MSFT
+    // intent, but nothing remains open, so it is no match.
+    broker.set_open_order_statuses(vec![
+        nanobook_broker::types::BrokerOrderStatus {
+            filled_quantity: 20,
+            ..open_status(7, 30)
+        },
+        nanobook_broker::types::BrokerOrderStatus {
+            status: nanobook_broker::types::OrderState::Filled,
+            filled_quantity: 25,
+            ..open_status(8, 0)
+        },
+    ]);
+
+    let (state, _) = reconstruct_state(&path).unwrap();
+    reconcile_incomplete_intents(&broker, &state, &path).unwrap();
+
+    let events = parse_audit_events(&path).unwrap();
+    assert_eq!(events.len(), 5);
+    assert_eq!(events[3].event, "order_submitted");
+    assert_eq!(
+        events[3].data.get("symbol").and_then(|v| v.as_str()),
+        Some("AAPL")
+    );
+    assert_eq!(
+        events[3].data.get("ibkr_id").and_then(|v| v.as_u64()),
+        Some(7)
+    );
+    assert_eq!(events[4].event, "order_failed");
+    assert_eq!(
+        events[4].data.get("symbol").and_then(|v| v.as_str()),
+        Some("MSFT")
+    );
+}
+
+#[test]
 fn cancel_result_with_the_intent_sequence_completes_the_cancel() {
     let state_with = |intent: u64, result: Option<u64>| {
         let mut state = RecoveredState::new();

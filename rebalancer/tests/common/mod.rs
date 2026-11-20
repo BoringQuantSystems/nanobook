@@ -37,6 +37,19 @@ impl<'a> MakeWriter<'a> for LogCapture {
 impl LogCapture {
     /// Run `f` with a subscriber that records every event at any level.
     pub fn run<T>(&self, f: impl FnOnce() -> T) -> T {
+        // Enable every callsite for good. A callsite first reached by a test
+        // without a capture, while no subscriber exists, is cached as
+        // disabled, and a capturing test running at the same time then misses
+        // its events.
+        static ENABLE_ALL_CALLSITES: std::sync::Once = std::sync::Once::new();
+        ENABLE_ALL_CALLSITES.call_once(|| {
+            let _ = tracing::subscriber::set_global_default(
+                tracing_subscriber::fmt()
+                    .with_max_level(tracing::Level::TRACE)
+                    .with_writer(io::sink)
+                    .finish(),
+            );
+        });
         let subscriber = tracing_subscriber::fmt()
             .with_ansi(false)
             .with_max_level(tracing::Level::TRACE)
