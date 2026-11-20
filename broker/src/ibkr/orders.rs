@@ -396,18 +396,8 @@ pub fn execute_limit_order(
 ) -> Result<OrderResult, BrokerError> {
     let contract = Contract::stock(symbol.as_str()).build();
 
-    let ib_action = match side {
-        BrokerSide::Buy => IbAction::Buy,
-        BrokerSide::Sell => IbAction::Sell,
-    };
-
-    let limit_price = limit_price_cents as f64 / 100.0;
-    let quantity = shares as f64;
-
-    let mut ib_order = limit_order(ib_action, quantity, limit_price);
-    if let Some(cid) = client_order_id {
-        ib_order.order_ref = cid.as_str().to_string();
-    }
+    let ib_order = build_limit_order(side, shares, limit_price_cents, client_order_id);
+    let limit_price = ib_order.limit_price.unwrap_or_default();
 
     let order_id = client
         .next_valid_order_id()
@@ -423,15 +413,65 @@ pub fn execute_limit_order(
         .map_err(|e| BrokerError::Order(format!("failed to place order {order_id}: {e}")))?;
 
     let start = Instant::now();
+    let PlaceOrderOutcome {
+        status: final_status,
+        filled,
+        avg_price,
+        commission,
+    } = run_place_order_events(
+        subscription,
+        order_id,
+        timeout,
+        || start.elapsed(),
+        || cancel_order(client, order_id),
+        dedup_cache,
+    )?;
+
+    let result = OrderResult {
+        symbol,
+        order_id,
+        filled_shares: filled as i64,
+        avg_fill_price: avg_price,
+        commission,
+        status: final_status,
+    };
+
+    info!(
+        "Order {order_id}: {:?} -- filled {} @ ${:.2}",
+        final_status, result.filled_shares, avg_price
+    );
+
+    Ok(result)
+}
+
+/// What the order-event loop ended with.
+struct PlaceOrderOutcome {
+    status: OrderOutcome,
+    filled: f64,
+    avg_price: f64,
+    commission: f64,
+}
+
+/// Read the order events until the order is final, times out, or the
+/// connection is lost. `elapsed` is the time since submission; `cancel`
+/// cancels the order when the timeout is reached.
+fn run_place_order_events(
+    events: impl IntoIterator<Item = PlaceOrder>,
+    order_id: i32,
+    timeout: Duration,
+    mut elapsed: impl FnMut() -> Duration,
+    mut cancel: impl FnMut() -> Result<(), BrokerError>,
+    dedup_cache: Option<&CallbackDedupCache>,
+) -> Result<PlaceOrderOutcome, BrokerError> {
     let mut filled = 0.0_f64;
     let mut avg_price = 0.0_f64;
     let mut commission = 0.0_f64;
     let mut final_status = OrderOutcome::Failed;
 
-    for response in subscription {
-        if start.elapsed() > timeout {
+    for response in events {
+        if elapsed() > timeout {
             warn!("Order {order_id} timed out after {}s", timeout.as_secs());
-            match cancel_order(client, order_id) {
+            match cancel() {
                 Ok(()) => {}
                 Err(BrokerError::CancelReject {
                     order_id: oid,
@@ -547,7 +587,7 @@ pub fn execute_limit_order(
 
     // Detect silent disconnect: if loop terminated without final status and not timeout
     // This can happen when the connection drops without an explicit error message
-    if final_status == OrderOutcome::Failed && start.elapsed() < timeout {
+    if final_status == OrderOutcome::Failed && elapsed() < timeout {
         // Subscription terminated early without explicit error - likely silent disconnect
         warn!(
             "AUDIT: Subscription terminated early for order {order_id} (filled={}) - likely silent disconnect",
@@ -562,21 +602,34 @@ pub fn execute_limit_order(
         }
     }
 
-    let result = OrderResult {
-        symbol,
-        order_id,
-        filled_shares: filled as i64,
-        avg_fill_price: avg_price,
-        commission,
+    Ok(PlaceOrderOutcome {
         status: final_status,
+        filled,
+        avg_price,
+        commission,
+    })
+}
+
+/// Build the limit order sent by `execute_limit_order`.
+fn build_limit_order(
+    side: BrokerSide,
+    shares: i64,
+    limit_price_cents: i64,
+    client_order_id: Option<&ClientOrderId>,
+) -> Order {
+    let ib_action = match side {
+        BrokerSide::Buy => IbAction::Buy,
+        BrokerSide::Sell => IbAction::Sell,
     };
 
-    info!(
-        "Order {order_id}: {:?} -- filled {} @ ${:.2}",
-        final_status, result.filled_shares, avg_price
-    );
+    let limit_price = limit_price_cents as f64 / 100.0;
+    let quantity = shares as f64;
 
-    Ok(result)
+    let mut ib_order = limit_order(ib_action, quantity, limit_price);
+    if let Some(cid) = client_order_id {
+        ib_order.order_ref = cid.as_str().to_string();
+    }
+    ib_order
 }
 
 /// Cancel an order by ID.
@@ -615,71 +668,80 @@ pub fn cancel_order(client: &Client, order_id: i32) -> Result<(), BrokerError> {
         std::time::SystemTime::now()
     );
     match client.cancel_order(order_id, "") {
-        Ok(subscription) => {
-            for response in subscription {
-                match response {
-                    CancelOrder::OrderStatus(s) => {
-                        debug!("Cancel status for {order_id}: {}", s.status);
-                        // Order is already cancelled or filled - cancel is moot
-                        if s.status == "Cancelled" || s.status == "Filled" {
-                            info!(
-                                "AUDIT: Cancel confirmed for order {} (status: {})",
-                                order_id, s.status
-                            );
-                            return Ok(());
-                        }
-                    }
-                    CancelOrder::Notice(notice) => {
-                        debug!("Cancel notice for {order_id}: {}", notice.message);
-                        // Parse for explicit cancel rejection
-                        // IBKR error codes indicating rejection:
-                        // - 102: Order cancelled
-                        // - 201: Order rejected
-                        // - 202: Order cancelled - reason
-                        // - 1100: Connectivity between IB and TWS has been lost
-                        // - 460: Error reading request
-                        // We look for messages that indicate the order cannot be cancelled
-                        let msg = notice.message.to_lowercase();
-                        if msg.contains("cannot cancel")
-                            || msg.contains("already filled")
-                            || msg.contains("order completed")
-                            || msg.contains("no such order")
-                        {
-                            // Audit log: cancel rejection
-                            info!(
-                                "AUDIT: Cancel rejected for order {} - reason: {}",
-                                order_id, notice.message
-                            );
-                            return Err(BrokerError::CancelReject {
-                                order_id,
-                                reason: notice.message,
-                            });
-                        }
-                    }
+        Ok(subscription) => cancel_from_responses(order_id, subscription),
+        Err(e) => cancel_request_error(order_id, &e),
+    }
+}
+
+/// Classify the responses to a cancel request.
+fn cancel_from_responses(
+    order_id: i32,
+    responses: impl IntoIterator<Item = CancelOrder>,
+) -> Result<(), BrokerError> {
+    for response in responses {
+        match response {
+            CancelOrder::OrderStatus(s) => {
+                debug!("Cancel status for {order_id}: {}", s.status);
+                // Order is already cancelled or filled - cancel is moot
+                if s.status == "Cancelled" || s.status == "Filled" {
+                    info!(
+                        "AUDIT: Cancel confirmed for order {} (status: {})",
+                        order_id, s.status
+                    );
+                    return Ok(());
                 }
             }
-            info!("AUDIT: Cancel request sent for order {}", order_id);
-            Ok(())
-        }
-        Err(e) => {
-            warn!("Failed to cancel order {order_id}: {e}");
-            // If the error indicates the order is already complete, treat as success
-            let err_msg = e.to_string().to_lowercase();
-            if err_msg.contains("already filled")
-                || err_msg.contains("order completed")
-                || err_msg.contains("no such order")
-            {
-                info!(
-                    "AUDIT: Cancel moot for order {} (already completed)",
-                    order_id
-                );
-                return Ok(());
+            CancelOrder::Notice(notice) => {
+                debug!("Cancel notice for {order_id}: {}", notice.message);
+                // Parse for explicit cancel rejection
+                // IBKR error codes indicating rejection:
+                // - 102: Order cancelled
+                // - 201: Order rejected
+                // - 202: Order cancelled - reason
+                // - 1100: Connectivity between IB and TWS has been lost
+                // - 460: Error reading request
+                // We look for messages that indicate the order cannot be cancelled
+                let msg = notice.message.to_lowercase();
+                if msg.contains("cannot cancel")
+                    || msg.contains("already filled")
+                    || msg.contains("order completed")
+                    || msg.contains("no such order")
+                {
+                    // Audit log: cancel rejection
+                    info!(
+                        "AUDIT: Cancel rejected for order {} - reason: {}",
+                        order_id, notice.message
+                    );
+                    return Err(BrokerError::CancelReject {
+                        order_id,
+                        reason: notice.message,
+                    });
+                }
             }
-            Err(BrokerError::Order(format!(
-                "failed to cancel order {order_id}: {e}"
-            )))
         }
     }
+    info!("AUDIT: Cancel request sent for order {}", order_id);
+    Ok(())
+}
+
+/// Classify a failed cancel request: an already-complete order counts as cancelled.
+fn cancel_request_error(order_id: i32, e: &dyn std::fmt::Display) -> Result<(), BrokerError> {
+    warn!("Failed to cancel order {order_id}: {e}");
+    // If the error indicates the order is already complete, treat as success
+    let err_msg = e.to_string().to_lowercase();
+    if err_msg.contains("already filled")
+        || err_msg.contains("order completed")
+        || err_msg.contains("no such order")
+    {
+        info!(
+            "AUDIT: Cancel moot for order {} (already completed)",
+            order_id
+        );
+        return Ok(());
+    }
+    Err(BrokerError::Order(format!(
+        "failed to cancel order {order_id}: {e}"
+    )))
 }
 
 /// Reconcile order state when cancel is rejected.
