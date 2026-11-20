@@ -865,4 +865,269 @@ mod tests {
         assert!(!result[4].is_nan());
         assert!(result[4] > 0.0);
     }
+
+    // --- exact-value tests (cargo-mutants 0.20.0 showed these were never checked) ---
+
+    /// Assert `|actual - expected| <= tol * max(|expected|, 1)`.
+    fn assert_close(actual: f64, expected: f64, tol: f64, what: &str) {
+        let bound = tol * expected.abs().max(1.0);
+        assert!(
+            (actual - expected).abs() <= bound,
+            "{what}: got {actual}, expected {expected} (bound {bound})"
+        );
+    }
+
+    /// NaN positions must match; other positions compared with `assert_close`.
+    fn assert_series_close(actual: &[f64], expected: &[f64], tol: f64, what: &str) {
+        assert_eq!(actual.len(), expected.len(), "{what}: length");
+        for (i, (&a, &e)) in actual.iter().zip(expected).enumerate() {
+            if e.is_nan() {
+                assert!(a.is_nan(), "{what}[{i}]: expected NaN, got {a}");
+            } else {
+                assert_close(a, e, tol, &format!("{what}[{i}]"));
+            }
+        }
+    }
+
+    /// A2-G1: CAGR exponent 1/years, volatility annualisation, n = 1 volatility.
+    #[test]
+    fn compute_metrics_cagr_and_volatility_exact() {
+        // (a) six 1% monthly returns: years = 0.5, CAGR = 1.01^12 - 1.
+        // Closed form; 1e-9 absolute covers powf rounding. A wrong exponent gives 0.0303.
+        let m = compute_metrics(&[0.01; 6], 12.0, 0.0).unwrap();
+        assert_close(m.cagr, 0.126_825_030_132, 1e-9, "cagr");
+
+        // (b) sample std 0.0230940108 * sqrt(252); 1e-9 covers sqrt rounding.
+        // Dividing by sqrt(252) instead gives 0.00145.
+        let m = compute_metrics(&[0.03, -0.01, 0.03, -0.01], 252.0, 0.0).unwrap();
+        assert_close(m.volatility, 0.366_606_055_6, 1e-9, "volatility");
+
+        // (c) one return: sample variance is defined as 0.0, not 0/0.
+        let m = compute_metrics(&[0.05], 252.0, 0.0).unwrap();
+        assert_eq!(m.volatility, 0.0);
+    }
+
+    /// A2-G5: total or leveraged loss clamps CAGR to -1.
+    #[test]
+    fn cagr_clamps_total_loss() {
+        assert_eq!(compute_metrics(&[-1.0], 12.0, 0.0).unwrap().cagr, -1.0);
+        // total_return = -1.5 (below -100%): must not enter the powf branch.
+        assert_eq!(compute_metrics(&[-1.5], 12.0, 0.0).unwrap().cagr, -1.0);
+    }
+
+    /// A2-G6: degenerate win/loss series fix profit factor, payoff ratio, Kelly, Calmar.
+    #[test]
+    fn degenerate_win_loss_ratios() {
+        // All zeros: no wins, no losses, no drawdown.
+        let m = compute_metrics(&[0.0, 0.0, 0.0], 252.0, 0.0).unwrap();
+        assert_eq!(m.profit_factor, 0.0);
+        assert_eq!(m.payoff_ratio, 0.0);
+        assert_eq!(m.kelly, 0.0);
+        assert_eq!(m.calmar, 0.0);
+
+        // All winning: no losses, payoff ratio infinite, Kelly defined as 0.
+        let m = compute_metrics(&[0.01, 0.02, 0.03], 252.0, 0.0).unwrap();
+        assert_eq!(m.profit_factor, f64::INFINITY);
+        assert_eq!(m.payoff_ratio, f64::INFINITY);
+        assert_eq!(m.kelly, 0.0);
+        assert_eq!(m.calmar, 0.0);
+
+        // All losing: no wins, payoff ratio 0, Kelly defined as 0.
+        let m = compute_metrics(&[-0.01, -0.02], 252.0, 0.0).unwrap();
+        assert_eq!(m.profit_factor, 0.0);
+        assert_eq!(m.payoff_ratio, 0.0);
+        assert_eq!(m.kelly, 0.0);
+    }
+
+    /// A2-G2: Sortino with non-zero risk-free rate, no downside, ddof guard.
+    #[test]
+    fn sortino_risk_free_and_guards() {
+        // (a) excess mean 0.0066 - 0.002; downside from r - rf < 0. Reference computed
+        // in Python from the definition; 1e-9 covers sqrt/division rounding. Flipping
+        // the sign of rf in either place gives 11.33 or 7.21.
+        let r = [0.02, -0.01, 0.03, -0.02, 0.01];
+        assert_close(
+            sortino(&r, 0.002, 252.0, 0),
+            5.665_854_818_827,
+            1e-9,
+            "sortino",
+        );
+
+        // (b) no return below rf: downside deviation 0 gives 0.0, not +inf.
+        assert_eq!(sortino(&[0.01, 0.02, 0.03], 0.0, 252.0, 0), 0.0);
+
+        // (c) ddof larger than n: documented 0.0 (not a usize underflow panic).
+        assert_eq!(sortino(&[0.01, -0.02], 0.0, 252.0, 3), 0.0);
+        // ddof == n and empty input also give 0.0.
+        assert_eq!(sortino(&[0.01, -0.02], 0.0, 252.0, 2), 0.0);
+        assert_eq!(sortino(&[], 0.0, 252.0, 0), 0.0);
+    }
+
+    /// A2-G3: rolling Sharpe values and zero-variance window.
+    #[test]
+    fn rolling_sharpe_exact() {
+        // window mean * sqrt(252) / sample std; 1e-12 relative covers Welford rounding.
+        let r = [0.02, -0.01, 0.03, 0.0, 0.01];
+        let expected = [
+            f64::NAN,
+            f64::NAN,
+            10.167_822_548_835_88,
+            5.083_911_274_417_94,
+            13.856_406_460_551_018,
+        ];
+        assert_series_close(
+            &rolling_sharpe(&r, 3, 252),
+            &expected,
+            1e-12,
+            "rolling_sharpe",
+        );
+
+        // Zero-variance window: std is exactly 0, result is 0.0 (not +inf).
+        let result = rolling_sharpe(&[0.01; 30], 20, 252);
+        assert_eq!(result[19], 0.0);
+        assert_eq!(result[29], 0.0);
+    }
+
+    /// A2-G4: probit against `statistics.NormalDist().inv_cdf` on a grid that
+    /// covers the lower tail, central region and upper tail.
+    #[test]
+    fn norm_ppf_matches_reference_grid() {
+        // Acklam's approximation is accurate to about 1.2e-9 relative; 1e-8 allows
+        // that. Reference values from Python's `statistics.NormalDist().inv_cdf`.
+        #[allow(clippy::excessive_precision)]
+        let grid: [(f64, f64); 16] = [
+            (1e-16, -8.222_082_216_130_435),
+            (1e-4, -3.719_016_485_455_68),
+            (1e-3, -3.090_232_306_167_813),
+            (0.01, -2.326_347_874_040_840_8),
+            (0.02, -2.053_748_910_631_822_5),
+            (0.03, -1.880_793_608_151_250_9),
+            (0.1, -1.281_551_565_544_600_8),
+            (0.3, -0.524_400_512_708_040_7),
+            (0.5, 0.0),
+            (0.7, 0.524_400_512_708_040_7),
+            (0.9, 1.281_551_565_544_600_8),
+            (0.97, 1.880_793_608_151_250_4),
+            (0.98, 2.053_748_910_631_822),
+            (0.99, 2.326_347_874_040_840_8),
+            (0.999, 3.090_232_306_167_813),
+            (0.9999, 3.719_016_485_455_708_4),
+        ];
+        for (p, z) in grid {
+            assert_close(norm_ppf(p), z, 1e-8, &format!("norm_ppf({p})"));
+        }
+        assert_eq!(norm_ppf(0.0), f64::NEG_INFINITY);
+        assert_eq!(norm_ppf(1.0), f64::INFINITY);
+    }
+
+    /// A2-G7: parametric CVaR sigma (sample variance) and strict threshold.
+    #[test]
+    fn cvar_parametric_tail_selection() {
+        // (a) threshold -0.032283 selects {-0.06, -0.05}; mean -0.055. A wrong sigma
+        // moves the threshold to -0.0555 or -0.02745 and changes the tail set.
+        let r = [-0.06, -0.05, -0.03, 0.06, 0.08, 0.11, 0.12];
+        assert_close(
+            cvar(&r, 0.2, CVaRMethod::ParametricNormal),
+            -0.055,
+            1e-12,
+            "cvar",
+        );
+
+        // (b) mean is exactly 0 and norm_ppf(0.5) = 0, so the threshold is exactly 0.0;
+        // the return equal to it is not strictly below, so the tail is {-0.01}.
+        assert_eq!(
+            cvar(&[-0.01, 0.0, 0.01], 0.5, CVaRMethod::ParametricNormal),
+            -0.01
+        );
+    }
+
+    /// A2-G8: documented 0.0 for empty input and alpha outside (0, 1).
+    #[test]
+    fn cvar_invalid_alpha_returns_zero() {
+        let r = [0.01, -0.02, 0.03, -0.04];
+        for method in [CVaRMethod::Historical, CVaRMethod::ParametricNormal] {
+            for alpha in [0.0, -0.1, 1.0, 1.5] {
+                assert_eq!(cvar(&r, alpha, method), 0.0, "{method:?} alpha {alpha}");
+            }
+            assert_eq!(cvar(&[], 0.05, method), 0.0, "{method:?} empty");
+        }
+        // Sanity: a valid alpha is not 0.0 (historical: ceil(4 * 0.25) = 1 worst value).
+        assert_eq!(cvar(&r, 0.25, CVaRMethod::Historical), -0.04);
+    }
+
+    /// A2-G9: window and length boundaries of `rolling_window`.
+    #[test]
+    fn rolling_window_boundaries() {
+        let r = [0.01, -0.01, 0.02];
+        let nan = f64::NAN;
+        // (a) window == len gives one value. Reference sample std * sqrt(252).
+        assert_series_close(
+            &rolling_volatility(&r, 3, 252),
+            &[nan, nan, 0.242_487_113_059_642_82],
+            1e-12,
+            "window 3",
+        );
+        // (b) window 2 is computed.
+        assert_series_close(
+            &rolling_volatility(&r, 2, 252),
+            &[nan, 0.224_499_443_206_436_5, 0.336_749_164_809_654_8],
+            1e-12,
+            "window 2",
+        );
+        // (c) windows 0 and 1 (no sample variance) and window > len: all NaN.
+        for w in [0, 1, 4] {
+            assert_series_close(
+                &rolling_volatility(&r, w, 252),
+                &[nan; 3],
+                1e-12,
+                "bad window",
+            );
+            assert_series_close(&rolling_sharpe(&r, w, 252), &[nan; 3], 1e-12, "bad window");
+        }
+    }
+
+    /// A2-G10: window 0, window == len, zero running peak.
+    #[test]
+    fn rolling_max_drawdown_edges() {
+        let nan = f64::NAN;
+        assert_series_close(
+            &rolling_max_drawdown(&[100.0, 120.0, 90.0], 3),
+            &[nan, nan, 0.25],
+            1e-12,
+            "window == len",
+        );
+        assert_series_close(
+            &rolling_max_drawdown(&[1.0, 2.0, 3.0], 0),
+            &[nan; 3],
+            1e-12,
+            "window 0",
+        );
+        // Peak 0 then -1: drawdown from a zero peak is skipped (0.0), not inf.
+        assert_series_close(
+            &rolling_max_drawdown(&[0.0, -1.0], 2),
+            &[nan, 0.0],
+            1e-12,
+            "zero peak",
+        );
+    }
+
+    /// A2-G11: trough index follows a strictly deeper later point only.
+    #[test]
+    fn drawdown_series_trough_tracking() {
+        // Equal-depth later point: trough stays at the first (index 1).
+        let events = drawdown_series(&[100.0, 90.0, 95.0, 90.0, 100.0]);
+        assert_eq!(events.len(), 1);
+        assert_close(events[0].drawdown_pct, 0.1, 1e-12, "drawdown_pct");
+        assert_eq!(events[0].underwater_periods, 3);
+        assert_eq!(events[0].peak_index, 0);
+        assert_eq!(events[0].trough_index, 1);
+        assert_eq!(events[0].recovery_index, Some(4));
+
+        // Deeper later point: trough and depth move to index 2.
+        let events = drawdown_series(&[100.0, 90.0, 80.0, 100.0]);
+        assert_eq!(events.len(), 1);
+        assert_close(events[0].drawdown_pct, 0.2, 1e-12, "drawdown_pct");
+        assert_eq!(events[0].trough_index, 2);
+        assert_eq!(events[0].recovery_index, Some(3));
+    }
 }
