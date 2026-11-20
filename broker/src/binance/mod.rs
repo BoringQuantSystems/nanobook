@@ -49,6 +49,19 @@ pub struct CachedOrder {
     pub submitted_at: DateTime<Utc>,
 }
 
+/// Map a Binance order status string to an [`OrderState`].
+fn order_state_from_binance(status: &str) -> OrderState {
+    match status {
+        "NEW" => OrderState::Submitted,
+        "PARTIALLY_FILLED" => OrderState::PartiallyFilled,
+        "FILLED" => OrderState::Filled,
+        "CANCELED" => OrderState::Cancelled,
+        "REJECTED" => OrderState::Rejected,
+        "EXPIRED" => OrderState::Cancelled,
+        _ => OrderState::Submitted,
+    }
+}
+
 /// Binance spot broker implementing the generic Broker trait.
 ///
 /// Uses REST API for all operations. Blocking (sync) via reqwest::blocking.
@@ -347,18 +360,16 @@ impl BinanceBroker {
         Ok(())
     }
 
-    /// Poll open orders through REST and refresh the local order cache.
-    ///
-    /// Binance's account-info response carries the open-orders snapshot used by
-    /// this simplified fallback path.
+    /// Poll open orders through REST (`GET /api/v3/openOrders`) and refresh the
+    /// local order cache.
     pub fn poll_open_orders(&self) -> Result<(), BrokerError> {
         let last_poll = self.last_orders_poll();
         if !self.should_poll(last_poll) {
             return Ok(());
         }
 
-        let info = self.require_client()?.account_info()?;
-        self.update_order_cache_from_account_info(&info)?;
+        let open_orders = self.require_client()?.open_orders()?;
+        self.update_order_cache_from_open_orders(&open_orders);
         *self
             .last_orders_poll
             .lock()
@@ -366,7 +377,10 @@ impl BinanceBroker {
         Ok(())
     }
 
-    /// Apply a REST account-info snapshot to local fallback caches.
+    /// Apply a REST account-info snapshot to the local position cache.
+    ///
+    /// The order cache is not touched: `GET /api/v3/account` does not list open
+    /// orders. Use [`update_order_cache_from_open_orders`](Self::update_order_cache_from_open_orders).
     pub fn update_state_from_account_info(
         &self,
         info: &types::AccountInfo,
@@ -395,21 +409,19 @@ impl BinanceBroker {
             .position_cache
             .lock()
             .expect("Binance position cache mutex poisoned") = positions;
-        self.update_order_cache_from_account_info(info)?;
         Ok(())
     }
 
-    fn update_order_cache_from_account_info(
-        &self,
-        info: &types::AccountInfo,
-    ) -> Result<(), BrokerError> {
+    /// Replace the local order cache with a snapshot of the open orders
+    /// (`BinanceClient::open_orders`).
+    pub fn update_order_cache_from_open_orders(&self, open_orders: &[types::OrderInfo]) {
         let mut cache = self
             .order_cache
             .lock()
             .expect("Binance order cache mutex poisoned");
 
         cache.orders.clear();
-        for order in &info.open_orders {
+        for order in open_orders {
             let base_symbol = order
                 .symbol
                 .strip_suffix(&self.quote_asset)
@@ -421,15 +433,7 @@ impl BinanceBroker {
                 "SELL" => BrokerSide::Sell,
                 _ => BrokerSide::Buy,
             };
-            let status = match order.status.as_str() {
-                "NEW" => OrderState::Submitted,
-                "PARTIALLY_FILLED" => OrderState::PartiallyFilled,
-                "FILLED" => OrderState::Filled,
-                "CANCELED" => OrderState::Cancelled,
-                "REJECTED" => OrderState::Rejected,
-                "EXPIRED" => OrderState::Cancelled,
-                _ => OrderState::Submitted,
-            };
+            let status = order_state_from_binance(&order.status);
             let quantity = parse_f64_or_warn(&order.orig_qty, "binance order.origQty") as i64;
             cache.orders.insert(
                 OrderId(order.order_id),
@@ -444,8 +448,6 @@ impl BinanceBroker {
                 },
             );
         }
-
-        Ok(())
     }
 
     pub fn load_cache_from_disk(&self, path: &Path) -> Result<(), BrokerError> {
@@ -514,7 +516,7 @@ impl BinanceBroker {
 
     /// Reconcile local state with Binance account state.
     ///
-    /// Queries account info from Binance and compares against local order cache
+    /// Queries the open orders from Binance (`GET /api/v3/openOrders`) and compares against local order cache
     /// to detect discrepancies such as orphan orders, missing orders, and position mismatches.
     ///
     /// # Returns
@@ -522,7 +524,7 @@ impl BinanceBroker {
     /// * `Err(BrokerError)` - If query fails or not connected
     pub fn reconcile_state(&mut self) -> Result<DiscrepancyReport, BrokerError> {
         let client = self.require_client()?;
-        let info = client.account_info()?;
+        let open_orders = client.open_orders()?;
 
         let mut discrepancies = Vec::new();
 
@@ -536,7 +538,7 @@ impl BinanceBroker {
         };
 
         // Check for orphan orders (orders on broker but not in cache)
-        for broker_order in &info.open_orders {
+        for broker_order in &open_orders {
             let order_id = OrderId(broker_order.order_id);
             let found = cached_orders
                 .iter()
@@ -548,8 +550,7 @@ impl BinanceBroker {
 
         // Check for missing orders (orders in cache but not on broker)
         for (order_id, cached_order) in &cached_orders {
-            let found = info
-                .open_orders
+            let found = open_orders
                 .iter()
                 .any(|broker_order| broker_order.order_id == order_id.0);
             if !found && cached_order.status == OrderState::Submitted {
@@ -560,21 +561,13 @@ impl BinanceBroker {
         }
 
         // Check for order status mismatches
-        for broker_order in &info.open_orders {
+        for broker_order in &open_orders {
             let order_id = OrderId(broker_order.order_id);
             if let Some((_, cached_order)) = cached_orders
                 .iter()
                 .find(|(id, _)| id.0 == broker_order.order_id)
             {
-                let broker_status = match broker_order.status.as_str() {
-                    "NEW" => OrderState::Submitted,
-                    "PARTIALLY_FILLED" => OrderState::PartiallyFilled,
-                    "FILLED" => OrderState::Filled,
-                    "CANCELED" => OrderState::Cancelled,
-                    "REJECTED" => OrderState::Rejected,
-                    "EXPIRED" => OrderState::Cancelled,
-                    _ => OrderState::Submitted,
-                };
+                let broker_status = order_state_from_binance(&broker_order.status);
                 if cached_order.status != broker_status {
                     discrepancies.push(Discrepancy::OrderStatusMismatch {
                         order_id,
@@ -823,10 +816,24 @@ impl Broker for BinanceBroker {
     }
 
     fn open_orders(&self) -> Result<Vec<BrokerOrderStatus>, BrokerError> {
-        // Binance open orders query requires GET /api/v3/openOrders endpoint.
-        // For now return empty list. Full implementation requires
-        // querying via the client and parsing the response.
-        Ok(Vec::new())
+        let client = self.require_client()?;
+        Ok(client
+            .open_orders()?
+            .iter()
+            .map(|order| {
+                let orig = parse_f64_or_warn(&order.orig_qty, "binance order.origQty") as u64;
+                let executed =
+                    parse_f64_or_warn(&order.executed_qty, "binance order.executedQty") as u64;
+                BrokerOrderStatus {
+                    id: OrderId(order.order_id),
+                    status: order_state_from_binance(&order.status),
+                    filled_quantity: executed,
+                    remaining_quantity: orig.saturating_sub(executed),
+                    // openOrders reports no average price.
+                    avg_fill_price_cents: 0,
+                }
+            })
+            .collect())
     }
 
     fn cancel_order(&self, id: OrderId) -> Result<(), BrokerError> {
@@ -929,11 +936,14 @@ mod tests {
         )
     }
 
-    fn account_json(balances: &str, open_orders: &[String]) -> String {
-        format!(
-            r#"{{"balances":[{balances}],"openOrders":[{}],"canTrade":true}}"#,
-            open_orders.join(",")
-        )
+    /// Body of `GET /api/v3/account`: Binance returns no open orders there.
+    fn account_json(balances: &str) -> String {
+        format!(r#"{{"balances":[{balances}],"canTrade":true}}"#)
+    }
+
+    /// Body of `GET /api/v3/openOrders`: a bare JSON array.
+    fn open_orders_json(open_orders: &[String]) -> String {
+        format!("[{}]", open_orders.join(","))
     }
 
     fn cache(broker: &BinanceBroker, id: u64, status: OrderState) {
@@ -995,7 +1005,7 @@ mod tests {
 
     #[test]
     fn positions_sum_free_and_locked_and_skip_empty_balances() {
-        let (url, _) = serve(vec![account_json(BALANCES, &[])]);
+        let (url, _) = serve(vec![account_json(BALANCES)]);
         let broker = connected_to(&url);
 
         let positions = broker.positions().unwrap();
@@ -1015,7 +1025,7 @@ mod tests {
 
     #[test]
     fn account_equity_is_the_quote_asset_balance_in_cents() {
-        let (url, _) = serve(vec![account_json(BALANCES, &[])]);
+        let (url, _) = serve(vec![account_json(BALANCES)]);
         let broker = connected_to(&url);
 
         let account = broker.account().unwrap();
@@ -1031,16 +1041,23 @@ mod tests {
 
     #[test]
     fn reconcile_state_reports_nothing_when_cache_and_broker_agree() {
-        let (url, _) = serve(vec![account_json(
-            "",
-            &[open_order_json(1, "NEW"), open_order_json(2, "FILLED")],
-        )]);
+        let (url, seen) = serve(vec![open_orders_json(&[
+            open_order_json(1, "NEW"),
+            open_order_json(2, "FILLED"),
+        ])]);
         let mut broker = connected_to(&url);
         cache(&broker, 1, OrderState::Submitted);
         cache(&broker, 2, OrderState::Filled);
 
         let report = broker.reconcile_state().unwrap();
 
+        // Binance lists open orders at /openOrders, not in the /account reply.
+        let requests = seen.lock().unwrap();
+        assert!(
+            requests[0].starts_with("GET /api/v3/openOrders?"),
+            "got {}",
+            requests[0]
+        );
         assert!(
             report.discrepancies.is_empty(),
             "{:?}",
@@ -1052,10 +1069,10 @@ mod tests {
 
     #[test]
     fn reconcile_state_reports_a_broker_order_missing_from_the_cache_as_orphan() {
-        let (url, _) = serve(vec![account_json(
-            "",
-            &[open_order_json(1, "NEW"), open_order_json(9, "NEW")],
-        )]);
+        let (url, _) = serve(vec![open_orders_json(&[
+            open_order_json(1, "NEW"),
+            open_order_json(9, "NEW"),
+        ])]);
         let mut broker = connected_to(&url);
         cache(&broker, 1, OrderState::Submitted);
         cache(&broker, 2, OrderState::Filled);
@@ -1074,7 +1091,7 @@ mod tests {
 
     #[test]
     fn reconcile_state_reports_a_submitted_cached_order_absent_from_the_broker_as_missing() {
-        let (url, _) = serve(vec![account_json("", &[open_order_json(1, "NEW")])]);
+        let (url, _) = serve(vec![open_orders_json(&[open_order_json(1, "NEW")])]);
         let mut broker = connected_to(&url);
         cache(&broker, 1, OrderState::Submitted);
         cache(&broker, 2, OrderState::Filled);
@@ -1107,7 +1124,7 @@ mod tests {
             .zip(11u64..)
             .map(|(status, id)| open_order_json(id, status))
             .collect();
-        let (url, _) = serve(vec![account_json("", &open)]);
+        let (url, _) = serve(vec![open_orders_json(&open)]);
         let mut broker = connected_to(&url);
         for id in 11..=15 {
             cache(&broker, id, OrderState::Submitted);
@@ -1132,6 +1149,80 @@ mod tests {
         .collect();
         assert_eq!(report.discrepancies, expected);
         assert!(report.has_critical_issues);
+    }
+
+    // ---- open orders ---------------------------------------------------
+
+    #[test]
+    fn open_orders_reads_the_open_orders_endpoint() {
+        let partial = r#"{"symbol":"BTCUSDT","orderId":8,"status":"PARTIALLY_FILLED","side":"SELL","origQty":"5","executedQty":"2"}"#;
+        let (url, seen) = serve(vec![open_orders_json(&[
+            open_order_json(7, "NEW"),
+            partial.to_string(),
+        ])]);
+        let broker = connected_to(&url);
+
+        let orders = broker.open_orders().unwrap();
+
+        let rows: Vec<(u64, OrderState, u64, u64)> = orders
+            .iter()
+            .map(|o| (o.id.0, o.status, o.filled_quantity, o.remaining_quantity))
+            .collect();
+        assert_eq!(
+            rows,
+            vec![
+                (7, OrderState::Submitted, 0, 1),
+                (8, OrderState::PartiallyFilled, 2, 3),
+            ]
+        );
+        let requests = seen.lock().unwrap();
+        assert!(
+            requests[0].starts_with("GET /api/v3/openOrders?"),
+            "got {}",
+            requests[0]
+        );
+        assert!(requests[0].contains("signature="), "got {}", requests[0]);
+    }
+
+    #[test]
+    fn open_orders_is_empty_when_binance_lists_none() {
+        let (url, _) = serve(vec![open_orders_json(&[])]);
+        let broker = connected_to(&url);
+
+        assert!(broker.open_orders().unwrap().is_empty());
+    }
+
+    #[test]
+    fn poll_open_orders_refreshes_the_cache_from_the_open_orders_endpoint() {
+        let (url, seen) = serve(vec![open_orders_json(&[open_order_json(21, "NEW")])]);
+        let broker = connected_to(&url);
+        cache(&broker, 5, OrderState::Submitted);
+
+        broker.poll_open_orders().unwrap();
+
+        let cached = broker.get_cached_order(OrderId(21)).unwrap();
+        assert_eq!(cached.status, OrderState::Submitted);
+        assert_eq!(cached.quantity, 1);
+        // The snapshot replaces the cache: order 5 is not open at Binance.
+        assert!(broker.get_cached_order(OrderId(5)).is_none());
+        assert!(
+            seen.lock().unwrap()[0].starts_with("GET /api/v3/openOrders?"),
+            "got {}",
+            seen.lock().unwrap()[0]
+        );
+    }
+
+    #[test]
+    fn poll_account_info_refreshes_positions_and_leaves_the_order_cache() {
+        // /account lists no open orders, so it must not empty the order cache.
+        let (url, _) = serve(vec![account_json(BALANCES)]);
+        let broker = connected_to(&url);
+        cache(&broker, 5, OrderState::Submitted);
+
+        broker.poll_account_info().unwrap();
+
+        assert_eq!(broker.cached_positions().len(), 2);
+        assert!(broker.get_cached_order(OrderId(5)).is_some());
     }
 
     // ---- submit_order_with_sequence ------------------------------------

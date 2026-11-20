@@ -43,6 +43,8 @@ pub struct AccountInfo {
     pub balances: Vec<BalanceInfo>,
     #[serde(default)]
     pub positions: Vec<PositionInfo>,
+    /// Not returned by `GET /api/v3/account`; the field stays empty on the real
+    /// service. Open orders come from `BinanceClient::open_orders`.
     #[serde(default)]
     pub open_orders: Vec<OrderInfo>,
     #[serde(default)]

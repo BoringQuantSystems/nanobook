@@ -51,9 +51,9 @@ mod binance_rest_fallback_tests {
         let broker = BinanceBroker::new("api-key", "secret-key", true)
             .with_connection_mode(ConnectionMode::Rest);
 
-        broker
-            .update_state_from_account_info(&account_info_fixture())
-            .unwrap();
+        let info = account_info_fixture();
+        broker.update_state_from_account_info(&info).unwrap();
+        broker.update_order_cache_from_open_orders(&info.open_orders);
 
         let positions = broker.cached_positions();
         assert_eq!(positions.len(), 2);
@@ -170,7 +170,7 @@ mod binance_rest_fallback_tests {
         };
         let broker = BinanceBroker::new("api-key", "secret-key", true);
 
-        broker.update_state_from_account_info(&info).unwrap();
+        broker.update_order_cache_from_open_orders(&info.open_orders);
 
         let expected = [
             (1, "BTC", BrokerSide::Sell, OrderState::Submitted, 3),

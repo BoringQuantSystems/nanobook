@@ -6,7 +6,7 @@ use log::debug;
 use reqwest::blocking::Client;
 
 use super::auth;
-use super::types::{AccountInfo, BookTicker, OrderResponse};
+use super::types::{AccountInfo, BookTicker, OrderInfo, OrderResponse};
 use crate::error::BrokerError;
 
 /// Validate that a parameter value is safe for URL query strings.
@@ -130,6 +130,30 @@ impl BinanceClient {
         let resp = check_response(resp, "account", BrokerError::Connection)?;
         resp.json::<AccountInfo>()
             .map_err(|e| BrokerError::Connection(format!("failed to parse account: {e}")))
+    }
+
+    /// Get every open order of the account (GET /api/v3/openOrders).
+    ///
+    /// `GET /api/v3/account` does not list open orders; this endpoint does.
+    pub fn open_orders(&self) -> Result<Vec<OrderInfo>, BrokerError> {
+        let timestamp = current_timestamp_ms()?;
+        let query = format!("timestamp={timestamp}");
+        let signature = auth::sign(&query, &self.secret_key)?;
+        let url = format!(
+            "{}/api/v3/openOrders?{query}&signature={signature}",
+            self.base_url
+        );
+
+        let resp = self
+            .client
+            .get(&url)
+            .header("X-MBX-APIKEY", &self.api_key)
+            .send()
+            .map_err(|e| BrokerError::Connection(format!("open orders request failed: {e}")))?;
+
+        let resp = check_response(resp, "open orders", BrokerError::Connection)?;
+        resp.json::<Vec<OrderInfo>>()
+            .map_err(|e| BrokerError::Connection(format!("failed to parse open orders: {e}")))
     }
 
     /// Submit a new order (POST /api/v3/order).

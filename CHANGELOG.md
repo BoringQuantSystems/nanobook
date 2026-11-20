@@ -74,6 +74,16 @@ tests, fuzzing or mutation testing.
   `baseline_position` is the signed shares held in the symbol before the order was
   submitted (0 if none). *Check your code if* you call this function: pass the
   position you read before submitting the order, or 0 when you held none.
+- **nanobook-broker: Binance open orders come from `GET /api/v3/openOrders`.**
+  `BinanceClient::open_orders` is new. `BinanceBroker::open_orders` now returns the
+  open orders (it returned an empty list); `poll_open_orders` and `reconcile_state`
+  read the new endpoint; `poll_account_info` and `update_state_from_account_info`
+  refresh positions only and no longer touch the order cache. New
+  `BinanceBroker::update_order_cache_from_open_orders` fills the cache from a list of
+  `OrderInfo`. `AccountInfo::open_orders` stays but is always empty on the real
+  service. *Check your code if* you read the order cache after `poll_account_info`, or
+  fed `update_state_from_account_info` an `AccountInfo` with `open_orders`: call
+  `poll_open_orders` or `update_order_cache_from_open_orders` for the orders.
 - **Level and book totals are exact.** `total_quantity`, `quantity_at_or_better`
   and snapshot totals cap at `u64::MAX` instead of wrapping or panicking, and
   `BookSnapshot::imbalance` uses exact side sums.
@@ -105,6 +115,13 @@ tests, fuzzing or mutation testing.
   by the size of that position. It now compares the position on the order's side;
   a position on the other side is not counted as a fill. Found while writing tests
   for mutation survivors.
+- **nanobook-broker: Binance open orders were always empty on the real service.**
+  Open-order polling and `reconcile_state` read `openOrders` from `/api/v3/account`,
+  which Binance does not return there, so both saw no open orders; every cached order
+  then read as missing, and each account poll emptied the order cache.
+  `BinanceBroker::open_orders` was a placeholder that returned an empty list. All three
+  now use a signed `GET /api/v3/openOrders` (see Changed). Found by the bot review of
+  PR 86.
 - **nanobook-broker: IBKR reconciliation after a disconnect counted shares held before
   the order as filled.** `reconcile_partial_fill` compared the net position with the
   filled quantity, so 75 shares held before a buy order read as 75 shares filled. It
@@ -151,8 +168,7 @@ tests, fuzzing or mutation testing.
 - **nanobook-rebalancer: `constraints.min_trade_usd` in target.json does not change the run minimum.** The run still reads `config.risk.min_trade_usd`.
 - **nanobook-rebalancer: `TargetSpec::window_id` hashes with `DefaultHasher`.** The id can change after a Rust upgrade, so a cron window can fire twice.
 - **nanobook-rebalancer: without `write_ahead_logging`, the runner does not write `order_submitted`.** Graceful kill then cannot report a dangling order.
-- **nanobook-broker: two Binance `Broker` methods are placeholders.** `open_orders` always returns an empty list, and `cancel_order` by order id is refused: the adapter has an order cache with the symbol of each order, but `cancel_order` does not use it yet.
-- **nanobook-broker: Binance open-order polling and `reconcile_state` read `openOrders` from `/api/v3/account`.** Binance does not return that field there (open orders come from `/api/v3/openOrders`), so both see an empty list on the real service. The tests feed the field by hand.
+- **nanobook-broker: the Binance `Broker::cancel_order` by order id is a placeholder.** It is refused: the adapter has an order cache with the symbol of each order, but `cancel_order` does not use it yet.
 - **nanobook-broker: an IBKR connection notice (1100 to 1102) does not reach `execute_limit_order` as such.** ibapi 2.12 delivers it with request id -1 to the global order-update stream, so a lost connection is reported when the order's stream ends, not when the notice arrives.
 - **nanobook-rebalancer: recovery matches open orders by quantity only.** `BrokerOrderStatus` has no symbol or client order id, so one open order of the right size marks an incomplete intent as submitted whatever its symbol.
 - **nanobook-risk: an empty side prints `-0.0%`.** The "Weight allocation" detail shows `-0.0% long` (or short) when no target is on that side, because an empty `f64` sum is `-0.0` since Rust 1.83. The numbers are zero; only the sign in the text is wrong.
