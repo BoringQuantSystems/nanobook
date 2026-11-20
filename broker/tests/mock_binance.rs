@@ -389,6 +389,7 @@ impl Broker for MockBroker {
 
         // Extract sequence number from client_order_id if it follows the pattern
         // Format: "nanobook-{short_uuid}-{sequence}"
+        #[cfg(feature = "binance")]
         let sequence_number = client_order_id
             .and_then(|cid| cid.rsplit('-').next().and_then(|s| s.parse::<u64>().ok()));
 

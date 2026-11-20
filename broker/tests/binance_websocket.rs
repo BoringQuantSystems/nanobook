@@ -1,3 +1,5 @@
+#![cfg(feature = "binance")]
+
 #[path = "../src/binance/websocket.rs"]
 #[allow(dead_code)]
 mod websocket;
