@@ -47,6 +47,13 @@ pub struct ExecutionReport {
     pub raw: Value,
 }
 
+/// Delay before reconnect attempt `attempt` (1-based): 1 s, 2 s, 4 s, 8 s, then 16 s.
+///
+/// The exponent is clamped before `pow`, so any `max_reconnect_attempts` is safe.
+fn backoff_delay(attempt: u32) -> Duration {
+    Duration::from_secs(2u64.pow(attempt.saturating_sub(1).min(4)))
+}
+
 /// Binance WebSocket client.
 pub struct BinanceWebSocket {
     api_key: String,
@@ -196,12 +203,8 @@ impl BinanceWebSocket {
             self.reconnect_attempts += 1;
             self.state = ConnectionState::Reconnecting;
 
-            // Calculate backoff delay: 2^(attempt-1) seconds, capped at 16s
-            let backoff_secs = 2u64.pow(self.reconnect_attempts.saturating_sub(1)).min(16);
-            let backoff = Duration::from_secs(backoff_secs);
-
             // Wait for backoff
-            sleep(backoff).await;
+            sleep(backoff_delay(self.reconnect_attempts)).await;
 
             // Attempt to reconnect
             if let Ok(()) = self.connect().await {
@@ -431,6 +434,15 @@ mod tests {
 
         ws.events.push(execution_report_event());
         assert_eq!(ws.events(), &[execution_report_event()]);
+    }
+
+    #[test]
+    fn backoff_doubles_to_16_seconds_and_stays_there() {
+        let secs: Vec<u64> = [0, 1, 2, 3, 4, 5, 6, 65, u32::MAX]
+            .iter()
+            .map(|&attempt| backoff_delay(attempt).as_secs())
+            .collect();
+        assert_eq!(secs, vec![1, 1, 2, 4, 8, 16, 16, 16, 16]);
     }
 
     #[test]
