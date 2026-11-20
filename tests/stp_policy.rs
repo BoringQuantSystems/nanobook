@@ -253,3 +253,29 @@ fn cancel_newest_after_partial_fill_against_other_owner() {
     // ALICE's resting sell untouched (still 100 on ask side).
     assert_eq!(exchange.book().asks().total_quantity(), 100);
 }
+
+// ============================================================================
+// The stored record of an STP-cancelled incoming order holds nothing
+// (law 11: cancelled means nothing remains).
+// ============================================================================
+
+#[test]
+fn stp_cancelled_incoming_record_has_nothing_remaining() {
+    // CancelNewest, and DecrementAndCancel with the incoming order smaller:
+    // both cancel the incoming remainder through the same decrement.
+    for (policy, resting_qty, incoming_qty) in [
+        (StpPolicy::CancelNewest, 100, 100),
+        (StpPolicy::DecrementAndCancel, 100, 40),
+    ] {
+        let (exchange, result) = run(policy, Some(ALICE), Some(ALICE), resting_qty, incoming_qty);
+        let order = exchange.get_order(result.order_id).unwrap();
+        assert_eq!(order.remaining_quantity, 0, "policy {:?}", policy);
+        assert_eq!(order.filled_quantity, 0, "policy {:?}", policy);
+        assert_eq!(order.status, OrderStatus::Cancelled, "policy {:?}", policy);
+        assert_eq!(
+            result.cancelled_quantity, incoming_qty,
+            "policy {:?}",
+            policy
+        );
+    }
+}
