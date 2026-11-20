@@ -78,7 +78,7 @@ use ibapi::contracts::Contract;
 #[cfg(not(feature = "strict-market-reject"))]
 use ibapi::orders::order_builder::market_order;
 use ibapi::orders::order_builder::{limit_order, stop, stop_limit};
-use ibapi::orders::{Action as IbAction, CancelOrder, Order, OrderData, PlaceOrder};
+use ibapi::orders::{Action as IbAction, CancelOrder, Order, OrderData, OrderUpdate, PlaceOrder};
 use log::{debug, info, warn};
 
 use crate::error::BrokerError;
@@ -95,10 +95,64 @@ fn is_connection_lost(code: i32) -> bool {
 /// connection codes 1100 to 1102.
 ///
 /// ibapi 2.12 sends an error with request id -1 to the global order-update
-/// stream only. This loop reads the per-order subscription. A normal 1100
-/// to 1102 notice does not reach `is_connection_lost`.
+/// stream only, not to the order's own subscription. `OrderEvents` reads
+/// that stream and hands such a notice to this loop.
 fn is_order_notice(code: i32) -> bool {
     !(0..2000).contains(&code) || is_connection_lost(code)
+}
+
+/// How long `OrderEvents` waits on the order's own stream before it looks at
+/// the global order-update stream again.
+const GLOBAL_STREAM_POLL: Duration = Duration::from_millis(500);
+
+/// One look at the order's own stream. Short-lived, so the size of `PlaceOrder`
+/// does not matter.
+#[allow(clippy::large_enum_variant)]
+enum OrderPoll {
+    Event(PlaceOrder),
+    /// Nothing arrived within the poll interval.
+    Idle,
+    /// The stream is over: closed, reset or shut down.
+    Ended,
+}
+
+/// The events of one order, plus connection notices (codes 1100 to 1102)
+/// read from the global order-update stream and passed on as
+/// `PlaceOrder::Message`, so `run_place_order_events` ends the wait with
+/// `ConnectionLost` when TWS reports the loss.
+///
+/// `next_order` looks at the order's own stream for at most
+/// `GLOBAL_STREAM_POLL`. `next_global_notice` returns the next notice from the
+/// global stream without waiting. The order's events come first, so a fill
+/// that arrived before the notice is counted.
+struct OrderEvents<O, G> {
+    next_order: O,
+    next_global_notice: G,
+}
+
+impl<O, G> Iterator for OrderEvents<O, G>
+where
+    O: FnMut() -> OrderPoll,
+    G: FnMut() -> Option<ibapi::messages::Notice>,
+{
+    type Item = PlaceOrder;
+
+    fn next(&mut self) -> Option<PlaceOrder> {
+        loop {
+            let poll = (self.next_order)();
+            if let OrderPoll::Event(event) = poll {
+                return Some(event);
+            }
+            while let Some(notice) = (self.next_global_notice)() {
+                if is_connection_lost(notice.code) {
+                    return Some(PlaceOrder::Message(notice));
+                }
+            }
+            if matches!(poll, OrderPoll::Ended) {
+                return None;
+            }
+        }
+    }
 }
 
 pub fn map_ibkr_order_status(status: &str) -> OrderState {
@@ -411,9 +465,39 @@ pub fn execute_limit_order(
         side, shares, symbol, limit_price, order_id
     );
 
+    // TWS reports a lost connection (1100 to 1102) on the global order-update
+    // stream only. Only one such stream exists at a time and it is released
+    // when dropped. If it is taken, the order still runs and a lost connection
+    // shows only as the end of the order's own stream.
+    let global_stream = match client.order_update_stream() {
+        Ok(stream) => Some(stream),
+        Err(e) => {
+            warn!(
+                "Order-update stream unavailable ({e}): a connection notice for order {order_id} will not be seen"
+            );
+            None
+        }
+    };
+
     let subscription = client
         .place_order(order_id, &contract, &ib_order)
         .map_err(|e| BrokerError::Order(format!("failed to place order {order_id}: {e}")))?;
+
+    let events = OrderEvents {
+        next_order: || match subscription.next_timeout(GLOBAL_STREAM_POLL) {
+            Some(event) => OrderPoll::Event(event),
+            None if subscription.error().is_some() || !client.is_connected() => OrderPoll::Ended,
+            None => OrderPoll::Idle,
+        },
+        next_global_notice: || {
+            let stream = global_stream.as_ref()?;
+            loop {
+                if let OrderUpdate::Message(notice) = stream.try_next()? {
+                    return Some(notice);
+                }
+            }
+        },
+    };
 
     let start = Instant::now();
     let PlaceOrderOutcome {
@@ -422,7 +506,7 @@ pub fn execute_limit_order(
         avg_price,
         commission,
     } = run_place_order_events(
-        subscription,
+        events,
         order_id,
         timeout,
         || start.elapsed(),
@@ -1879,6 +1963,117 @@ mod tests {
                 filled_quantity: 0
             })
         ));
+    }
+
+    // ---- OrderEvents: notices from the global order-update stream ------
+
+    /// Run the order loop over `OrderEvents`. `polls` are the successive looks
+    /// at the order's own stream (the stream ends when they run out) and
+    /// `global` the successive reads of the global stream (empty when they
+    /// run out).
+    fn run_merged(
+        polls: Vec<OrderPoll>,
+        global: Vec<Option<ibapi::messages::Notice>>,
+    ) -> Result<(OrderOutcome, f64), BrokerError> {
+        let mut polls = std::collections::VecDeque::from(polls);
+        let mut global = std::collections::VecDeque::from(global);
+        let events = OrderEvents {
+            next_order: || polls.pop_front().unwrap_or(OrderPoll::Ended),
+            next_global_notice: || global.pop_front().flatten(),
+        };
+        run_place_order_events(
+            events,
+            ORDER_ID,
+            TIMEOUT,
+            || Duration::ZERO,
+            cancel_ok,
+            None,
+        )
+        .map(|o| (o.status, o.filled))
+    }
+
+    fn event(status: &str, filled: f64, remaining: f64, avg: f64) -> OrderPoll {
+        OrderPoll::Event(st(status, filled, remaining, avg))
+    }
+
+    #[test]
+    fn global_connection_notice_ends_the_wait_while_the_order_stream_is_quiet() {
+        // The order's own stream stays open and silent; the loss is reported
+        // only on the global stream. Without reading it the wait ends with
+        // `Ok(Failed)` when the stream finally ends.
+        for code in [1100, 1101, 1102] {
+            let result = run_merged(
+                vec![OrderPoll::Idle, OrderPoll::Idle, OrderPoll::Idle],
+                vec![None, Some(notice(code, "connectivity"))],
+            );
+
+            assert!(
+                matches!(
+                    result,
+                    Err(BrokerError::ConnectionLost {
+                        order_id: ORDER_ID,
+                        filled_quantity: 0
+                    })
+                ),
+                "code {code}: {result:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn fills_already_on_the_order_stream_count_before_a_global_notice() {
+        // The notice is ready from the start, but the 40-share fill came
+        // first on the order's stream.
+        let result = run_merged(
+            vec![
+                event("Submitted", 40.0, 60.0, 10.0),
+                OrderPoll::Idle,
+                OrderPoll::Idle,
+            ],
+            vec![Some(notice(1100, "connectivity"))],
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(BrokerError::ConnectionLost {
+                    order_id: ORDER_ID,
+                    filled_quantity: 40
+                })
+            ),
+            "{result:?}"
+        );
+    }
+
+    #[test]
+    fn global_notice_at_the_end_of_the_order_stream_is_still_read() {
+        let result = run_merged(
+            vec![OrderPoll::Ended],
+            vec![Some(notice(1100, "connectivity"))],
+        );
+
+        assert!(matches!(
+            result,
+            Err(BrokerError::ConnectionLost {
+                order_id: ORDER_ID,
+                filled_quantity: 0
+            })
+        ));
+    }
+
+    #[test]
+    fn other_global_notices_do_not_abort_the_order() {
+        let result = run_merged(
+            vec![OrderPoll::Idle, event("Filled", 100.0, 0.0, 185.5)],
+            vec![
+                Some(notice(2104, "market data farm connection is OK")),
+                Some(notice(201, "order rejected")),
+                Some(notice(1103, "other")),
+                None,
+            ],
+        );
+
+        assert_eq!(result.unwrap().0, OrderOutcome::Filled);
     }
 
     // ---- cancel_from_responses / cancel_request_error ------------------

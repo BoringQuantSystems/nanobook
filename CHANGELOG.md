@@ -94,6 +94,11 @@ tests, fuzzing or mutation testing.
   service. *Check your code if* you read the order cache after `poll_account_info`, or
   fed `update_state_from_account_info` an `AccountInfo` with `open_orders`: call
   `poll_open_orders` or `update_order_cache_from_open_orders` for the orders.
+- **nanobook-broker: `execute_limit_order` holds ibapi's order-update stream while an
+  order is in flight.** No signature changes. *Check your code if* you subscribe to
+  `order_update_stream` on the same ibapi client yourself: a subscription taken while
+  an order runs fails with `AlreadySubscribed`, and if you hold it when an order
+  starts, that order does not see 1100 to 1102 notices (see Fixed).
 - **Level and book totals are exact.** `total_quantity`, `quantity_at_or_better`
   and snapshot totals cap at `u64::MAX` instead of wrapping or panicking, and
   `BookSnapshot::imbalance` uses exact side sums.
@@ -117,8 +122,13 @@ tests, fuzzing or mutation testing.
   The order loop dropped codes 1100 to 1102 before its check, so `execute_limit_order`
   did not return `ConnectionLost` with the partial fill when such a notice reached the
   order's own stream. It does now. ibapi 2.12 sends these notices with request id -1 to
-  its global order-update stream, not to the order's stream (see Known issues). Found
-  by mutation testing.
+  its global order-update stream, not to the order's stream, so `execute_limit_order`
+  now also reads that stream while the order is in flight (every half second) and
+  ends the wait with `ConnectionLost` and the partial fill when a 1100 to 1102 notice
+  arrives. ibapi allows one such stream at a time: if another part of the program
+  holds it, the order still runs and a warning is logged, and a lost connection then
+  shows only when the order's own stream ends. Found by mutation testing and by the
+  bot review of PR 86.
 - **nanobook-broker: IBKR reconciliation after a disconnect ignored the order's side.**
   `reconcile_partial_fill` compared the absolute position size, so a buy order
   against a short position (or a sell against a long one) was reported as filled
@@ -184,7 +194,6 @@ tests, fuzzing or mutation testing.
 - **nanobook-rebalancer: `TargetSpec::window_id` hashes with `DefaultHasher`.** The id can change after a Rust upgrade, so a cron window can fire twice.
 - **nanobook-rebalancer: without `write_ahead_logging`, the runner does not write `order_submitted`.** Graceful kill then cannot report a dangling order.
 - **nanobook-broker: the Binance `Broker::cancel_order` by order id is a placeholder.** It is refused: the adapter has an order cache with the symbol of each order, but `cancel_order` does not use it yet.
-- **nanobook-broker: an IBKR connection notice (1100 to 1102) does not reach `execute_limit_order` as such.** ibapi 2.12 delivers it with request id -1 to the global order-update stream, so a lost connection is reported when the order's stream ends, not when the notice arrives.
 - **nanobook-risk: an empty side prints `-0.0%`.** The "Weight allocation" detail shows `-0.0% long` (or short) when no target is on that side, because an empty `f64` sum is `-0.0` since Rust 1.83. The numbers are zero; only the sign in the text is wrong.
 
 ### Security
