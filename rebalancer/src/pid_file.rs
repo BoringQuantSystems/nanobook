@@ -109,25 +109,30 @@ impl PidFileGuard {
             .write(true)
             .open(lock_path(&path))
             .map_err(Error::Audit)?;
-        match lock.try_lock_exclusive() {
-            Ok(()) => {}
-            // Unix reports a held lock as WouldBlock; Windows as ERROR_LOCK_VIOLATION (33).
-            Err(error)
-                if error.kind() == std::io::ErrorKind::WouldBlock
-                    || error.raw_os_error() == fs2::lock_contended_error().raw_os_error() =>
-            {
-                return Err(Error::Aborted(format!(
-                    "PID file {} is in use by another rebalancer",
-                    path.display()
-                )));
-            }
-            Err(error) => return Err(Error::Audit(error)),
+        if let Err(error) = lock.try_lock_exclusive() {
+            return Err(lock_error(error, &path));
         }
         write_pid_file(&path)?;
         Ok(Self {
             path,
             lock: Some(lock),
         })
+    }
+}
+
+/// The error `PidFileGuard::create` returns when locking `<path>.lock` fails:
+/// a held lock is `Aborted`, any other failure is `Audit`.
+fn lock_error(error: std::io::Error, path: &Path) -> Error {
+    // Unix reports a held lock as WouldBlock; Windows as ERROR_LOCK_VIOLATION (33).
+    if error.kind() == std::io::ErrorKind::WouldBlock
+        || error.raw_os_error() == fs2::lock_contended_error().raw_os_error()
+    {
+        Error::Aborted(format!(
+            "PID file {} is in use by another rebalancer",
+            path.display()
+        ))
+    } else {
+        Error::Audit(error)
     }
 }
 
