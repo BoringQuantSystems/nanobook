@@ -238,11 +238,19 @@ pub fn validate_disk_space(config: &Config) -> Vec<ValidationIssue> {
     let audit_path = config.audit_path();
     let dir = audit_path.parent().unwrap_or_else(|| Path::new("."));
     // Windows answers for the volume even when the directory is missing, so check it first.
-    if !dir.is_dir() {
+    let problem = match std::fs::metadata(dir) {
+        Ok(metadata) if metadata.is_dir() => None,
+        Ok(_) => Some("path is not a directory".to_string()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Some("directory does not exist".to_string())
+        }
+        Err(error) => Some(format!("directory cannot be read: {error}")),
+    };
+    if let Some(problem) = problem {
         return vec![ValidationIssue::new(
             "logging.dir",
             format!(
-                "cannot determine available space for {}: directory does not exist",
+                "cannot determine available space for {}: {problem}",
                 dir.display()
             ),
             "verify the logging directory exists and the filesystem is accessible",
@@ -550,6 +558,25 @@ mod tests {
             issues[0]
                 .message
                 .starts_with("cannot determine available space for")
+        );
+    }
+
+    #[test]
+    fn disk_space_names_the_cause_of_a_bad_log_directory() {
+        let missing = valid_config(Path::new("/nonexistent-nanobook-test-dir/logs"));
+        let issues = validate_disk_space(&missing);
+        assert!(issues[0].message.ends_with("directory does not exist"));
+
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("not-a-dir");
+        std::fs::write(&file, b"x").unwrap();
+        let issues = validate_disk_space(&valid_config(&file));
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].field, "logging.dir");
+        assert!(
+            issues[0].message.ends_with("path is not a directory"),
+            "{}",
+            issues[0].message
         );
     }
 
