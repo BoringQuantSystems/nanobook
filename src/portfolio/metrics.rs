@@ -942,9 +942,9 @@ mod tests {
     /// A2-G2: Sortino with non-zero risk-free rate, no downside, ddof guard.
     #[test]
     fn sortino_risk_free_and_guards() {
-        // (a) excess mean 0.0066 - 0.002; downside from r - rf < 0. Reference computed
-        // in Python from the definition; 1e-9 covers sqrt/division rounding. Flipping
-        // the sign of rf in either place gives 11.33 or 7.21.
+        // (a) mean return 0.006, excess mean 0.006 - 0.002; downside from r - rf < 0.
+        // Reference computed in Python from the definition; 1e-9 covers sqrt/division
+        // rounding. Flipping the sign of rf in either place gives 11.33 or 7.21.
         let r = [0.02, -0.01, 0.03, -0.02, 0.01];
         assert_close(
             sortino(&r, 0.002, 252.0, 0),
