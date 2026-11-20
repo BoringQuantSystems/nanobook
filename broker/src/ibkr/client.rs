@@ -347,10 +347,17 @@ impl IbkrClient {
             .map_err(|e| BrokerError::Connection(format!("failed to request open orders: {e}")))?;
 
         let mut statuses = HashMap::new();
+        // Only OrderData carries the symbol. An OrderStatus for the same order
+        // can come before or after it and replaces the row, so the symbols are
+        // kept apart and put back at the end.
+        let mut symbols = HashMap::new();
         for update in subscription {
             match update {
                 Orders::OrderData(order_data) => {
                     let status = broker_order_status_from_order_data(&order_data)?;
+                    if let Some(symbol) = status.symbol {
+                        symbols.insert(status.id.0, symbol);
+                    }
                     statuses.insert(status.id.0, status);
                 }
                 Orders::OrderStatus(order_status) => {
@@ -373,7 +380,13 @@ impl IbkrClient {
             }
         }
 
-        Ok(statuses.into_values().collect())
+        Ok(statuses
+            .into_values()
+            .map(|mut status| {
+                status.symbol = symbols.get(&status.id.0).copied();
+                status
+            })
+            .collect())
     }
 
     /// Fetch account summary (equity, cash, buying power).

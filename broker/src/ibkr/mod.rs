@@ -277,6 +277,7 @@ impl Broker for IbkrBroker {
         // storing active order subscriptions.
         Ok(BrokerOrderStatus {
             id,
+            symbol: None,
             status: OrderState::Submitted,
             filled_quantity: 0,
             remaining_quantity: 0,
@@ -336,6 +337,7 @@ mod tests {
     fn open(id: u64, status: OrderState) -> BrokerOrderStatus {
         BrokerOrderStatus {
             id: OrderId(id),
+            symbol: None,
             status,
             filled_quantity: 0,
             remaining_quantity: 0,

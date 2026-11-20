@@ -644,6 +644,7 @@ fn test_broker_reconciliation_finds_order() {
     broker.connect().unwrap();
     broker.set_open_order_statuses(vec![nanobook_broker::types::BrokerOrderStatus {
         id: nanobook_broker::types::OrderId(1),
+        symbol: Some(Symbol::new("AAPL")),
         status: nanobook_broker::types::OrderState::Submitted,
         filled_quantity: 0,
         remaining_quantity: 50,

@@ -230,6 +230,7 @@ fn test_crash_after_broker_call_before_order_submitted_logging() {
     broker.connect().unwrap();
     broker.set_open_order_statuses(vec![nanobook_broker::types::BrokerOrderStatus {
         id: nanobook_broker::types::OrderId(1),
+        symbol: Some(Symbol::new("AAPL")),
         status: nanobook_broker::types::OrderState::Submitted,
         filled_quantity: 0,
         remaining_quantity: 50,

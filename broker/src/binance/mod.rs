@@ -252,6 +252,12 @@ impl BinanceBroker {
         format!("{}{}", symbol.as_str(), self.quote_asset)
     }
 
+    /// Base asset of a Binance trading pair ("BTCUSDT" gives "BTC"), or `None`
+    /// when `Symbol` cannot hold it.
+    fn base_symbol_of(&self, pair: &str) -> Option<Symbol> {
+        Symbol::try_new(pair.strip_suffix(&self.quote_asset).unwrap_or(pair))
+    }
+
     fn require_client(&self) -> Result<&BinanceClient, BrokerError> {
         self.client.as_ref().ok_or(BrokerError::NotConnected)
     }
@@ -422,11 +428,7 @@ impl BinanceBroker {
 
         cache.orders.clear();
         for order in open_orders {
-            let base_symbol = order
-                .symbol
-                .strip_suffix(&self.quote_asset)
-                .unwrap_or(&order.symbol);
-            let Some(symbol) = Symbol::try_new(base_symbol) else {
+            let Some(symbol) = self.base_symbol_of(&order.symbol) else {
                 continue;
             };
             let side = match order.side.as_str() {
@@ -808,6 +810,7 @@ impl Broker for BinanceBroker {
         // Full implementation would need a local order cache.
         Ok(BrokerOrderStatus {
             id,
+            symbol: None,
             status: OrderState::Submitted,
             filled_quantity: 0,
             remaining_quantity: 0,
@@ -826,6 +829,7 @@ impl Broker for BinanceBroker {
                     parse_f64_or_warn(&order.executed_qty, "binance order.executedQty") as u64;
                 BrokerOrderStatus {
                     id: OrderId(order.order_id),
+                    symbol: self.base_symbol_of(&order.symbol),
                     status: order_state_from_binance(&order.status),
                     filled_quantity: executed,
                     remaining_quantity: orig.saturating_sub(executed),
@@ -1164,15 +1168,24 @@ mod tests {
 
         let orders = broker.open_orders().unwrap();
 
-        let rows: Vec<(u64, OrderState, u64, u64)> = orders
+        let rows: Vec<(u64, Option<Symbol>, OrderState, u64, u64)> = orders
             .iter()
-            .map(|o| (o.id.0, o.status, o.filled_quantity, o.remaining_quantity))
+            .map(|o| {
+                (
+                    o.id.0,
+                    o.symbol,
+                    o.status,
+                    o.filled_quantity,
+                    o.remaining_quantity,
+                )
+            })
             .collect();
+        let btc = Some(Symbol::new("BTC"));
         assert_eq!(
             rows,
             vec![
-                (7, OrderState::Submitted, 0, 1),
-                (8, OrderState::PartiallyFilled, 2, 3),
+                (7, btc, OrderState::Submitted, 0, 1),
+                (8, btc, OrderState::PartiallyFilled, 2, 3),
             ]
         );
         let requests = seen.lock().unwrap();

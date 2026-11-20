@@ -117,7 +117,7 @@ pub struct MockBroker {
     cash_cents: i64,
     next_order_id: AtomicU64,
     submitted_orders: Mutex<Vec<RecordedOrder>>,
-    open_orders: Mutex<Vec<OrderId>>,
+    open_orders: Mutex<Vec<(OrderId, Symbol)>>,
     /// When set, `open_orders` returns these rows instead of `fill_mode`.
     open_order_statuses: Mutex<Option<Vec<BrokerOrderStatus>>>,
 }
@@ -224,7 +224,7 @@ impl Broker for MockBroker {
                 self.open_orders
                     .lock()
                     .expect("open_orders mutex poisoned")
-                    .push(id);
+                    .push((id, order.symbol));
                 Ok(id)
             }
         }
@@ -239,6 +239,7 @@ impl Broker for MockBroker {
 
         Ok(BrokerOrderStatus {
             id,
+            symbol: None,
             status,
             filled_quantity: filled,
             remaining_quantity: remaining,
@@ -266,8 +267,9 @@ impl Broker for MockBroker {
         Ok(open_ids
             .iter()
             .copied()
-            .map(|id| BrokerOrderStatus {
+            .map(|(id, symbol)| BrokerOrderStatus {
                 id,
+                symbol: Some(symbol),
                 status,
                 filled_quantity: filled,
                 remaining_quantity: remaining,
@@ -284,7 +286,7 @@ impl Broker for MockBroker {
         self.open_orders
             .lock()
             .expect("open_orders mutex poisoned")
-            .retain(|&oid| oid != id);
+            .retain(|&(oid, _)| oid != id);
         // Rows set by `set_open_order_statuses` are open orders too.
         if let Some(rows) = self
             .open_order_statuses
@@ -482,6 +484,7 @@ mod tests {
         let ids: Vec<OrderId> = open.iter().map(|o| o.id).collect();
         assert_eq!(ids, vec![OrderId(1), OrderId(2)]);
         for order in &open {
+            assert_eq!(order.symbol, Some(aapl()));
             assert_eq!(order.status, OrderState::Filled);
             assert_eq!(order.filled_quantity, 100);
             assert_eq!(order.remaining_quantity, 0);
@@ -512,6 +515,7 @@ mod tests {
         broker.connect().unwrap();
         let row = |id: u64| BrokerOrderStatus {
             id: OrderId(id),
+            symbol: None,
             status: OrderState::Submitted,
             filled_quantity: 0,
             remaining_quantity: 50,
@@ -534,6 +538,7 @@ mod tests {
         // 25 of 80 shares filled; FillMode alone would report 100/0 rows.
         broker.set_open_order_statuses(vec![BrokerOrderStatus {
             id: OrderId(7),
+            symbol: None,
             status: OrderState::PartiallyFilled,
             filled_quantity: 25,
             remaining_quantity: 55,

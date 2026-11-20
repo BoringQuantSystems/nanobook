@@ -193,7 +193,9 @@ pub fn compare_broker_state(
         if is_orphan {
             discrepancies.push(Discrepancy::OrphanOrder {
                 broker_order_id: broker_order.id.0,
-                symbol: "UNKNOWN".to_string(), // BrokerOrderStatus doesn't include symbol
+                symbol: broker_order
+                    .symbol
+                    .map_or_else(|| "UNKNOWN".to_string(), |s| s.as_str().to_string()),
                 status: format!("{:?}", broker_order.status),
             });
         }
@@ -310,10 +312,11 @@ fn audit_dollars_to_cents(limit_dollars: f64) -> i64 {
         .unwrap_or_else(|_| (limit_dollars * 100.0).round() as i64)
 }
 
-/// Find one open order whose filled and remaining shares sum to `quantity`.
+/// Find one open order of `symbol` whose filled and remaining shares sum to
+/// `quantity`.
 ///
-/// `BrokerOrderStatus` has no symbol. A filled order does not match.
-/// Two matches return an error. `symbol` is only a log field.
+/// An order with another symbol, or with no symbol, does not match. A filled
+/// order does not match. Two matches return an error.
 #[cfg(feature = "write_ahead_logging")]
 pub fn reconcile_order_intent(
     broker: &dyn Broker,
@@ -323,7 +326,8 @@ pub fn reconcile_order_intent(
     reconcile_order_intent_with(broker, symbol, quantity, &mut std::thread::sleep)
 }
 
-/// Find one open order whose filled and remaining shares sum to `quantity`.
+/// Find one open order of `symbol` whose filled and remaining shares sum to
+/// `quantity`.
 ///
 /// The open-order query retries five times. `sleep` receives each delay.
 #[cfg(feature = "write_ahead_logging")]
@@ -337,7 +341,7 @@ pub fn reconcile_order_intent_with(
     let orders = fetch_open_orders(broker, sleep)?;
     let mut matched = None;
     for order in &orders {
-        if !order_matches_original_quantity(order, expected) {
+        if !order_matches_intent(order, symbol, expected) {
             continue;
         }
         if matched.is_some() {
@@ -352,16 +356,18 @@ pub fn reconcile_order_intent_with(
             broker_order_id = order.id.0,
             filled = order.filled_quantity,
             remaining = order.remaining_quantity,
-            "matched open order by original quantity"
+            "matched open order by symbol and original quantity"
         );
     }
     Ok(matched)
 }
 
-/// An open order matches when its filled and remaining shares sum to `expected`.
+/// An open order matches an intent when it has the intent's symbol and its
+/// filled and remaining shares sum to `expected`.
 #[cfg(feature = "write_ahead_logging")]
-fn order_matches_original_quantity(order: &BrokerOrderStatus, expected: u64) -> bool {
-    order.remaining_quantity > 0
+fn order_matches_intent(order: &BrokerOrderStatus, symbol: &Symbol, expected: u64) -> bool {
+    order.symbol == Some(*symbol)
+        && order.remaining_quantity > 0
         && order.filled_quantity.checked_add(order.remaining_quantity) == Some(expected)
 }
 
@@ -401,8 +407,9 @@ fn fetch_open_orders(
 
 /// Read open orders once and match each incomplete intent.
 ///
-/// An order claimed by two intents matches none of them. No match appends
-/// `OrderFailed`. One unshared match appends `OrderSubmitted`.
+/// An intent matches an open order by symbol and quantity. No match appends
+/// `OrderFailed`. One match appends `OrderSubmitted`. Two matches fail the
+/// intent without an event.
 #[cfg(feature = "write_ahead_logging")]
 pub fn reconcile_incomplete_intents(
     broker: &dyn Broker,
@@ -451,7 +458,7 @@ pub fn reconcile_incomplete_intents(
             let expected = u64::try_from(order.shares).unwrap_or(0);
             open_orders
                 .iter()
-                .filter(|status| order_matches_original_quantity(status, expected))
+                .filter(|status| order_matches_intent(status, &order.symbol, expected))
                 .map(|status| status.id.0)
                 .collect()
         })
@@ -465,12 +472,9 @@ pub fn reconcile_incomplete_intents(
             order.client_order_id
         );
 
-        let unique = ids.len() == 1
-            && candidates
-                .iter()
-                .filter(|other| other.contains(&ids[0]))
-                .count()
-                == 1;
+        // An order has one symbol and there is one incomplete intent per symbol,
+        // so an order cannot match two intents.
+        let unique = ids.len() == 1;
         if ids.is_empty() {
             tracing::info!("Order not found at broker, appending OrderFailed event");
             let mut audit = AuditLog::open_in(audit_log_path, workdir)?;
@@ -1310,6 +1314,7 @@ mod tests {
         broker.connect().unwrap();
         broker.set_open_order_statuses(vec![BrokerOrderStatus {
             id: OrderId(1),
+            symbol: Some(Symbol::new("AAPL")),
             status: OrderState::Submitted,
             filled_quantity: 0,
             remaining_quantity: 50,
@@ -1334,6 +1339,7 @@ mod tests {
         // 50-share order, 25 filled, 25 still open.
         broker.set_open_order_statuses(vec![BrokerOrderStatus {
             id: OrderId(4),
+            symbol: Some(Symbol::new("AAPL")),
             status: OrderState::PartiallyFilled,
             filled_quantity: 25,
             remaining_quantity: 25,
@@ -1348,6 +1354,7 @@ mod tests {
         // 20 shares filled and 30 left is a 50-share order, not a 30-share order.
         broker.set_open_order_statuses(vec![BrokerOrderStatus {
             id: OrderId(8),
+            symbol: Some(Symbol::new("AAPL")),
             status: OrderState::PartiallyFilled,
             filled_quantity: 20,
             remaining_quantity: 30,
@@ -1365,6 +1372,47 @@ mod tests {
 
     #[cfg(feature = "write_ahead_logging")]
     #[test]
+    fn reconcile_order_intent_ignores_an_order_of_another_symbol() {
+        use nanobook_broker::Broker;
+        use nanobook_broker::mock::MockBroker;
+        use nanobook_broker::types::{BrokerOrderStatus, OrderId, OrderState};
+
+        let row = |id: u64, symbol: Option<&str>| BrokerOrderStatus {
+            id: OrderId(id),
+            symbol: symbol.map(Symbol::new),
+            status: OrderState::Submitted,
+            filled_quantity: 0,
+            remaining_quantity: 50,
+            avg_fill_price_cents: 0,
+        };
+        let mut broker = MockBroker::builder().build();
+        broker.connect().unwrap();
+
+        // An open MSFT order of 50 shares is not the AAPL intent of 50 shares.
+        // The old match by quantity alone returned Some(1).
+        broker.set_open_order_statuses(vec![row(1, Some("MSFT"))]);
+        assert_eq!(
+            reconcile_order_intent(&broker, &Symbol::new("AAPL"), 50).unwrap(),
+            None
+        );
+
+        // An order whose symbol the broker could not give never matches.
+        broker.set_open_order_statuses(vec![row(2, None)]);
+        assert_eq!(
+            reconcile_order_intent(&broker, &Symbol::new("AAPL"), 50).unwrap(),
+            None
+        );
+
+        // The AAPL order is picked out from among orders of the same size.
+        broker.set_open_order_statuses(vec![row(1, Some("MSFT")), row(3, Some("AAPL"))]);
+        assert_eq!(
+            reconcile_order_intent(&broker, &Symbol::new("AAPL"), 50).unwrap(),
+            Some(3)
+        );
+    }
+
+    #[cfg(feature = "write_ahead_logging")]
+    #[test]
     fn reconcile_order_intent_rejects_two_orders_of_the_same_quantity() {
         use nanobook_broker::Broker;
         use nanobook_broker::mock::MockBroker;
@@ -1375,6 +1423,7 @@ mod tests {
         broker.set_open_order_statuses(vec![
             BrokerOrderStatus {
                 id: OrderId(4),
+                symbol: Some(Symbol::new("AAPL")),
                 status: OrderState::Submitted,
                 filled_quantity: 0,
                 remaining_quantity: 50,
@@ -1382,6 +1431,7 @@ mod tests {
             },
             BrokerOrderStatus {
                 id: OrderId(5),
+                symbol: Some(Symbol::new("AAPL")),
                 status: OrderState::Submitted,
                 filled_quantity: 0,
                 remaining_quantity: 50,
@@ -1740,6 +1790,13 @@ mod tests {
         let report = compare_broker_state(&broker, &state).unwrap();
         assert!(report.has_critical_issues);
         assert!(!report.discrepancies.is_empty());
+        // The orphan is reported with the symbol the broker gave it.
+        assert!(
+            report
+                .discrepancies
+                .iter()
+                .any(|d| matches!(d, Discrepancy::OrphanOrder { symbol, .. } if symbol == "AAPL"))
+        );
     }
 
     #[test]
@@ -2043,6 +2100,7 @@ mod tests {
         broker.connect().unwrap();
         broker.set_open_order_statuses(vec![BrokerOrderStatus {
             id: OrderId(1),
+            symbol: Some(Symbol::new("AAPL")),
             status: OrderState::Submitted,
             filled_quantity: 0,
             remaining_quantity: 50,
@@ -2699,6 +2757,7 @@ mod tests {
         > {
             Ok(nanobook_broker::types::BrokerOrderStatus {
                 id,
+                symbol: None,
                 status: nanobook_broker::types::OrderState::Submitted,
                 filled_quantity: 0,
                 remaining_quantity: 1,

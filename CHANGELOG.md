@@ -68,6 +68,16 @@ tests, fuzzing or mutation testing.
   such orders can no longer be cancelled. `SubmitResult.status` is unchanged.
   *Check your code if* you read order status through `get_order` after an IOC
   submit. Covered by law 11.
+- **nanobook-broker: `BrokerOrderStatus` has a `symbol`.** The new field
+  `symbol: Option<Symbol>` is `Some` in `open_orders` for the IBKR adapter (from the
+  order's contract), the Binance adapter (the trading pair without the quote asset)
+  and `MockBroker` (the symbol of the submitted order). It is `None` in `order_status`
+  (a lookup by order id alone) and when `Symbol` cannot hold the name. IBKR and Binance
+  give no client order id for an open order, so recovery matches on symbol and
+  quantity. *Check your code if* you build `BrokerOrderStatus` with a struct literal
+  or implement `Broker`: set `symbol` (`None` if you do not know it). Code that feeds
+  recovery open orders through `MockBroker::set_open_order_statuses` must set the
+  symbol, or recovery finds no match.
 - **nanobook-broker: `ibkr::orders::reconcile_partial_fill` takes the position held
   before the order.** The signature is now `reconcile_partial_fill(order_id, symbol,
   pre_disconnect_filled, expected_total, baseline_position, current_positions, side)`;
@@ -149,6 +159,11 @@ tests, fuzzing or mutation testing.
 - **nanobook-rebalancer: two cron runs could both pass the completed-window check.** The PID-file lock is now taken before the check, so a second caller that finds the lock held gets "in use by another rebalancer" rather than an idempotency rejection. `--kill` also no longer reads an empty PID file while a run starts: the PID is written to a temporary file and renamed.
 - **nanobook-broker: a Binance websocket `set_max_reconnect_attempts` above 64 overflowed the backoff.** The delay stays 16 s from the fifth attempt on.
 - **nanobook-rebalancer: recovery matched the first open order with remaining quantity.** It now matches an open order whose filled plus remaining quantity equals the incomplete intent's quantity; an order that two intents match is given to neither.
+- **nanobook-rebalancer: recovery matched open orders by quantity only.** An open order
+  of the right size marked an incomplete intent as submitted whatever its symbol,
+  because `BrokerOrderStatus` had no symbol. It now matches on symbol and quantity
+  (see Changed). An order with no known symbol matches no intent, so its intent is
+  recorded as not found at the broker. Found by the bot review of PR 86.
 
 ### Added
 
@@ -170,7 +185,6 @@ tests, fuzzing or mutation testing.
 - **nanobook-rebalancer: without `write_ahead_logging`, the runner does not write `order_submitted`.** Graceful kill then cannot report a dangling order.
 - **nanobook-broker: the Binance `Broker::cancel_order` by order id is a placeholder.** It is refused: the adapter has an order cache with the symbol of each order, but `cancel_order` does not use it yet.
 - **nanobook-broker: an IBKR connection notice (1100 to 1102) does not reach `execute_limit_order` as such.** ibapi 2.12 delivers it with request id -1 to the global order-update stream, so a lost connection is reported when the order's stream ends, not when the notice arrives.
-- **nanobook-rebalancer: recovery matches open orders by quantity only.** `BrokerOrderStatus` has no symbol or client order id, so one open order of the right size marks an incomplete intent as submitted whatever its symbol.
 - **nanobook-risk: an empty side prints `-0.0%`.** The "Weight allocation" detail shows `-0.0% long` (or short) when no target is on that side, because an empty `f64` sum is `-0.0` since Rust 1.83. The numbers are zero; only the sign in the text is wrong.
 
 ### Security

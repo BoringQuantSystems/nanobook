@@ -449,6 +449,7 @@ impl Broker for MockBroker {
 
         Ok(BrokerOrderStatus {
             id,
+            symbol: None,
             status: order.status,
             filled_quantity: match order.status {
                 OrderState::Filled => quantity,
@@ -481,6 +482,7 @@ impl Broker for MockBroker {
 
             result.push(BrokerOrderStatus {
                 id: OrderId(order_id),
+                symbol: None,
                 status: order.status,
                 filled_quantity: 0,
                 remaining_quantity: quantity,

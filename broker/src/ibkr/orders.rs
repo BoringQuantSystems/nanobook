@@ -138,6 +138,7 @@ pub fn broker_order_status_from_ibkr_parts(
 
     Ok(BrokerOrderStatus {
         id: OrderId(order_id as u64),
+        symbol: None,
         status: mapped,
         filled_quantity,
         remaining_quantity,
@@ -151,13 +152,15 @@ pub fn broker_order_status_from_ibkr_parts(
 pub fn broker_order_status_from_order_data(
     order_data: &OrderData,
 ) -> Result<BrokerOrderStatus, BrokerError> {
-    broker_order_status_from_ibkr_parts(
+    let mut status = broker_order_status_from_ibkr_parts(
         order_data.order_id,
         &order_data.order_state.status,
         0.0,
         order_data.order.total_quantity,
         0.0,
-    )
+    )?;
+    status.symbol = nanobook::Symbol::try_new(&order_data.contract.symbol.0);
+    Ok(status)
 }
 
 /// Deduplication key for order-status callbacks.
@@ -1383,6 +1386,41 @@ mod tests {
             reconcile_partial_fill(1, symbol, 50, 100, 0, &position(75), BrokerSide::Sell).unwrap();
         assert_eq!(result.filled_shares, 50);
         assert_eq!(result.status, OrderOutcome::PartialFill);
+    }
+
+    #[test]
+    fn test_order_data_status_carries_the_contract_symbol() {
+        let data = OrderData {
+            order_id: 5,
+            contract: Contract {
+                symbol: ibapi::contracts::Symbol::new("AAPL"),
+                ..Contract::default()
+            },
+            order: Order {
+                total_quantity: 100.0,
+                ..Order::default()
+            },
+            ..OrderData::default()
+        };
+
+        let status = broker_order_status_from_order_data(&data).unwrap();
+
+        assert_eq!(status.id, OrderId(5));
+        assert_eq!(status.symbol, Some(nanobook::Symbol::new("AAPL")));
+        assert_eq!(status.remaining_quantity, 100);
+
+        // A symbol that `Symbol` cannot hold (over 8 bytes) is left out.
+        let long = OrderData {
+            contract: Contract {
+                symbol: ibapi::contracts::Symbol::new("ABCDEFGHIJ"),
+                ..Contract::default()
+            },
+            ..OrderData::default()
+        };
+        assert_eq!(
+            broker_order_status_from_order_data(&long).unwrap().symbol,
+            None
+        );
     }
 
     #[test]

@@ -596,6 +596,7 @@ fn test_broker_reconciliation_incomplete_intent_found() {
     broker.connect().unwrap();
     broker.set_open_order_statuses(vec![nanobook_broker::types::BrokerOrderStatus {
         id: nanobook_broker::types::OrderId(1),
+        symbol: Some(Symbol::new("AAPL")),
         status: nanobook_broker::types::OrderState::Submitted,
         filled_quantity: 0,
         remaining_quantity: 50,
@@ -738,6 +739,7 @@ fn test_broker_reconciliation_mixed_intents() {
     broker.connect().unwrap();
     broker.set_open_order_statuses(vec![nanobook_broker::types::BrokerOrderStatus {
         id: nanobook_broker::types::OrderId(1),
+        symbol: Some(Symbol::new("AAPL")),
         status: nanobook_broker::types::OrderState::PartiallyFilled,
         filled_quantity: 25,
         remaining_quantity: 25,
@@ -970,6 +972,7 @@ fn reconcile_appends_submitted_and_failed_in_sequence() {
     // AAPL's 50 shares are still open. MSFT's 25 shares are not.
     broker.set_open_order_statuses(vec![nanobook_broker::types::BrokerOrderStatus {
         id: nanobook_broker::types::OrderId(1),
+        symbol: Some(Symbol::new("AAPL")),
         status: nanobook_broker::types::OrderState::Submitted,
         filled_quantity: 0,
         remaining_quantity: 50,
@@ -1071,6 +1074,7 @@ impl Broker for FailOpenBroker {
     > {
         Ok(nanobook_broker::types::BrokerOrderStatus {
             id,
+            symbol: None,
             status: nanobook_broker::types::OrderState::Submitted,
             filled_quantity: 0,
             remaining_quantity: 1,

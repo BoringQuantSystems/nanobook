@@ -670,6 +670,7 @@ mod tests {
                         .iter()
                         .map(|(id, status, remaining_quantity)| BrokerOrderStatus {
                             id: OrderId(*id),
+                            symbol: None,
                             status: *status,
                             filled_quantity: 0,
                             remaining_quantity: *remaining_quantity,
@@ -714,6 +715,7 @@ mod tests {
         fn order_status(&self, id: OrderId) -> std::result::Result<BrokerOrderStatus, BrokerError> {
             Ok(BrokerOrderStatus {
                 id,
+                symbol: None,
                 status: OrderState::Submitted,
                 filled_quantity: 0,
                 remaining_quantity: 1,
@@ -1100,6 +1102,7 @@ timeout_secs = {timeout_secs}
         let orders = vec![
             BrokerOrderStatus {
                 id: OrderId(1),
+                symbol: None,
                 status: OrderState::Pending,
                 filled_quantity: 0,
                 remaining_quantity: 1,
@@ -1107,6 +1110,7 @@ timeout_secs = {timeout_secs}
             },
             BrokerOrderStatus {
                 id: OrderId(2),
+                symbol: None,
                 status: OrderState::Submitted,
                 filled_quantity: 0,
                 remaining_quantity: 1,
@@ -1114,6 +1118,7 @@ timeout_secs = {timeout_secs}
             },
             BrokerOrderStatus {
                 id: OrderId(3),
+                symbol: None,
                 status: OrderState::PartiallyFilled,
                 filled_quantity: 1,
                 remaining_quantity: 1,
@@ -1121,6 +1126,7 @@ timeout_secs = {timeout_secs}
             },
             BrokerOrderStatus {
                 id: OrderId(4),
+                symbol: None,
                 status: OrderState::Filled,
                 filled_quantity: 1,
                 remaining_quantity: 0,
@@ -1128,6 +1134,7 @@ timeout_secs = {timeout_secs}
             },
             BrokerOrderStatus {
                 id: OrderId(5),
+                symbol: None,
                 status: OrderState::Cancelled,
                 filled_quantity: 0,
                 remaining_quantity: 0,
@@ -1135,6 +1142,7 @@ timeout_secs = {timeout_secs}
             },
             BrokerOrderStatus {
                 id: OrderId(6),
+                symbol: None,
                 status: OrderState::Submitted,
                 filled_quantity: 1,
                 remaining_quantity: 0,

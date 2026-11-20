@@ -40,9 +40,10 @@ fn write_two_incomplete_intents(
     }
 }
 
-fn open_status(id: u64, remaining: u64) -> nanobook_broker::types::BrokerOrderStatus {
+fn open_status(id: u64, symbol: &str, remaining: u64) -> nanobook_broker::types::BrokerOrderStatus {
     nanobook_broker::types::BrokerOrderStatus {
         id: nanobook_broker::types::OrderId(id),
+        symbol: Some(nanobook::Symbol::new(symbol)),
         status: nanobook_broker::types::OrderState::Submitted,
         filled_quantity: 0,
         remaining_quantity: remaining,
@@ -56,27 +57,30 @@ fn one_open_order_does_not_submit_two_intents_of_the_same_quantity() {
     let path = dir.path().join("audit.jsonl");
     write_two_incomplete_intents(&path, dir.path(), 50, 50);
 
-    // One live 50-share order, nothing filled. Both intents ask for 50.
-    // The status has no symbol, so the order cannot be given to either.
+    // One live 50-share MSFT order, nothing filled. Both intents ask for 50.
+    // The order belongs to MSFT only: the AAPL intent finds no order.
     let mut broker = MockBroker::builder().build();
     broker.connect().unwrap();
-    broker.set_open_order_statuses(vec![open_status(7, 50)]);
+    broker.set_open_order_statuses(vec![open_status(7, "MSFT", 50)]);
 
     let (state, _) = reconstruct_state(&path).unwrap();
-    let err = reconcile_incomplete_intents(&broker, &state, &path).unwrap_err();
-    match err {
-        Error::Recovery(message) => {
-            assert!(
-                message.contains("Failed to reconcile 2 incomplete intents"),
-                "{message}"
-            );
-        }
-        other => panic!("expected Recovery, got {other:?}"),
-    }
+    reconcile_incomplete_intents(&broker, &state, &path).unwrap();
     let events = parse_audit_events(&path).unwrap();
-    assert_eq!(events.len(), 3);
-    assert!(events.iter().all(|event| event.event != "order_submitted"));
-    assert!(events.iter().all(|event| event.event != "order_failed"));
+    assert_eq!(events.len(), 5);
+    assert_eq!(events[3].event, "order_failed");
+    assert_eq!(
+        events[3].data.get("symbol").and_then(|v| v.as_str()),
+        Some("AAPL")
+    );
+    assert_eq!(events[4].event, "order_submitted");
+    assert_eq!(
+        events[4].data.get("symbol").and_then(|v| v.as_str()),
+        Some("MSFT")
+    );
+    assert_eq!(
+        events[4].data.get("ibkr_id").and_then(|v| v.as_u64()),
+        Some(7)
+    );
 }
 
 #[test]
@@ -87,7 +91,13 @@ fn two_open_orders_of_one_quantity_match_neither_intent() {
 
     let mut broker = MockBroker::builder().build();
     broker.connect().unwrap();
-    broker.set_open_order_statuses(vec![open_status(7, 50), open_status(8, 50)]);
+    // Two open orders per symbol, so each intent has two candidates.
+    broker.set_open_order_statuses(vec![
+        open_status(7, "AAPL", 50),
+        open_status(8, "AAPL", 50),
+        open_status(9, "MSFT", 50),
+        open_status(10, "MSFT", 50),
+    ]);
 
     let (state, _) = reconstruct_state(&path).unwrap();
     let err = reconcile_incomplete_intents(&broker, &state, &path).unwrap_err();
@@ -114,7 +124,7 @@ fn two_open_orders_of_different_quantities_submit_both_intents() {
 
     let mut broker = MockBroker::builder().build();
     broker.connect().unwrap();
-    broker.set_open_order_statuses(vec![open_status(7, 50), open_status(8, 25)]);
+    broker.set_open_order_statuses(vec![open_status(7, "AAPL", 50), open_status(8, "MSFT", 25)]);
 
     let (state, _) = reconstruct_state(&path).unwrap();
     reconcile_incomplete_intents(&broker, &state, &path).unwrap();
@@ -149,7 +159,7 @@ fn intents_match_open_orders_by_quantity_not_by_the_broker_list_order() {
     // The 25-share order is listed first, the reverse of the intent order.
     let mut broker = MockBroker::builder().build();
     broker.connect().unwrap();
-    broker.set_open_order_statuses(vec![open_status(8, 25), open_status(7, 50)]);
+    broker.set_open_order_statuses(vec![open_status(8, "MSFT", 25), open_status(7, "AAPL", 50)]);
 
     let (state, _) = reconstruct_state(&path).unwrap();
     reconcile_incomplete_intents(&broker, &state, &path).unwrap();
@@ -204,7 +214,7 @@ fn reconciliation_summary_counts_intents_found_at_the_broker() {
 
     let mut broker = MockBroker::builder().build();
     broker.connect().unwrap();
-    broker.set_open_order_statuses(vec![open_status(7, 50), open_status(8, 25)]);
+    broker.set_open_order_statuses(vec![open_status(7, "AAPL", 50), open_status(8, "MSFT", 25)]);
 
     let (state, _) = reconstruct_state(&path).unwrap();
     let capture = LogCapture::default();
@@ -233,12 +243,12 @@ fn open_order_with_nothing_remaining_does_not_match_an_intent() {
     broker.set_open_order_statuses(vec![
         nanobook_broker::types::BrokerOrderStatus {
             filled_quantity: 20,
-            ..open_status(7, 30)
+            ..open_status(7, "AAPL", 30)
         },
         nanobook_broker::types::BrokerOrderStatus {
             status: nanobook_broker::types::OrderState::Filled,
             filled_quantity: 25,
-            ..open_status(8, 0)
+            ..open_status(8, "MSFT", 0)
         },
     ]);
 
