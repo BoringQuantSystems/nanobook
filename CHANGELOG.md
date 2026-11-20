@@ -100,6 +100,12 @@ tests, fuzzing or mutation testing.
 - **nanobook-broker: the Binance websocket ignored `testnet`.** It always connected
   to the production stream. A testnet session now uses
   `wss://stream.testnet.binance.vision/ws`.
+- **nanobook-broker: the Binance websocket reconnect never gave up.** `connect`
+  reset the attempt counter before trying, so each failed attempt inside
+  `reconnect_with_backoff` started the count again and the loop retried forever.
+  The counter now resets only after a successful connect, and the loop stops after
+  `max_reconnect_attempts` with its error. Found while writing tests for mutation
+  survivors.
 - The ITCH parser read the Stock Directory (`R`) symbol from the tracking-number
   and timestamp bytes. `ItchMessage::StockDirectory` now carries the real symbol
   (ITCH 5.0 offset 11). Found by mutation testing.

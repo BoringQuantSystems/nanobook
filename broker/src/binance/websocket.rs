@@ -62,6 +62,9 @@ pub struct BinanceWebSocket {
     // Auto-reconnect mechanism
     max_reconnect_attempts: u32,
     reconnect_attempts: u32,
+    /// Test-only: connect here instead of the Binance stream.
+    #[cfg(test)]
+    endpoint_override: Option<String>,
 }
 
 impl BinanceWebSocket {
@@ -79,6 +82,8 @@ impl BinanceWebSocket {
             heartbeat_interval: Duration::from_secs(10),
             max_reconnect_attempts: 5,
             reconnect_attempts: 0,
+            #[cfg(test)]
+            endpoint_override: None,
         }
     }
 
@@ -100,11 +105,13 @@ impl BinanceWebSocket {
     /// Connect to the Binance WebSocket endpoint.
     pub async fn connect(&mut self) -> Result<(), Box<dyn Error>> {
         self.state = ConnectionState::Reconnecting;
-        self.reconnect_attempts = 0;
-        let (stream, _) = connect_async(self.endpoint()).await.inspect_err(|_| {
+        let endpoint = self.endpoint().to_string();
+        let (stream, _) = connect_async(endpoint).await.inspect_err(|_| {
             self.connected.store(false, Ordering::SeqCst);
             self.state = ConnectionState::Disconnected;
         })?;
+        // Reset only on success: reconnect_with_backoff counts failed connects.
+        self.reconnect_attempts = 0;
 
         self.client = Some(stream);
         self.connected.store(true, Ordering::SeqCst);
@@ -255,8 +262,12 @@ impl BinanceWebSocket {
         self.heartbeat_interval = interval;
     }
 
-    fn endpoint(&self) -> &'static str {
+    fn endpoint(&self) -> &str {
         let _ = (&self.api_key, &self.secret_key);
+        #[cfg(test)]
+        if let Some(endpoint) = &self.endpoint_override {
+            return endpoint;
+        }
         if self.testnet {
             "wss://stream.testnet.binance.vision/ws"
         } else {
@@ -428,6 +439,33 @@ mod tests {
         ws.reconnect_attempts = 3;
 
         assert_eq!(ws.reconnect_attempts(), 3);
+    }
+
+    #[tokio::test]
+    async fn reconnect_gives_up_after_the_attempt_limit() {
+        // A port that was free a moment ago refuses the connection at once.
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let mut ws = BinanceWebSocket::new("key", "secret", true);
+        ws.endpoint_override = Some(format!("ws://127.0.0.1:{port}/ws"));
+        ws.set_max_reconnect_attempts(2);
+
+        // Real time (a paused clock jumps ahead while a socket connects):
+        // backoff 1 s + 2 s. Before the fix, each failed connect reset the
+        // counter and the loop never ended.
+        let result = tokio::time::timeout(Duration::from_secs(30), ws.reconnect_with_backoff())
+            .await
+            .expect("reconnect loop must stop after its attempt limit");
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Failed to reconnect after 2 attempts"
+        );
+        assert_eq!(ws.reconnect_attempts(), 2);
+        assert_eq!(ws.state(), ConnectionState::Disconnected);
     }
 
     #[tokio::test(start_paused = true)]
