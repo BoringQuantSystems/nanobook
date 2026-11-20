@@ -821,15 +821,18 @@ pub fn reconcile_filled_order(order_id: i32, rejection_reason: &str) -> Result<b
 ///
 /// This function is called after a reconnect to detect partial fills that occurred
 /// during the disconnect window. It compares the pre-disconnect filled quantity
-/// against the current position to determine if additional shares were filled.
+/// against the change in position since the order began to determine if
+/// additional shares were filled.
 ///
 /// # Reconciliation Strategy
 ///
 /// The reconciliation uses ground truth from IBKR's position API:
 /// 1. Query current positions after reconnect
 /// 2. Find the position for the order's symbol
-/// 3. Compare current quantity against expected quantity
-/// 4. If current > expected, a partial fill occurred during disconnect
+/// 3. Subtract the position held before the order (`baseline_position`), and
+///    take the change on the order's side: shares filled since the order began
+/// 4. If that exceeds the pre-disconnect filled quantity, a partial fill occurred
+///    during disconnect
 /// 5. Update order state to PartialFill with the reconciled quantity
 ///
 /// # Important: No Double-Submit
@@ -846,6 +849,9 @@ pub fn reconcile_filled_order(order_id: i32, rejection_reason: &str) -> Result<b
 /// * `symbol` - The symbol of the order
 /// * `pre_disconnect_filled` - The filled quantity before disconnect
 /// * `expected_total` - The total expected quantity (original order size)
+/// * `baseline_position` - Signed position in the symbol (long positive, short
+///   negative) held before the order was submitted; 0 if there was none. Shares
+///   held before the order are not fills of this order.
 /// * `current_positions` - Current positions from reconnect (ground truth)
 /// * `side` - The order side (Buy/Sell)
 ///
@@ -868,12 +874,13 @@ pub fn reconcile_partial_fill(
     symbol: nanobook::Symbol,
     pre_disconnect_filled: i64,
     expected_total: i64,
+    baseline_position: i64,
     current_positions: &[Position],
     side: BrokerSide,
 ) -> Result<OrderResult, BrokerError> {
     info!(
-        "AUDIT: Reconciling order {} after disconnect - symbol={}, pre_disconnect_filled={}, expected_total={}",
-        order_id, symbol, pre_disconnect_filled, expected_total
+        "AUDIT: Reconciling order {} after disconnect - symbol={}, pre_disconnect_filled={}, expected_total={}, baseline_position={}",
+        order_id, symbol, pre_disconnect_filled, expected_total, baseline_position
     );
 
     // Find the position for this symbol
@@ -881,16 +888,18 @@ pub fn reconcile_partial_fill(
 
     match current_position {
         Some(pos) => {
-            let current_qty = pos.quantity;
+            // Change in position since the order began. A position held before
+            // the order is in the baseline and is not a fill.
+            let current_qty = pos.quantity - baseline_position;
 
-            // For buy orders, positive quantity indicates long position
-            // For sell orders, negative quantity indicates short position
+            // For buy orders, a rise in the position is a fill
+            // For sell orders, a fall in the position is a fill
             let signed_current_qty = match side {
                 BrokerSide::Buy => current_qty,
                 BrokerSide::Sell => -current_qty,
             };
 
-            // Compare the position on the order's side against pre-disconnect
+            // Compare the change on the order's side against pre-disconnect
             // filled. Signed, not absolute: a buy against a short position (or a
             // sell against a long one) is not a fill of this order.
             if signed_current_qty > pre_disconnect_filled {
@@ -1163,6 +1172,7 @@ mod tests {
             symbol,
             pre_disconnect_filled,
             expected_total,
+            0,
             &positions,
             side,
         );
@@ -1200,6 +1210,7 @@ mod tests {
             symbol,
             pre_disconnect_filled,
             expected_total,
+            0,
             &positions,
             side,
         );
@@ -1230,6 +1241,7 @@ mod tests {
             symbol,
             pre_disconnect_filled,
             expected_total,
+            0,
             &positions,
             side,
         );
@@ -1258,7 +1270,7 @@ mod tests {
         }];
 
         let result =
-            reconcile_partial_fill(1, symbol, 0, 100, &positions, BrokerSide::Buy).unwrap();
+            reconcile_partial_fill(1, symbol, 0, 100, 0, &positions, BrokerSide::Buy).unwrap();
 
         assert_eq!(result.order_id, 1);
         assert_eq!(result.filled_shares, 0);
@@ -1269,7 +1281,7 @@ mod tests {
     fn test_reconcile_partial_fill_nothing_filled_and_no_position_is_failed() {
         let symbol = nanobook::Symbol::try_new("AAPL").unwrap();
 
-        let result = reconcile_partial_fill(1, symbol, 0, 100, &[], BrokerSide::Buy).unwrap();
+        let result = reconcile_partial_fill(1, symbol, 0, 100, 0, &[], BrokerSide::Buy).unwrap();
 
         assert_eq!(result.order_id, 1);
         assert_eq!(result.filled_shares, 0);
@@ -1299,6 +1311,7 @@ mod tests {
             symbol,
             pre_disconnect_filled,
             expected_total,
+            0,
             &positions,
             side,
         );
@@ -1328,8 +1341,38 @@ mod tests {
         // order were filled. The old absolute comparison reported 75 filled.
         let symbol = nanobook::Symbol::try_new("AAPL").unwrap();
         let result =
-            reconcile_partial_fill(1, symbol, 0, 100, &position(-75), BrokerSide::Buy).unwrap();
+            reconcile_partial_fill(1, symbol, 0, 100, 0, &position(-75), BrokerSide::Buy).unwrap();
         assert_eq!(result.filled_shares, 0);
+        assert_eq!(result.status, OrderOutcome::PartialFill);
+    }
+
+    #[test]
+    fn test_reconcile_buy_counts_only_the_change_since_the_baseline() {
+        // 75 shares were held before the order. The position is still 75 after
+        // the reconnect, so none of the order's shares filled. The old code
+        // compared the position itself (75) against the filled quantity and
+        // reported 75 shares filled.
+        let symbol = nanobook::Symbol::try_new("AAPL").unwrap();
+        let result =
+            reconcile_partial_fill(1, symbol, 0, 100, 75, &position(75), BrokerSide::Buy).unwrap();
+        assert_eq!(result.filled_shares, 0);
+        assert_eq!(result.status, OrderOutcome::Failed);
+
+        // 25 further shares filled during the disconnect: 100 - 75.
+        let result =
+            reconcile_partial_fill(1, symbol, 0, 100, 75, &position(100), BrokerSide::Buy).unwrap();
+        assert_eq!(result.filled_shares, 25);
+        assert_eq!(result.status, OrderOutcome::PartialFill);
+    }
+
+    #[test]
+    fn test_reconcile_sell_counts_only_the_change_since_the_baseline() {
+        // A short of 30 was held before the sell order; 20 more were sold.
+        let symbol = nanobook::Symbol::try_new("AAPL").unwrap();
+        let result =
+            reconcile_partial_fill(1, symbol, 5, 100, -30, &position(-50), BrokerSide::Sell)
+                .unwrap();
+        assert_eq!(result.filled_shares, 20);
         assert_eq!(result.status, OrderOutcome::PartialFill);
     }
 
@@ -1337,7 +1380,7 @@ mod tests {
     fn test_reconcile_sell_against_a_long_position_is_not_a_fill() {
         let symbol = nanobook::Symbol::try_new("AAPL").unwrap();
         let result =
-            reconcile_partial_fill(1, symbol, 50, 100, &position(75), BrokerSide::Sell).unwrap();
+            reconcile_partial_fill(1, symbol, 50, 100, 0, &position(75), BrokerSide::Sell).unwrap();
         assert_eq!(result.filled_shares, 50);
         assert_eq!(result.status, OrderOutcome::PartialFill);
     }
