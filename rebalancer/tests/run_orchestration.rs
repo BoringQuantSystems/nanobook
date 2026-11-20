@@ -183,10 +183,10 @@ allow_short = true
 max_short_pct = 1.0
 [cost]
 [logging]
-dir = '{}'
+dir = {}
 audit_file = "audit.jsonl"
 "#,
-        workdir.join("logs").display()
+        toml::Value::String(workdir.join("logs").display().to_string())
     ))
     .unwrap()
 }
@@ -464,6 +464,49 @@ fn cron_mode_refuses_a_completed_window_before_orders() {
             .any(|event| event.event == "idempotency_rejection")
     );
     assert!(events.iter().all(|event| event.event != "run_started"));
+}
+
+#[test]
+fn cron_mode_takes_the_pid_guard_before_the_completed_window_check() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = config(dir.path());
+    let spec = spec_three();
+    {
+        let mut audit = audit::AuditLog::open_in(&config.audit_path(), dir.path()).unwrap();
+        audit::log_cron_completed(&mut audit, 42, &spec.window_id(), 1, 1, 0).unwrap();
+    }
+    let events_before = parse_audit_events(&config.audit_path()).unwrap().len();
+    // Another run holds the guard. A second caller must wait on it, not read
+    // the audit log first: the holder may finish the window after that read.
+    let holder =
+        nanobook_rebalancer::pid_file::PidFileGuard::create(dir.path().join(DEFAULT_PID_FILE))
+            .unwrap();
+    let shutdown = ShutdownFlag::new();
+    let broker = ScriptedBroker::new(dir.path(), shutdown.clone(), Vec::new());
+    let mut confirm = || -> Result<bool> { panic!("confirm must not be called") };
+    match run_with_client(
+        &config,
+        &spec,
+        &opts(true, false, true),
+        &broker,
+        &shutdown,
+        dir.path(),
+        &mut confirm,
+    ) {
+        Err(Error::Aborted(message)) => {
+            assert!(
+                message.contains("in use by another rebalancer"),
+                "{message}"
+            );
+        }
+        other => panic!("expected Aborted, got {other:?}"),
+    }
+    assert!(broker.executes.borrow().is_empty());
+    assert_eq!(
+        parse_audit_events(&config.audit_path()).unwrap().len(),
+        events_before
+    );
+    drop(holder);
 }
 
 #[test]

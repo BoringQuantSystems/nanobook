@@ -279,6 +279,11 @@ pub fn run_with_client(
     workdir: &Path,
     confirm: &mut dyn FnMut() -> Result<bool>,
 ) -> Result<()> {
+    // Hold the PID guard before the completed-window check. Checked first, two
+    // cron callers could both pass it and the second would submit the same window again.
+    let _pid_guard =
+        crate::pid_file::PidFileGuard::create(workdir.join(crate::pid_file::DEFAULT_PID_FILE))?;
+
     if opts.cron_mode {
         let audit_path = resolve_audit_path(config, workdir);
         if audit_path.exists() {
@@ -297,9 +302,6 @@ pub fn run_with_client(
             }
         }
     }
-
-    let _pid_guard =
-        crate::pid_file::PidFileGuard::create(workdir.join(crate::pid_file::DEFAULT_PID_FILE))?;
 
     // 2. Open audit log
     let audit_path = resolve_audit_path(config, workdir);
