@@ -141,6 +141,34 @@ fn two_open_orders_of_different_quantities_submit_both_intents() {
 }
 
 #[test]
+fn intents_match_open_orders_by_quantity_not_by_the_broker_list_order() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("audit.jsonl");
+    write_two_incomplete_intents(&path, dir.path(), 50, 25);
+
+    // The 25-share order is listed first, the reverse of the intent order.
+    let mut broker = MockBroker::builder().build();
+    broker.connect().unwrap();
+    broker.set_open_order_statuses(vec![open_status(8, 25), open_status(7, 50)]);
+
+    let (state, _) = reconstruct_state(&path).unwrap();
+    reconcile_incomplete_intents(&broker, &state, &path).unwrap();
+    let events = parse_audit_events(&path).unwrap();
+    assert_eq!(events.len(), 5);
+    let submitted: Vec<(&str, u64)> = events[3..]
+        .iter()
+        .map(|event| {
+            assert_eq!(event.event, "order_submitted");
+            (
+                event.data["symbol"].as_str().unwrap(),
+                event.data["ibkr_id"].as_u64().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(submitted, vec![("AAPL", 7), ("MSFT", 8)]);
+}
+
+#[test]
 fn reconciliation_summary_counts_intents_missing_at_the_broker() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("audit.jsonl");

@@ -438,10 +438,10 @@ port = 7497
 client_id = 1
 
 [logging]
-# Literal string (single quotes): a Windows temp path such as
-# C:\Users\RUNNER~1\AppData\Local\Temp\... contains \U, \A and \T, which are
-# invalid escapes in a TOML basic string and made Config::load fail here.
-dir = '{}'
+# The path is written as a TOML string value, escaped as needed: a Windows temp
+# path such as C:\Users\RUNNER~1\AppData\Local\Temp\... has backslashes, and a
+# user name may hold an apostrophe.
+dir = {}
 audit_file = "audit.jsonl"
 
 [execution]
@@ -461,7 +461,7 @@ commission_per_share = 0.005
 commission_min = 1.0
 slippage_bps = 5
 "#,
-            dir.path().display()
+            toml::Value::String(dir.path().display().to_string())
         ),
     )
     .unwrap();
@@ -679,7 +679,6 @@ fn test_broker_reconciliation_incomplete_intent_not_found() {
 #[test]
 fn test_broker_reconciliation_mixed_intents() {
     use nanobook_rebalancer::recovery::reconcile_incomplete_intents;
-    use std::fs;
 
     let dir = tempfile::tempdir().unwrap();
     let audit_path = dir.path().join("audit.jsonl");
@@ -730,23 +729,20 @@ fn test_broker_reconciliation_mixed_intents() {
         .unwrap();
     }
 
-    // Create MockBroker with only the AAPL order (no orders for MSFT)
+    // Create MockBroker with only the AAPL order (no orders for MSFT): a
+    // 50-share order, 25 filled and 25 still open.
     let mut broker = MockBroker::builder()
-        .fill_mode(FillMode::ImmediatePartial(0.5))
         .with_position(Symbol::new("AAPL"), 100, 150_00)
         .with_position(Symbol::new("MSFT"), 50, 300_00)
         .build();
     broker.connect().unwrap();
-
-    // Submit AAPL order to broker (MSFT order is not submitted)
-    let order = BrokerOrder {
-        symbol: Symbol::new("AAPL"),
-        side: BrokerSide::Buy,
-        quantity: 50,
-        order_type: BrokerOrderType::Market,
-        client_order_id: None,
-    };
-    broker.submit_order(&order).unwrap();
+    broker.set_open_order_statuses(vec![nanobook_broker::types::BrokerOrderStatus {
+        id: nanobook_broker::types::OrderId(1),
+        status: nanobook_broker::types::OrderState::PartiallyFilled,
+        filled_quantity: 25,
+        remaining_quantity: 25,
+        avg_fill_price_cents: 0,
+    }]);
 
     // Reconstruct state
     let (state, _) = reconstruct_state(&audit_path).unwrap();
@@ -757,10 +753,19 @@ fn test_broker_reconciliation_mixed_intents() {
     // Reconciliation should succeed (only MSFT is incomplete)
     assert!(result.is_ok());
 
-    // Verify audit log was updated with OrderFailed for MSFT
-    let audit_contents = fs::read_to_string(&audit_path).unwrap();
-    // MSFT should be marked as failed since it's incomplete and no matching order at broker
-    assert!(audit_contents.contains("order_failed") || audit_contents.contains("MSFT"));
+    // MSFT (25 shares) is incomplete and no open order started at 25 shares,
+    // so it is marked failed. The 25 filled plus 25 open order is a 50-share order.
+    let events = nanobook_rebalancer::audit::parse_audit_events(&audit_path).unwrap();
+    let last = events.last().unwrap();
+    assert_eq!(last.event, "order_failed");
+    assert_eq!(
+        last.data.get("symbol").and_then(|v| v.as_str()),
+        Some("MSFT")
+    );
+    assert_eq!(
+        last.data.get("reason").and_then(|v| v.as_str()),
+        Some("not_found_at_broker")
+    );
 }
 
 #[cfg(feature = "write_ahead_logging")]
@@ -1164,10 +1169,10 @@ type = "cash"
 [risk]
 [cost]
 [logging]
-dir = '{}'
+dir = {}
 audit_file = "audit.jsonl"
 "#,
-        dir.path().display()
+        toml::Value::String(dir.path().display().to_string())
     ))
     .unwrap();
     let spec = TargetSpec::from_json(
@@ -1232,10 +1237,10 @@ type = "cash"
 [risk]
 [cost]
 [logging]
-dir = '{}'
+dir = {}
 audit_file = "audit.jsonl"
 "#,
-        dir.path().display()
+        toml::Value::String(dir.path().display().to_string())
     ))
     .unwrap();
     let spec = TargetSpec::from_json(
