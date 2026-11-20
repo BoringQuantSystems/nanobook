@@ -256,8 +256,12 @@ impl BinanceWebSocket {
     }
 
     fn endpoint(&self) -> &'static str {
-        let _ = (&self.api_key, &self.secret_key, self.testnet);
-        "wss://stream.binance.com:9443/ws"
+        let _ = (&self.api_key, &self.secret_key);
+        if self.testnet {
+            "wss://stream.testnet.binance.vision/ws"
+        } else {
+            "wss://stream.binance.com:9443/ws"
+        }
     }
 
     fn parse_frame(message: Message) -> Result<Option<BinanceWebSocketEvent>, Box<dyn Error>> {
@@ -389,6 +393,15 @@ mod tests {
         let ws = BinanceWebSocket::new("key", "secret", false);
 
         assert_eq!(ws.endpoint(), "wss://stream.binance.com:9443/ws");
+    }
+
+    #[test]
+    fn endpoint_follows_testnet() {
+        // Testnet keys do not work on the production stream, and a testnet
+        // session must never see production events.
+        let ws = BinanceWebSocket::new("key", "secret", true);
+
+        assert_eq!(ws.endpoint(), "wss://stream.testnet.binance.vision/ws");
     }
 
     #[tokio::test]

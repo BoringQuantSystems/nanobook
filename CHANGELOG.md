@@ -91,6 +91,15 @@ tests, fuzzing or mutation testing.
   Codes 1100 to 1102 never reached their check, so `execute_limit_order` did not
   return `ConnectionLost` with the partial fill. It does now. Found by mutation
   testing.
+- **nanobook-broker: IBKR reconciliation after a disconnect ignored the order's side.**
+  `reconcile_partial_fill` compared the absolute position size, so a buy order
+  against a short position (or a sell against a long one) was reported as filled
+  by the size of that position. It now compares the position on the order's side;
+  a position on the other side is not counted as a fill. Found while writing tests
+  for mutation survivors.
+- **nanobook-broker: the Binance websocket ignored `testnet`.** It always connected
+  to the production stream. A testnet session now uses
+  `wss://stream.testnet.binance.vision/ws`.
 - The ITCH parser read the Stock Directory (`R`) symbol from the tracking-number
   and timestamp bytes. `ItchMessage::StockDirectory` now carries the real symbol
   (ITCH 5.0 offset 11). Found by mutation testing.

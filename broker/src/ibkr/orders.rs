@@ -828,10 +828,12 @@ pub fn reconcile_partial_fill(
                 BrokerSide::Sell => -current_qty,
             };
 
-            // Compare current quantity against pre-disconnect filled
-            if signed_current_qty.abs() > pre_disconnect_filled {
+            // Compare the position on the order's side against pre-disconnect
+            // filled. Signed, not absolute: a buy against a short position (or a
+            // sell against a long one) is not a fill of this order.
+            if signed_current_qty > pre_disconnect_filled {
                 // Additional shares were filled during disconnect
-                let reconciled_filled = signed_current_qty.abs();
+                let reconciled_filled = signed_current_qty;
                 let remainder = expected_total - reconciled_filled;
 
                 info!(
@@ -847,7 +849,7 @@ pub fn reconcile_partial_fill(
                     commission: 0.0,     // Would need to query execution history
                     status: OrderOutcome::PartialFill,
                 })
-            } else if signed_current_qty.abs() == pre_disconnect_filled {
+            } else if signed_current_qty == pre_disconnect_filled {
                 // No additional fills during disconnect
                 info!(
                     "AUDIT: Order {} no additional fills detected during disconnect (filled={})",
@@ -870,9 +872,7 @@ pub fn reconcile_partial_fill(
                 // Position decreased - unexpected, manual review required
                 warn!(
                     "AUDIT: Order {} position decreased after disconnect (pre={}, current={}) - manual review required",
-                    order_id,
-                    pre_disconnect_filled,
-                    signed_current_qty.abs()
+                    order_id, pre_disconnect_filled, signed_current_qty
                 );
 
                 Ok(OrderResult {
@@ -1248,6 +1248,36 @@ mod tests {
             "Should detect additional 25 shares sold"
         );
         assert_eq!(order_result.status, OrderOutcome::PartialFill);
+    }
+
+    fn position(quantity: i64) -> Vec<Position> {
+        vec![Position {
+            symbol: nanobook::Symbol::try_new("AAPL").unwrap(),
+            quantity,
+            avg_cost_cents: 15000,
+            market_value_cents: quantity * 15000,
+            unrealized_pnl_cents: 0,
+        }]
+    }
+
+    #[test]
+    fn test_reconcile_buy_against_a_short_position_is_not_a_fill() {
+        // A short of 75 is on the other side of a buy order: no shares of this
+        // order were filled. The old absolute comparison reported 75 filled.
+        let symbol = nanobook::Symbol::try_new("AAPL").unwrap();
+        let result =
+            reconcile_partial_fill(1, symbol, 0, 100, &position(-75), BrokerSide::Buy).unwrap();
+        assert_eq!(result.filled_shares, 0);
+        assert_eq!(result.status, OrderOutcome::PartialFill);
+    }
+
+    #[test]
+    fn test_reconcile_sell_against_a_long_position_is_not_a_fill() {
+        let symbol = nanobook::Symbol::try_new("AAPL").unwrap();
+        let result =
+            reconcile_partial_fill(1, symbol, 50, 100, &position(75), BrokerSide::Sell).unwrap();
+        assert_eq!(result.filled_shares, 50);
+        assert_eq!(result.status, OrderOutcome::PartialFill);
     }
 
     #[test]
