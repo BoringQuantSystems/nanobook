@@ -144,7 +144,7 @@ assert_eq!(err.unwrap_err(), ValidationError::ZeroPrice);
 | `Quantity` | `type Quantity = u64` | Number of shares/contracts | — |
 | `OrderId` | `struct OrderId(pub u64)` | Unique order identifier | `O42` |
 | `TradeId` | `struct TradeId(pub u64)` | Unique trade identifier | `T7` |
-| `Timestamp` | `type Timestamp = u64` | Event counter, +1 per event (not wall clock) | — |
+| `Timestamp` | `type Timestamp = u64` | Sequence number, +1 per new order, stop order, or trade (cancellations take none; not wall clock) | — |
 
 ### Result Types
 

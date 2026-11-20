@@ -88,9 +88,11 @@ tests, fuzzing or mutation testing.
 - `Trade::vwap` returns `None` when the quantity sum does not fit, instead of
   overflowing.
 - **nanobook-broker: an IBKR connection loss during an order was not reported.**
-  Codes 1100 to 1102 never reached their check, so `execute_limit_order` did not
-  return `ConnectionLost` with the partial fill. It does now. Found by mutation
-  testing.
+  The order loop dropped codes 1100 to 1102 before its check, so `execute_limit_order`
+  did not return `ConnectionLost` with the partial fill when such a notice reached the
+  order's own stream. It does now. ibapi 2.12 sends these notices with request id -1 to
+  its global order-update stream, not to the order's stream (see Known issues). Found
+  by mutation testing.
 - **nanobook-broker: IBKR reconciliation after a disconnect ignored the order's side.**
   `reconcile_partial_fill` compared the absolute position size, so a buy order
   against a short position (or a sell against a long one) was reported as filled
@@ -116,7 +118,9 @@ tests, fuzzing or mutation testing.
 - **nanobook-rebalancer: recovery and kill read audit `limit` as cents.** The writers store dollars. A 160.25 limit now reconstructs as 16025 cents.
 - **nanobook-rebalancer: the runner did not write `rebalancer.pid`.** `run` now writes the PID file at start and removes it on every exit path.
 - **nanobook-rebalancer: the close loop sent a limit-0 order when the quote was 0.** It now skips that symbol.
-- **nanobook-rebalancer: recovery matched the first open order with remaining quantity.** It now matches remaining quantity of the incomplete intent.
+- **nanobook-rebalancer: two cron runs could both pass the completed-window check.** The PID-file lock is now taken before the check, so a second caller that finds the lock held gets "in use by another rebalancer" rather than an idempotency rejection. `--kill` also no longer reads an empty PID file while a run starts: the PID is written to a temporary file and renamed.
+- **nanobook-broker: a Binance websocket `set_max_reconnect_attempts` above 64 overflowed the backoff.** The delay stays 16 s from the fifth attempt on.
+- **nanobook-rebalancer: recovery matched the first open order with remaining quantity.** It now matches an open order whose filled plus remaining quantity equals the incomplete intent's quantity; an order that two intents match is given to neither.
 
 ### Added
 
@@ -136,7 +140,11 @@ tests, fuzzing or mutation testing.
 - **nanobook-rebalancer: `constraints.min_trade_usd` in target.json does not change the run minimum.** The run still reads `config.risk.min_trade_usd`.
 - **nanobook-rebalancer: `TargetSpec::window_id` hashes with `DefaultHasher`.** The id can change after a Rust upgrade, so a cron window can fire twice.
 - **nanobook-rebalancer: without `write_ahead_logging`, the runner does not write `order_submitted`.** Graceful kill then cannot report a dangling order.
-- **nanobook-broker: two Binance `Broker` methods are placeholders.** `open_orders` always returns an empty list, and `cancel_order` by order id is refused because the adapter keeps no id-to-symbol map.
+- **nanobook-broker: two Binance `Broker` methods are placeholders.** `open_orders` always returns an empty list, and `cancel_order` by order id is refused: the adapter has an order cache with the symbol of each order, but `cancel_order` does not use it yet.
+- **nanobook-broker: Binance open-order polling and `reconcile_state` read `openOrders` from `/api/v3/account`.** Binance does not return that field there (open orders come from `/api/v3/openOrders`), so both see an empty list on the real service. The tests feed the field by hand.
+- **nanobook-broker: an IBKR connection notice (1100 to 1102) does not reach `execute_limit_order` as such.** ibapi 2.12 delivers it with request id -1 to the global order-update stream, so a lost connection is reported when the order's stream ends, not when the notice arrives.
+- **nanobook-broker: `ibkr::orders::reconcile_partial_fill` compares the net position, not the change since the order began.** A position held before the order counts as filled shares.
+- **nanobook-rebalancer: recovery matches open orders by quantity only.** `BrokerOrderStatus` has no symbol or client order id, so one open order of the right size marks an incomplete intent as submitted whatever its symbol.
 - **nanobook-risk: an empty side prints `-0.0%`.** The "Weight allocation" detail shows `-0.0% long` (or short) when no target is on that side, because an empty `f64` sum is `-0.0` since Rust 1.83. The numbers are zero; only the sign in the text is wrong.
 
 ### Security

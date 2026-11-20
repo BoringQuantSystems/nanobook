@@ -145,7 +145,7 @@ Result on the 0.20.0 code (only changes that compile are counted):
 
 - "Cannot change any result": no reachable input gives a different answer, for
   example `>` against `>=` where the equal case is filtered out a few lines earlier.
-  Each one is listed with its reason in the triage notes.
+  The table gives counts only; the reason for each change is not published here.
 - "Out of reach of tests": 27 broker changes need a live Interactive Brokers
   connection (whole-function replacements on the client, its order cache and its
   callback de-duplication), one needs the Binance network, and one differs only when
