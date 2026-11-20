@@ -336,39 +336,7 @@ impl IbkrClient {
             .positions()
             .map_err(|e| BrokerError::Connection(format!("failed to request positions: {e}")))?;
 
-        let mut positions = Vec::new();
-        for update in subscription {
-            match update {
-                PositionUpdate::Position(pos) => {
-                    let symbol_str = pos.contract.symbol.to_string();
-                    if let Some(sym) = Symbol::try_new(&symbol_str) {
-                        let qty = pos.position as i64;
-                        let avg_cost_cents =
-                            f64_cents_checked(pos.average_cost, "ibkr position.average_cost")?;
-                        debug!(
-                            "Position: {} qty={} avg_cost={:.2}",
-                            sym, qty, pos.average_cost
-                        );
-                        positions.push(Position {
-                            symbol: sym,
-                            quantity: qty,
-                            avg_cost_cents,
-                            market_value_cents: qty.abs() * avg_cost_cents, // approximate
-                            unrealized_pnl_cents: 0, // would need live prices for exact value
-                        });
-                    } else {
-                        warn!("Skipping symbol '{symbol_str}' (> 8 bytes)");
-                    }
-                }
-                PositionUpdate::PositionEnd => break,
-            }
-        }
-
-        // Demoted to debug in S7: the position count is a coarse
-        // signal of account activity and shouldn't appear in
-        // aggregated info-level logs.
-        debug!("Fetched {} positions", positions.len());
-        Ok(positions)
+        positions_from_updates(subscription)
     }
 
     /// Fetch all open orders known to TWS/Gateway.
@@ -417,55 +385,7 @@ impl IbkrClient {
             BrokerError::Connection(format!("failed to request account summary: {e}"))
         })?;
 
-        let mut equity = 0.0_f64;
-        let mut cash = 0.0_f64;
-        let mut buying_power = 0.0_f64;
-
-        for result in subscription {
-            match result {
-                AccountSummaryResult::Summary(s) => {
-                    debug!("Account: {}={} {}", s.tag, s.value, s.currency);
-                    // Each known tag routes to its own destination AND its
-                    // own `field` label for the parse-failure warning, so
-                    // a malformed NetLiquidation vs. BuyingPower surfaces
-                    // distinguishably in logs.
-                    match s.tag.as_str() {
-                        "NetLiquidation" => {
-                            equity = parse_f64_or_warn(&s.value, "ibkr account.NetLiquidation");
-                        }
-                        "TotalCashValue" => {
-                            cash = parse_f64_or_warn(&s.value, "ibkr account.TotalCashValue");
-                        }
-                        "BuyingPower" => {
-                            buying_power = parse_f64_or_warn(&s.value, "ibkr account.BuyingPower");
-                        }
-                        _ => {}
-                    }
-                }
-                AccountSummaryResult::End => break,
-            }
-        }
-
-        let account = Account {
-            equity_cents: f64_cents_checked(equity, "ibkr NetLiquidation")?,
-            cash_cents: f64_cents_checked(cash, "ibkr TotalCashValue")?,
-            buying_power_cents: f64_cents_checked(buying_power, "ibkr BuyingPower")?,
-            gross_position_value_cents: f64_cents_checked(
-                equity - cash,
-                "ibkr gross_position_value",
-            )?,
-        };
-
-        // Demoted to debug in S7: equity/cash/buying-power are
-        // financial PII and must not appear in aggregated info-level
-        // logs. Set `RUST_LOG=debug` locally if you need to see them
-        // while debugging.
-        debug!(
-            "Account: equity=${:.2}, cash=${:.2}, buying_power=${:.2}",
-            equity, cash, buying_power
-        );
-
-        Ok(account)
+        account_from_summaries(subscription)
     }
 
     /// Fetch a live quote for a symbol.
@@ -478,55 +398,7 @@ impl IbkrClient {
             .subscribe()
             .map_err(|e| BrokerError::Connection(format!("market data request failed: {e}")))?;
 
-        let mut bid = None;
-        let mut ask = None;
-        let mut last = None;
-
-        for tick in subscription {
-            match tick {
-                TickTypes::Price(price_tick) => match price_tick.tick_type {
-                    TickType::Bid => bid = Some(price_tick.price),
-                    TickType::Ask => ask = Some(price_tick.price),
-                    TickType::Last => last = Some(price_tick.price),
-                    _ => {}
-                },
-                TickTypes::PriceSize(ps) => match ps.price_tick_type {
-                    TickType::Bid => bid = Some(ps.price),
-                    TickType::Ask => ask = Some(ps.price),
-                    TickType::Last => last = Some(ps.price),
-                    _ => {}
-                },
-                TickTypes::SnapshotEnd => break,
-                _ => {}
-            }
-        }
-
-        let bid_cents = bid
-            .map(|b| f64_cents_checked(b, "ibkr tick.bid"))
-            .transpose()?
-            .unwrap_or(0);
-        let ask_cents = ask
-            .map(|a| f64_cents_checked(a, "ibkr tick.ask"))
-            .transpose()?
-            .unwrap_or(0);
-        let last_cents = last
-            .map(|l| f64_cents_checked(l, "ibkr tick.last"))
-            .transpose()?
-            .unwrap_or(0);
-
-        // Require at least one valid price
-        if bid_cents <= 0 && ask_cents <= 0 && last_cents <= 0 {
-            return Err(BrokerError::Connection("no valid price received".into()));
-        }
-
-        let quote = Quote {
-            symbol: *symbol,
-            bid_cents,
-            ask_cents,
-            last_cents,
-            volume: 0, // snapshot doesn't provide volume
-            timestamp: std::time::SystemTime::now(),
-        };
+        let quote = quote_from_ticks(symbol, subscription)?;
 
         if let Some(best_quote) = best_quote_from_quote(&quote) {
             self.cache_best_quote(*symbol, best_quote)?;
@@ -538,16 +410,7 @@ impl IbkrClient {
     /// Fetch bid/ask midpoint price for a symbol, in cents.
     pub fn mid_price(&self, symbol: &Symbol) -> Result<i64, BrokerError> {
         let q = self.quote(symbol)?;
-        let mid = match (q.bid_cents, q.ask_cents) {
-            (b, a) if b > 0 && a > 0 => b + (a - b) / 2,
-            (b, _) if b > 0 => b,
-            (_, a) if a > 0 => a,
-            _ => q.last_cents,
-        };
-        if mid <= 0 {
-            return Err(BrokerError::Connection("no valid price received".into()));
-        }
-        Ok(mid)
+        mid_cents(&q)
     }
 
     /// Fetch live prices (bid/ask midpoint) for a set of symbols.
@@ -560,4 +423,165 @@ impl IbkrClient {
         }
         Ok(prices)
     }
+}
+
+/// Fold a position stream into broker positions (symbols over 8 bytes are skipped).
+fn positions_from_updates(
+    updates: impl IntoIterator<Item = PositionUpdate>,
+) -> Result<Vec<Position>, BrokerError> {
+    let mut positions = Vec::new();
+    for update in updates {
+        match update {
+            PositionUpdate::Position(pos) => {
+                let symbol_str = pos.contract.symbol.to_string();
+                if let Some(sym) = Symbol::try_new(&symbol_str) {
+                    let qty = pos.position as i64;
+                    let avg_cost_cents =
+                        f64_cents_checked(pos.average_cost, "ibkr position.average_cost")?;
+                    debug!(
+                        "Position: {} qty={} avg_cost={:.2}",
+                        sym, qty, pos.average_cost
+                    );
+                    positions.push(Position {
+                        symbol: sym,
+                        quantity: qty,
+                        avg_cost_cents,
+                        market_value_cents: qty.abs() * avg_cost_cents, // approximate
+                        unrealized_pnl_cents: 0, // would need live prices for exact value
+                    });
+                } else {
+                    warn!("Skipping symbol '{symbol_str}' (> 8 bytes)");
+                }
+            }
+            PositionUpdate::PositionEnd => break,
+        }
+    }
+
+    // Demoted to debug in S7: the position count is a coarse
+    // signal of account activity and shouldn't appear in
+    // aggregated info-level logs.
+    debug!("Fetched {} positions", positions.len());
+    Ok(positions)
+}
+
+/// Build the account from an account-summary stream.
+fn account_from_summaries(
+    summaries: impl IntoIterator<Item = AccountSummaryResult>,
+) -> Result<Account, BrokerError> {
+    let mut equity = 0.0_f64;
+    let mut cash = 0.0_f64;
+    let mut buying_power = 0.0_f64;
+
+    for result in summaries {
+        match result {
+            AccountSummaryResult::Summary(s) => {
+                debug!("Account: {}={} {}", s.tag, s.value, s.currency);
+                // Each known tag routes to its own destination AND its
+                // own `field` label for the parse-failure warning, so
+                // a malformed NetLiquidation vs. BuyingPower surfaces
+                // distinguishably in logs.
+                match s.tag.as_str() {
+                    "NetLiquidation" => {
+                        equity = parse_f64_or_warn(&s.value, "ibkr account.NetLiquidation");
+                    }
+                    "TotalCashValue" => {
+                        cash = parse_f64_or_warn(&s.value, "ibkr account.TotalCashValue");
+                    }
+                    "BuyingPower" => {
+                        buying_power = parse_f64_or_warn(&s.value, "ibkr account.BuyingPower");
+                    }
+                    _ => {}
+                }
+            }
+            AccountSummaryResult::End => break,
+        }
+    }
+
+    let account = Account {
+        equity_cents: f64_cents_checked(equity, "ibkr NetLiquidation")?,
+        cash_cents: f64_cents_checked(cash, "ibkr TotalCashValue")?,
+        buying_power_cents: f64_cents_checked(buying_power, "ibkr BuyingPower")?,
+        gross_position_value_cents: f64_cents_checked(equity - cash, "ibkr gross_position_value")?,
+    };
+
+    // Demoted to debug in S7: equity/cash/buying-power are
+    // financial PII and must not appear in aggregated info-level
+    // logs. Set `RUST_LOG=debug` locally if you need to see them
+    // while debugging.
+    debug!(
+        "Account: equity=${:.2}, cash=${:.2}, buying_power=${:.2}",
+        equity, cash, buying_power
+    );
+
+    Ok(account)
+}
+
+/// Build a quote from a snapshot tick stream.
+fn quote_from_ticks(
+    symbol: &Symbol,
+    ticks: impl IntoIterator<Item = TickTypes>,
+) -> Result<Quote, BrokerError> {
+    let mut bid = None;
+    let mut ask = None;
+    let mut last = None;
+
+    for tick in ticks {
+        match tick {
+            TickTypes::Price(price_tick) => match price_tick.tick_type {
+                TickType::Bid => bid = Some(price_tick.price),
+                TickType::Ask => ask = Some(price_tick.price),
+                TickType::Last => last = Some(price_tick.price),
+                _ => {}
+            },
+            TickTypes::PriceSize(ps) => match ps.price_tick_type {
+                TickType::Bid => bid = Some(ps.price),
+                TickType::Ask => ask = Some(ps.price),
+                TickType::Last => last = Some(ps.price),
+                _ => {}
+            },
+            TickTypes::SnapshotEnd => break,
+            _ => {}
+        }
+    }
+
+    let bid_cents = bid
+        .map(|b| f64_cents_checked(b, "ibkr tick.bid"))
+        .transpose()?
+        .unwrap_or(0);
+    let ask_cents = ask
+        .map(|a| f64_cents_checked(a, "ibkr tick.ask"))
+        .transpose()?
+        .unwrap_or(0);
+    let last_cents = last
+        .map(|l| f64_cents_checked(l, "ibkr tick.last"))
+        .transpose()?
+        .unwrap_or(0);
+
+    // Require at least one valid price
+    if bid_cents <= 0 && ask_cents <= 0 && last_cents <= 0 {
+        return Err(BrokerError::Connection("no valid price received".into()));
+    }
+
+    Ok(Quote {
+        symbol: *symbol,
+        bid_cents,
+        ask_cents,
+        last_cents,
+        volume: 0, // snapshot doesn't provide volume
+        timestamp: std::time::SystemTime::now(),
+    })
+}
+
+/// Bid/ask midpoint in cents, falling back to one side, then to the last price.
+fn mid_cents(q: &Quote) -> Result<i64, BrokerError> {
+    let mid = match (q.bid_cents, q.ask_cents) {
+        (b, a) if b > 0 && a > 0 => b + (a - b) / 2,
+        (b, _) if b > 0 => b,
+        (_, a) if a > 0 => a,
+        _ => q.last_cents,
+    };
+    if mid <= 0 {
+        return Err(BrokerError::Connection("no valid price received".into()));
+    }
+    Ok(mid)
 }
