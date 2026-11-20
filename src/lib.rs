@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 // Allow our dollar.cents digit grouping convention (e.g., 100_00 = $100.00)
 #![allow(clippy::inconsistent_digit_grouping)]
 

@@ -146,6 +146,63 @@ mod tests {
     }
 
     #[test]
+    fn two_symbol_weights_and_tracking_error() {
+        let positions = vec![
+            CurrentPosition {
+                symbol: aapl(),
+                quantity: 2000,
+                avg_cost_cents: 18_500,
+            },
+            CurrentPosition {
+                symbol: msft(),
+                quantity: 100,
+                avg_cost_cents: 40_000,
+            },
+        ];
+        let report = reconcile(
+            &positions,
+            &[(aapl(), 0.5), (msft(), 0.125)],
+            &[(aapl(), 18_500), (msft(), 40_000)],
+            100_000_000,
+        );
+        let aapl_entry = report.entries.iter().find(|e| e.symbol == "AAPL").unwrap();
+        assert!((aapl_entry.actual_weight - 0.37).abs() < 1e-12);
+        assert!((aapl_entry.diff_weight + 0.13).abs() < 1e-12);
+        assert_eq!(aapl_entry.target_shares, 2702);
+        assert_eq!(aapl_entry.diff_shares, -702);
+        let msft_entry = report.entries.iter().find(|e| e.symbol == "MSFT").unwrap();
+        assert!((msft_entry.actual_weight - 0.04).abs() < 1e-12);
+        assert!((msft_entry.diff_weight + 0.085).abs() < 1e-12);
+        assert_eq!(msft_entry.target_shares, 312);
+        assert_eq!(msft_entry.diff_shares, -212);
+        assert!((report.tracking_error_pct - 10.982941318244398).abs() < 1e-9);
+    }
+
+    #[test]
+    fn zero_equity_gives_zero_weight() {
+        let report = reconcile(
+            &[CurrentPosition {
+                symbol: aapl(),
+                quantity: 10,
+                avg_cost_cents: 18_500,
+            }],
+            &[(aapl(), 0.5)],
+            &[(aapl(), 18_500)],
+            0,
+        );
+        assert_eq!(report.entries[0].actual_weight, 0.0);
+        assert_eq!(report.entries[0].target_shares, 0);
+        assert_eq!(report.tracking_error_pct, 50.0);
+    }
+
+    #[test]
+    fn missing_price_gives_zero_target_shares() {
+        let qqq = Symbol::new("QQQ");
+        let report = reconcile(&[], &[(qqq, 0.25)], &[], 100_000_000);
+        assert_eq!(report.entries[0].target_shares, 0);
+    }
+
+    #[test]
     fn missing_position() {
         let positions = vec![]; // no positions
         let targets = vec![(aapl(), 0.5)];

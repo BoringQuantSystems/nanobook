@@ -237,6 +237,25 @@ pub fn validate_file_permissions(config: &Config) -> Vec<ValidationIssue> {
 pub fn validate_disk_space(config: &Config) -> Vec<ValidationIssue> {
     let audit_path = config.audit_path();
     let dir = audit_path.parent().unwrap_or_else(|| Path::new("."));
+    // Windows answers for the volume even when the directory is missing, so check it first.
+    let problem = match std::fs::metadata(dir) {
+        Ok(metadata) if metadata.is_dir() => None,
+        Ok(_) => Some("path is not a directory".to_string()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Some("directory does not exist".to_string())
+        }
+        Err(error) => Some(format!("directory cannot be read: {error}")),
+    };
+    if let Some(problem) = problem {
+        return vec![ValidationIssue::new(
+            "logging.dir",
+            format!(
+                "cannot determine available space for {}: {problem}",
+                dir.display()
+            ),
+            "verify the logging directory exists and the filesystem is accessible",
+        )];
+    }
     match fs2::available_space(dir) {
         Ok(bytes) => validate_available_log_space(bytes, config),
         Err(error) => vec![ValidationIssue::new(
@@ -295,18 +314,14 @@ pub fn validate_broker_connectivity(config: &Config) -> Vec<ValidationIssue> {
     }
 }
 
-#[allow(dead_code)]
-fn _path_exists(path: &Path) -> bool {
-    path.exists()
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
-        ValidationIssue, format_validation_issues, should_run_startup_validation,
-        validate_available_log_space, validate_broker_connectivity, validate_file_permissions,
-        validate_network_timeout, validate_required_fields, validate_risk_limits, validate_static,
-        validate_static_or_error, validate_static_with_source,
+        ValidationIssue, find_toml_field, format_validation_issues, should_run_startup_validation,
+        validate_available_log_space, validate_broker_connectivity, validate_disk_space,
+        validate_file_permissions, validate_network_timeout, validate_required_fields,
+        validate_risk_limits, validate_static, validate_static_or_error,
+        validate_static_with_source,
     };
     use crate::config::{
         AccountConfig, AccountType, Config, ConnectionConfig, CostConfig, ExecutionConfig,
@@ -518,5 +533,93 @@ mod tests {
         assert!(text.contains("risk.max_leverage"));
         assert!(text.contains("20 is too high"));
         assert!(text.contains("fix: use <= 10"));
+    }
+
+    #[test]
+    fn min_trade_usd_rejects_negative_and_accepts_zero() -> std::io::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let mut config = valid_config(dir.path());
+        config.risk.min_trade_usd = -1.0;
+        let issues = validate_risk_limits(&config);
+        assert!(issues.iter().any(|i| i.field == "risk.min_trade_usd"));
+        config.risk.min_trade_usd = 0.0;
+        let issues = validate_risk_limits(&config);
+        assert!(issues.iter().all(|i| i.field != "risk.min_trade_usd"));
+        Ok(())
+    }
+
+    #[test]
+    fn disk_space_reports_missing_log_directory() {
+        let config = valid_config(Path::new("/nonexistent-nanobook-test-dir/logs"));
+        let issues = validate_disk_space(&config);
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].field, "logging.dir");
+        assert!(
+            issues[0]
+                .message
+                .starts_with("cannot determine available space for")
+        );
+    }
+
+    #[test]
+    fn disk_space_names_the_cause_of_a_bad_log_directory() {
+        let missing = valid_config(Path::new("/nonexistent-nanobook-test-dir/logs"));
+        let issues = validate_disk_space(&missing);
+        assert!(issues[0].message.ends_with("directory does not exist"));
+
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("not-a-dir");
+        std::fs::write(&file, b"x").unwrap();
+        let issues = validate_disk_space(&valid_config(&file));
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].field, "logging.dir");
+        assert!(
+            issues[0].message.ends_with("path is not a directory"),
+            "{}",
+            issues[0].message
+        );
+
+        // A path through a file fails with "not a directory", not "not found"
+        // (Unix; Windows reports such a path as not found).
+        #[cfg(unix)]
+        {
+            let issues = validate_disk_space(&valid_config(&file.join("sub")));
+            assert_eq!(issues.len(), 1);
+            assert!(
+                issues[0].message.contains("directory cannot be read"),
+                "{}",
+                issues[0].message
+            );
+        }
+    }
+
+    #[test]
+    fn available_log_space_boundary() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = valid_config(dir.path());
+        assert!(validate_available_log_space(1_000_000_000, &config).is_empty());
+        assert_eq!(validate_available_log_space(999_999_999, &config).len(), 1);
+    }
+
+    #[test]
+    fn find_toml_field_matches_section_and_key_together() {
+        let contents = "[a]\nx = 1\ny = 2\n[b]\nx = 3\n";
+        assert_eq!(find_toml_field(contents, "a.x"), Some((2, "1")));
+        assert_eq!(find_toml_field(contents, "a.y"), Some((3, "2")));
+        // Same key in another section must not match section a, and a key
+        // present only in another section must not match at all.
+        assert_eq!(find_toml_field(contents, "b.x"), Some((5, "3")));
+        assert_eq!(find_toml_field(contents, "b.y"), None);
+        assert_eq!(find_toml_field(contents, "c.x"), None);
+        assert_eq!(find_toml_field(contents, "nodot"), None);
+    }
+
+    #[test]
+    fn find_toml_field_does_not_take_an_array_value_for_a_section_header() {
+        // `ports = [1, 2]` ends with `]` but does not start with `[`: it is a
+        // key line, and the fields after it still belong to section a.
+        let contents = "[a]\nports = [1, 2]\nx = 3\n";
+        assert_eq!(find_toml_field(contents, "a.ports"), Some((2, "[1, 2]")));
+        assert_eq!(find_toml_field(contents, "a.x"), Some((3, "3")));
     }
 }

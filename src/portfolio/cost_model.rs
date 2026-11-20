@@ -6,7 +6,7 @@
 /// plus a minimum per-fill commission. Slippage is modeled as price impact by
 /// portfolio execution, not by [`CostModel::compute_cost`].
 ///
-/// ```ignore
+/// ```
 /// use nanobook::portfolio::CostModel;
 ///
 /// let model = CostModel { commission_bps: 10.0, slippage_bps: 5.0, min_commission: 1_00 };

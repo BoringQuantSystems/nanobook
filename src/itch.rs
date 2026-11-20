@@ -173,7 +173,7 @@ impl<R: Read> ItchParser<R> {
             'D' => 18,       // ..payload[10..18]
             'U' => 34,       // ..payload[30..34]
             'P' => 43,       // ..payload[35..43]
-            'R' => 10,       // ..payload[2..10]
+            'R' => 18,       // ..payload[10..18]
             _ => 0,
         };
         if payload.len() < min_payload {
@@ -289,8 +289,10 @@ impl<R: Read> ItchParser<R> {
                 }))
             }
             'R' => {
+                // Stock Directory: locate [0..2], tracking number [2..4],
+                // timestamp [4..10], stock [10..18] (ITCH 5.0, offsets after the type byte).
                 let locate = read_u16_be(&payload[0..2], "R.locate")?;
-                let stock = String::from_utf8_lossy(&payload[2..10]).trim().to_string();
+                let stock = String::from_utf8_lossy(&payload[10..18]).trim().to_string();
                 self.stock_locates.insert(locate, stock.clone());
                 Ok(Some(ItchMessage::StockDirectory { stock, locate }))
             }
@@ -405,6 +407,30 @@ mod tests {
     // ------------------------------------------------------------------
     // Parser: malformed input surfaces as Err, never as panic
     // ------------------------------------------------------------------
+
+    /// A full-length Stock Directory message (ITCH 5.0: 39 bytes with the type byte).
+    /// The symbol sits after the 2-byte tracking number and the 6-byte timestamp.
+    #[test]
+    fn stock_directory_reads_symbol_after_timestamp() {
+        let mut msg = vec![b'R'];
+        msg.extend_from_slice(&7u16.to_be_bytes()); // stock locate
+        msg.extend_from_slice(&[0x12, 0x34]); // tracking number
+        msg.extend_from_slice(&[0xAB; 6]); // timestamp
+        msg.extend_from_slice(b"AAPL    "); // stock, space padded
+        msg.extend_from_slice(&[b'Q'; 20]); // remaining directory fields
+        assert_eq!(msg.len(), 39);
+        let mut bytes = (msg.len() as u16).to_be_bytes().to_vec();
+        bytes.extend_from_slice(&msg);
+
+        let mut parser = ItchParser::new(&bytes[..]);
+        match parser.next_message().unwrap() {
+            Some(ItchMessage::StockDirectory { stock, locate }) => {
+                assert_eq!(stock, "AAPL");
+                assert_eq!(locate, 7);
+            }
+            other => panic!("expected StockDirectory, got {other:?}"),
+        }
+    }
 
     /// EOF at a message boundary is the happy-stream-end signal.
     #[test]

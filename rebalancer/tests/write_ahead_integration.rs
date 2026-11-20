@@ -9,6 +9,7 @@ use nanobook_broker::{BrokerSide, ClientOrderId};
 use nanobook_rebalancer::audit::{AuditLog, parse_audit_events};
 use nanobook_rebalancer::broker::BrokerGateway;
 use nanobook_rebalancer::diff::{Action, RebalanceOrder};
+use nanobook_rebalancer::error::Error;
 use nanobook_rebalancer::execution::execute_order_with_write_ahead;
 use std::time::Duration;
 
@@ -224,8 +225,18 @@ fn test_write_ahead_transient_error_classification() {
         );
 
         assert!(result.is_err());
-        // Should have attempted retries (call count > 1)
-        assert!(broker.call_count() > 1);
+        assert_eq!(broker.call_count(), 5);
+        match result {
+            Err(Error::Order(m)) => assert!(m.contains("after 5 retries")),
+            other => panic!("expected Order, got {other:?}"),
+        }
+        let events = parse_audit_events(&audit_path).unwrap();
+        let last = events.last().unwrap();
+        assert_eq!(last.event, "order_failed");
+        assert_eq!(
+            last.data.get("error_type").and_then(|v| v.as_str()),
+            Some("max_retries_exceeded")
+        );
     }
 }
 

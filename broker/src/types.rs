@@ -205,6 +205,10 @@ pub struct OrderId(pub u64);
 #[derive(Debug, Clone)]
 pub struct BrokerOrderStatus {
     pub id: OrderId,
+    /// Symbol of the order, or `None` when the adapter cannot tell (a status
+    /// query by order id alone, or a symbol that `Symbol` cannot hold). An
+    /// order with no symbol never matches a symbol in recovery.
+    pub symbol: Option<Symbol>,
     pub status: OrderState,
     pub filled_quantity: u64,
     pub remaining_quantity: u64,

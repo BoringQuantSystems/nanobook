@@ -398,65 +398,78 @@ pub fn spearman(x: &[f64], y: &[f64]) -> (f64, f64) {
     (r_clamped, p_value)
 }
 
-/// Deflated Sharpe Ratio after Lopez de Prado (2018).
+/// Deflated Sharpe Ratio (Bailey and López de Prado, 2014).
 ///
-/// Returns the probability that an observed Sharpe ratio remains positive
-/// after adjusting for selection across multiple trials and non-normal return
-/// moments. The implementation follows the common deflated-Sharpe structure:
+/// The probability that the true Sharpe ratio is above zero, after correcting the
+/// observed one for selection across `n_trials` strategies and for non-normal
+/// returns:
 ///
-/// `DSR = Phi((SR - E[max SR]) / sigma[SR])`
+/// `DSR = Phi((SR - SR0) * sqrt(T - 1) / sqrt(1 - skewness * SR + (kurtosis - 1) / 4 * SR^2))`
 ///
-/// where `Phi` is the standard normal CDF, `E[max SR]` is the expected maximum
-/// Sharpe under the null across `n_trials`, and `sigma[SR]` uses the
-/// skewness/kurtosis-adjusted finite-sample standard error:
+/// `SR0 = sqrt(V) * ((1 - g) * Phi^-1(1 - 1/N) + g * Phi^-1(1 - 1/(N e)))`
 ///
-/// `sqrt((1 - skewness * SR + (kurtosis - 1) / 4 * SR^2) / (n_trials - 1))`.
+/// where `Phi` is the standard normal CDF, `g` the Euler-Mascheroni constant,
+/// `N = n_trials`, `T = n_observations` (the number of returns behind `sharpe`) and
+/// `V = trials_sharpe_variance` (the variance of the Sharpe ratios across the
+/// trials). `SR0` is the expected maximum Sharpe ratio of `N` unskilled trials.
+/// With one trial there is nothing to deflate: `SR0 = 0` and the result is the
+/// probabilistic Sharpe ratio against zero.
 ///
-/// Returns `NaN` for invalid inputs. A single trial returns the input Sharpe
-/// unchanged because there is no multiple-testing adjustment.
+/// Units: `sharpe` and `V` are per period (not annualized), in the same period as
+/// the returns; `kurtosis` is raw kurtosis (3 for normal returns).
+///
+/// Returns `NaN` for invalid inputs: `n_trials == 0`, `n_observations < 2`, a
+/// negative or non-finite variance, non-finite moments, `kurtosis <= 0`, or a
+/// non-positive variance term.
 ///
 /// # References
 ///
-/// - López de Prado, M. (2018), "Advances in Financial Machine Learning",
-///   Chapter 3: "The Deflated Sharpe Ratio".
-pub fn deflated_sharpe(sharpe: f64, n_trials: usize, skewness: f64, kurtosis: f64) -> f64 {
-    if n_trials == 0 {
+/// - Bailey, D. H., and López de Prado, M. (2014), "The Deflated Sharpe Ratio:
+///   Correcting for Selection Bias, Backtest Overfitting, and Non-Normality",
+///   Journal of Portfolio Management 40(5), 94-107; definition p. 98, worked
+///   example p. 99.
+pub fn deflated_sharpe(
+    sharpe: f64,
+    n_trials: usize,
+    n_observations: usize,
+    trials_sharpe_variance: f64,
+    skewness: f64,
+    kurtosis: f64,
+) -> f64 {
+    if n_trials == 0 || n_observations < 2 {
         return f64::NAN;
     }
-    if n_trials == 1 {
-        return sharpe;
-    }
     if !sharpe.is_finite()
+        || !trials_sharpe_variance.is_finite()
+        || trials_sharpe_variance < 0.0
         || !skewness.is_finite()
         || !kurtosis.is_finite()
-        || sharpe < 0.0
         || kurtosis <= 0.0
     {
         return f64::NAN;
     }
 
-    let n = n_trials as f64;
     let variance_term = 1.0 - skewness * sharpe + 0.25 * (kurtosis - 1.0) * sharpe * sharpe;
     if !variance_term.is_finite() || variance_term <= 0.0 {
         return f64::NAN;
     }
 
-    let sharpe_se = (variance_term / (n - 1.0)).sqrt();
-    if !sharpe_se.is_finite() || sharpe_se <= 0.0 {
-        return f64::NAN;
-    }
+    let threshold = if n_trials == 1 {
+        0.0
+    } else {
+        let n = n_trials as f64;
+        let euler_gamma = 0.577_215_664_901_532_9_f64;
+        let expected_max_standard = (1.0 - euler_gamma)
+            * inverse_standard_normal_cdf(1.0 - 1.0 / n)
+            + euler_gamma * inverse_standard_normal_cdf(1.0 - 1.0 / (n * std::f64::consts::E));
+        if !expected_max_standard.is_finite() {
+            return f64::NAN;
+        }
+        trials_sharpe_variance.sqrt() * expected_max_standard
+    };
 
-    let euler_gamma = 0.577_215_664_901_532_9_f64;
-    let p1 = (1.0 - 1.0 / n).clamp(f64::EPSILON, 1.0 - f64::EPSILON);
-    let p2 = (1.0 - 1.0 / (n * std::f64::consts::E)).clamp(f64::EPSILON, 1.0 - f64::EPSILON);
-    let expected_max_standard = (1.0 - euler_gamma) * inverse_standard_normal_cdf(p1)
-        + euler_gamma * inverse_standard_normal_cdf(p2);
-    if !expected_max_standard.is_finite() {
-        return f64::NAN;
-    }
-
-    let expected_max_sharpe = sharpe_se * expected_max_standard;
-    standard_normal_cdf((sharpe - expected_max_sharpe) / sharpe_se)
+    let t = n_observations as f64;
+    standard_normal_cdf((sharpe - threshold) * (t - 1.0).sqrt() / variance_term.sqrt())
 }
 
 /// Quintile spread: mean of top quintile returns minus mean of bottom quintile returns.
@@ -744,69 +757,67 @@ mod tests {
 
     // --- Deflated Sharpe Ratio tests ----------------------------------------
 
+    /// Worked example of Bailey and López de Prado (2014), p. 99: annualized SR 2.5
+    /// on 1250 daily returns (250 per year), N = 100 trials whose annualized SRs have
+    /// variance 1/2, skewness -3, kurtosis 10. The paper reports SR0 = 0.1132 and
+    /// DSR = 0.9004; with N = 46 the DSR is 0.9505, and with normal returns
+    /// (skewness 0, kurtosis 3) it is 0.9505 at N = 88.
     #[test]
-    fn test_deflated_sharpe_basic() {
-        let dsr = deflated_sharpe(1.5, 20, 0.0, 3.0);
-        assert!(dsr.is_finite(), "expected finite DSR, got {dsr}");
-        assert!(
-            (0.0..=1.0).contains(&dsr),
-            "expected probability, got {dsr}"
-        );
+    fn deflated_sharpe_matches_the_paper_example() {
+        let sr = 2.5 / 250f64.sqrt();
+        let v = 0.5 / 250.0;
+        let cases = [
+            (100, -3.0, 10.0, 0.9004),
+            (46, -3.0, 10.0, 0.9505),
+            (88, 0.0, 3.0, 0.9505),
+        ];
+        for (n, skew, kurt, want) in cases {
+            let dsr = deflated_sharpe(sr, n, 1250, v, skew, kurt);
+            assert!((dsr - want).abs() < 5e-5, "N={n}: got {dsr}, paper {want}");
+        }
+    }
+
+    /// One trial: no deflation, the probabilistic Sharpe ratio against zero,
+    /// Phi(SR * sqrt(T - 1)) for normal returns. SR 0.1 on 101 returns gives Phi(1).
+    #[test]
+    fn deflated_sharpe_single_trial_is_psr_against_zero() {
+        let dsr = deflated_sharpe(0.1, 1, 101, 0.0, 0.0, 3.0);
+        let normal_term = (1.0 + 0.5 * 0.01_f64).sqrt();
+        let want = standard_normal_cdf(0.1 * 10.0 / normal_term);
+        assert!((dsr - want).abs() < 1e-12, "got {dsr}, want {want}");
+        assert!((0.0..=1.0).contains(&dsr));
     }
 
     #[test]
-    fn test_deflated_sharpe_single_trial() {
-        let sharpe = 1.25;
-        let dsr = deflated_sharpe(sharpe, 1, 0.0, 3.0);
-        assert_eq!(dsr, sharpe);
+    fn deflated_sharpe_falls_as_trials_grow() {
+        let sr = 0.15;
+        let v = 0.002;
+        let few = deflated_sharpe(sr, 10, 1000, v, 0.0, 3.0);
+        let many = deflated_sharpe(sr, 1000, 1000, v, 0.0, 3.0);
+        assert!(many < few, "more trials must deflate more: {many} >= {few}");
     }
 
     #[test]
-    fn test_deflated_sharpe_zero_skewness_kurtosis() {
-        let dsr = deflated_sharpe(1.0, 10, 0.0, 3.0);
-        assert!(
-            dsr.is_finite(),
-            "expected finite normal-case DSR, got {dsr}"
-        );
-        assert!(
-            (0.0..=1.0).contains(&dsr),
-            "expected probability, got {dsr}"
-        );
-    }
-
-    #[test]
-    fn test_deflated_sharpe_invalid_inputs() {
-        assert!(deflated_sharpe(1.0, 0, 0.0, 3.0).is_nan());
-        assert!(deflated_sharpe(-1.0, 10, 0.0, 3.0).is_nan());
-        assert!(deflated_sharpe(1.0, 10, 0.0, -3.0).is_nan());
-        assert!(deflated_sharpe(f64::INFINITY, 10, 0.0, 3.0).is_nan());
-    }
-
-    #[test]
-    fn test_deflated_sharpe_extreme_values() {
-        let large = deflated_sharpe(10.0, 1_000, 0.0, 3.0);
-        let small = deflated_sharpe(1.0e-12, 1_000, 0.0, 3.0);
-        assert!(
-            large.is_finite(),
-            "large Sharpe should stay finite, got {large}"
-        );
-        assert!(
-            small.is_finite(),
-            "small Sharpe should stay finite, got {small}"
-        );
-        assert!((0.0..=1.0).contains(&large));
-        assert!((0.0..=1.0).contains(&small));
+    fn deflated_sharpe_invalid_inputs() {
+        assert!(deflated_sharpe(0.1, 0, 100, 0.01, 0.0, 3.0).is_nan());
+        assert!(deflated_sharpe(0.1, 10, 1, 0.01, 0.0, 3.0).is_nan());
+        assert!(deflated_sharpe(0.1, 10, 100, -0.01, 0.0, 3.0).is_nan());
+        assert!(deflated_sharpe(0.1, 10, 100, 0.01, 0.0, -3.0).is_nan());
+        assert!(deflated_sharpe(f64::INFINITY, 10, 100, 0.01, 0.0, 3.0).is_nan());
+        assert!(deflated_sharpe(0.1, 10, 100, f64::NAN, 0.0, 3.0).is_nan());
     }
 
     proptest::proptest! {
         #[test]
-        fn prop_deflated_sharpe_does_not_exceed_unadjusted_probability(
-            sharpe in 0.01f64..10.0,
-            n_trials in 2usize..1000,
+        fn prop_deflated_sharpe_is_a_probability(
+            sharpe in -2.0f64..2.0,
+            n_trials in 1usize..1000,
+            n_observations in 2usize..5000,
+            variance in 0.0f64..0.1,
             skewness in -5.0f64..5.0,
             kurtosis in 0.1f64..10.0,
         ) {
-            let dsr = deflated_sharpe(sharpe, n_trials, skewness, kurtosis);
+            let dsr = deflated_sharpe(sharpe, n_trials, n_observations, variance, skewness, kurtosis);
             if dsr.is_finite() {
                 proptest::prop_assert!((0.0..=1.0).contains(&dsr), "DSR must be in [0, 1], got {dsr}");
             }

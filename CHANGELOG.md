@@ -7,19 +7,224 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
-- Added machine-checked proofs of the matching engine in Lean 4 (`verification/lean/`). Eleven laws of the order book are proved about a Lean model of the engine: book shape, no crossed book, quantity conservation, price-time priority, trade prices, termination, all-or-nothing fill-or-kill, the four self-trade policies, local cancels, the tombstone queue matching plain FIFO lists, and order records matching their status. CI (`.github/workflows/lean.yml`) rebuilds the proofs, restricts them to Lean's three standard axioms, rechecks them with `leanchecker --fresh`, replays the golden corpus in Lean against the recorded Rust trades, and runs both engines on 1000 random event logs. The fixes below came out of this work.
+nanobook and the Python package move from 0.19.3 to 0.20.0. nanobook-broker moves
+from 0.10.1 to 0.11.0 and nanobook-rebalancer from 0.10.2 to 0.11.0: both have
+breaking changes (see Changed). nanobook-risk moves from 0.8.1 to 0.8.2 (no API
+change: `#![forbid(unsafe_code)]` and tests).
 
-- Moved the developer reference from the README to `docs/reference.md`. The README now leads with the verification and keeps the overview, install, examples, and performance sections.
+### Highlight: matching rules proved in Lean 4
 
-- Fixed fill-or-kill orders under self-trade prevention. The fill-or-kill check counted the owner's own resting orders, so the order could pass the check and then be stopped by self-trade prevention: it could be partly filled, cancel the owner's resting order without trading, or be stored as cancelled. The check now counts only size the order could trade under its self-trade policy, and a short order is rejected without changing the book. `OrderBook::can_fully_fill` is unchanged; the new `OrderBook::can_fully_fill_under` takes the owner and the policy.
+The order-matching core now comes with machine-checked proofs. Eleven laws of the
+order book are stated and proved in Lean 4 about a model of the engine
+(`verification/lean/`, about 12 000 lines, Lean core only, no `sorry`):
 
-- Fixed cancels that removed the wrong order. After the front of a price queue had filled, or after `compact`, cancelling an order could mark a different order at that price, leaving queued orders that could not match and could stall matching. A partially filled IOC or self-trade-cancelled order now reads as `Cancelled` with no remaining quantity from `get_order` and can no longer be cancelled; `SubmitResult.status` is unchanged.
+1. every reachable book is well formed: bids descend, asks ascend, no empty level,
+   each active order queued exactly once at its own price;
+2. the book is never crossed;
+3. a submit conserves quantity;
+4. trades follow price-time priority;
+5. every trade prints at the resting price, at or inside the incoming limit;
+6. matching always stops;
+7. fill-or-kill is all or nothing;
+8. each self-trade policy does what its documentation says;
+9. a cancel changes only the cancelled order;
+10. the tombstone queue always holds the same orders, in the same order, as a plain
+    FIFO list;
+11. a submitted order's stored record matches its status.
 
-- Fixed resting quantities whose sum exceeds `u64::MAX`. A level dropped its remaining orders after its total saturated, and sums across levels overflowed, which panicked in debug builds and made fill-or-kill checks wrong in release builds. Level totals are now exact; `total_quantity`, `quantity_at_or_better`, and snapshot totals cap at `u64::MAX`, `BookSnapshot::imbalance` uses exact side sums, and `Trade::vwap` returns `None` when the quantity sum does not fit.
+The proofs are about the model, not the Rust code itself. On a push to `main`,
+on a pull request into `main`, and on a manual run, CI (`.github/workflows/lean.yml`)
+rebuilds them, allows only Lean's three
+standard axioms, rechecks everything with `leanchecker --fresh`, replays the golden
+corpus in Lean against the trades Rust recorded for it, and runs the Rust engine and
+the Lean model on 1000 random event logs whose trade logs must match byte for byte.
+Not covered: modify and stop orders, integer overflow, and the portfolio, risk,
+broker and rebalancer layers. See [VERIFICATION.md](VERIFICATION.md).
 
-- Added `reference_price` (unimpacted cents per share) and `reference_notional` (cents at the final filled quantity, using the engine's truncation and i64 clamp) to Rust and Python execution records. Stop references use the current close, including on hold days without rebalance fill bars. Slippage cost is `notional - reference_notional` for buys and `reference_notional - notional` for sells, up to truncation; `cost` remains commission only. The extra calculation runs only when recording is enabled; execution arithmetic and existing outputs are unchanged.
+The four engine bugs below were found by this work. None was caught by the earlier
+tests, fuzzing or mutation testing.
 
-- Added opt-in backtest execution records through Rust's `BacktestBridgeOptions.record_executions` and Python's `record_executions=True`. Results include `initial_cash`, actual `executions` (including stop exits and trimmed buys), and period-close `cash_snapshots`. Quantity is signed raw micro-shares (1 share = 1,000,000; positive buys, negative sells), with Python `side` (`buy`/`sell`); price is effective cents per share; all other monetary fields are cents. Notional truncates toward zero after scaling and clamps to i64; cash fields reflect actual balance changes, including saturation. Ledgers are `None` by default and empty for enabled empty/rejected runs. Existing calls and financial calculations are unchanged. The Python stubs for `backtest_weights` now match the runtime signature.
+### Changed
+
+- **`deflated_sharpe` follows Bailey and López de Prado (2014).** It now takes the
+  sample length `n_observations` (T) and the variance of the Sharpe ratios across the
+  trials `trials_sharpe_variance` (V): `deflated_sharpe(sharpe, n_trials,
+  n_observations, trials_sharpe_variance, skewness, kurtosis)`, and the same in
+  Python. Before, `n_trials` stood in for T and the Sharpe ratio's own standard error
+  for √V, so results did not match the paper. One trial now returns the
+  probabilistic Sharpe ratio against zero, a probability, instead of the raw Sharpe
+  ratio; negative Sharpe ratios are accepted. The tests reproduce the paper's worked
+  example (DSR 0.9004, p. 99). *Check your code if* you call `deflated_sharpe` or
+  `py_deflated_sharpe`: the call needs the two new arguments.
+- **Fill-or-kill under self-trade prevention is rejected with no effect.** The
+  fill-or-kill check now counts only the size the order could actually trade under
+  its self-trade policy. Before, it counted the owner's own resting orders, so the
+  order could pass the check and then be partly filled, cancel the owner's resting
+  order, or be stored as cancelled. *Check your code if* you submit fill-or-kill
+  orders with an owner and a policy other than `Off`: an order that used to trade
+  partly is now rejected. Covered by law 7 and `tests/regression_fok_self_trade.rs`.
+- **Finished IOC and self-trade-stopped orders read `Cancelled`.** `get_order` now
+  returns status `Cancelled` with no remaining quantity for an immediate-or-cancel
+  order with an unfilled rest, and for an order stopped by self-trade prevention;
+  such orders can no longer be cancelled. `SubmitResult.status` is unchanged.
+  *Check your code if* you read order status through `get_order` after an IOC
+  submit. Covered by law 11.
+- **nanobook-broker: `BrokerOrderStatus` has a `symbol`.** The new field
+  `symbol: Option<Symbol>` is `Some` in `open_orders` for the IBKR adapter (from the
+  order's contract), the Binance adapter (the trading pair without the quote asset)
+  and `MockBroker` (the symbol of the submitted order). It is `None` in `order_status`
+  (a lookup by order id alone) and when `Symbol` cannot hold the name. IBKR and Binance
+  give no client order id for an open order, so recovery matches on symbol and
+  quantity. *Check your code if* you build `BrokerOrderStatus` with a struct literal
+  or implement `Broker`: set `symbol` (`None` if you do not know it). Code that feeds
+  recovery open orders through `MockBroker::set_open_order_statuses` must set the
+  symbol, or recovery finds no match.
+- **nanobook-broker: `ibkr::orders::reconcile_partial_fill` takes the position held
+  before the order.** The signature is now `reconcile_partial_fill(order_id, symbol,
+  pre_disconnect_filled, expected_total, baseline_position, current_positions, side)`;
+  `baseline_position` is the signed shares held in the symbol before the order was
+  submitted (0 if none). *Check your code if* you call this function: pass the
+  position you read before submitting the order, or 0 when you held none.
+- **nanobook-broker: Binance open orders come from `GET /api/v3/openOrders`.**
+  `BinanceClient::open_orders` is new. `BinanceBroker::open_orders` now returns the
+  open orders (it returned an empty list); `poll_open_orders` and `reconcile_state`
+  read the new endpoint; `poll_account_info` and `update_state_from_account_info`
+  refresh positions only and no longer touch the order cache. New
+  `BinanceBroker::update_order_cache_from_open_orders` fills the cache from a list of
+  `OrderInfo`. `AccountInfo::open_orders` stays but is always empty on the real
+  service. *Check your code if* you read the order cache after `poll_account_info`, or
+  fed `update_state_from_account_info` an `AccountInfo` with `open_orders`: call
+  `poll_open_orders` or `update_order_cache_from_open_orders` for the orders.
+- **nanobook-broker: `execute_limit_order` holds ibapi's order-update stream while an
+  order is in flight.** No signature changes. *Check your code if* you subscribe to
+  `order_update_stream` on the same ibapi client yourself: a subscription taken while
+  an order runs fails with `AlreadySubscribed`, and if you hold it when an order
+  starts, that order does not see 1100 to 1102 notices (see Fixed).
+- **Level and book totals are exact.** `total_quantity`, `quantity_at_or_better`
+  and snapshot totals cap at `u64::MAX` instead of wrapping or panicking, and
+  `BookSnapshot::imbalance` uses exact side sums.
+
+### Fixed
+
+- **Cancels could remove a different order.** After the front of a price queue had
+  filled, or after `compact`, cancelling an order could mark another order at that
+  price. The queue then held orders that could not match, and matching could stall.
+  Covered by law 10 and `tests/regression_cancel_targets_own_order.rs`.
+- **Price levels holding more than `u64::MAX` in total lost orders.** A level
+  dropped its remaining orders after its total saturated, and sums across levels
+  overflowed: debug builds panicked and release builds made wrong fill-or-kill
+  decisions. Covered by `tests/regression_level_quantity_overflow.rs`.
+- **Finished IOC and self-trade-stopped orders stayed active** (see Changed).
+- **Fill-or-kill under self-trade prevention could change the book before
+  rejecting** (see Changed).
+- `Trade::vwap` returns `None` when the quantity sum does not fit, instead of
+  overflowing.
+- **nanobook-broker: an IBKR connection loss during an order was not reported.**
+  The order loop dropped codes 1100 to 1102 before its check, so `execute_limit_order`
+  did not return `ConnectionLost` with the partial fill when such a notice reached the
+  order's own stream. It does now. ibapi 2.12 sends these notices with request id -1 to
+  its global order-update stream, not to the order's stream, so `execute_limit_order`
+  now also reads that stream while the order is in flight (every half second) and
+  ends the wait with `ConnectionLost` and the partial fill when a 1100 to 1102 notice
+  arrives. ibapi allows one such stream at a time: if another part of the program
+  holds it, the order still runs and a warning is logged, and a lost connection then
+  shows only when the order's own stream ends. Found by mutation testing and by the
+  bot review of PR 86.
+- **nanobook-broker: IBKR reconciliation after a disconnect ignored the order's side.**
+  `reconcile_partial_fill` compared the absolute position size, so a buy order
+  against a short position (or a sell against a long one) was reported as filled
+  by the size of that position. It now compares the position on the order's side;
+  a position on the other side is not counted as a fill. Found while writing tests
+  for mutation survivors.
+- **nanobook-broker: Binance open orders were always empty on the real service.**
+  Open-order polling and `reconcile_state` read `openOrders` from `/api/v3/account`,
+  which Binance does not return there, so both saw no open orders; every cached order
+  then read as missing, and each account poll emptied the order cache.
+  `BinanceBroker::open_orders` was a placeholder that returned an empty list. All three
+  now use a signed `GET /api/v3/openOrders` (see Changed). Found by the bot review of
+  PR 86.
+- **nanobook-broker: IBKR reconciliation after a disconnect counted shares held before
+  the order as filled.** `reconcile_partial_fill` compared the net position with the
+  filled quantity, so 75 shares held before a buy order read as 75 shares filled. It
+  now takes the position held before the order and counts only the change since then
+  on the order's side (see Changed). Found by the bot review of PR 86.
+- **nanobook-broker: the Binance websocket ignored `testnet`.** It always connected
+  to the production stream. A testnet session now uses
+  `wss://stream.testnet.binance.vision/ws`.
+- **nanobook-broker: the Binance websocket reconnect never gave up.** `connect`
+  reset the attempt counter before trying, so each failed attempt inside
+  `reconnect_with_backoff` started the count again and the loop retried forever.
+  The counter now resets only after a successful connect, and the loop stops after
+  `max_reconnect_attempts` with its error. Found while writing tests for mutation
+  survivors.
+- The ITCH parser read the Stock Directory (`R`) symbol from the tracking-number
+  and timestamp bytes. `ItchMessage::StockDirectory` now carries the real symbol
+  (ITCH 5.0 offset 11). Found by mutation testing.
+- The OCaml reference oracle mishandled a cancel after a partial fill and could hang
+  on corpus case 21; CI now has a 60 s timeout per corpus case.
+- **nanobook-rebalancer: closing a long sold above mid.** Closing a long now uses mid minus offset. Closing a short now uses mid plus offset.
+- **nanobook-rebalancer: `Error::Aborted` exited with code 0.** Kill-switch failures and a failed confirm prompt now exit with code 3. A risk failure still exits with code 2.
+- **nanobook-rebalancer: recovery and kill read audit `limit` as cents.** The writers store dollars. A 160.25 limit now reconstructs as 16025 cents.
+- **nanobook-rebalancer: the runner did not write `rebalancer.pid`.** `run` now writes the PID file at start and removes it on every exit path.
+- **nanobook-rebalancer: the close loop sent a limit-0 order when the quote was 0.** It now skips that symbol.
+- **nanobook-rebalancer: two cron runs could both pass the completed-window check.** The PID-file lock is now taken before the check, so a second caller that finds the lock held gets "in use by another rebalancer" rather than an idempotency rejection. `--kill` also no longer reads an empty PID file while a run starts: the PID is written to a temporary file and renamed.
+- **nanobook-broker: a Binance websocket `set_max_reconnect_attempts` above 64 overflowed the backoff.** The delay stays 16 s from the fifth attempt on.
+- **nanobook-rebalancer: recovery matched the first open order with remaining quantity.** It now matches an open order whose filled plus remaining quantity equals the incomplete intent's quantity; an order that two intents match is given to neither.
+- **nanobook-rebalancer: recovery matched open orders by quantity only.** An open order
+  of the right size marked an incomplete intent as submitted whatever its symbol,
+  because `BrokerOrderStatus` had no symbol. It now matches on symbol and quantity
+  (see Changed). An order with no known symbol matches no intent, so its intent is
+  recorded as not found at the broker. Found by the bot review of PR 86.
+
+### Added
+
+- **`OrderBook::can_fully_fill_under(side, price, quantity, owner, policy)`**, the
+  fill-or-kill check under a self-trade policy. `OrderBook::can_fully_fill` is
+  unchanged.
+- **Reference prices in execution records.** `reference_price` (unimpacted cents per share) and `reference_notional` (cents at the final filled quantity, using the engine's truncation and i64 clamp) are added to Rust and Python execution records. Stop references use the current close, including on hold days without rebalance fill bars. Slippage cost is `notional - reference_notional` for buys and `reference_notional - notional` for sells, up to truncation; `cost` remains commission only. The extra calculation runs only when recording is enabled; execution arithmetic and existing outputs are unchanged.
+- **Opt-in backtest execution records** through Rust's `BacktestBridgeOptions.record_executions` and Python's `record_executions=True`. Results include `initial_cash`, actual `executions` (including stop exits and trimmed buys), and period-close `cash_snapshots`. Quantity is signed raw micro-shares (1 share = 1,000,000; positive buys, negative sells), with Python `side` (`buy`/`sell`); price is effective cents per share; all other monetary fields are cents. Notional truncates toward zero after scaling and clamps to i64; cash fields reflect actual balance changes, including saturation. Ledgers are `None` by default and empty for enabled empty/rejected runs. Existing calls and financial calculations are unchanged. *Check your code if* you build `BacktestBridgeOptions` with a struct literal: add `record_executions` or end it with `..Default::default()`. `BacktestBridgeResult` gains the three fields `initial_cash`, `executions` and `cash_snapshots`; code that builds it with a struct literal must set them. The Python stubs for `backtest_weights` now match the runtime signature.
+- **Lean verification.** The Lean model, proofs and replay tools (`verification/lean/`), the corpus
+  generator (`examples/corpus_gen.rs`), the Rust-versus-Lean replay
+  (`verification/lean/differential.sh`), and golden corpus cases 19 to 25.
+- **nanobook-rebalancer `run_with_client`.** The run path now accepts an injected broker and confirm callback. Tests cover confirmation, `--force`, and PID-file lifetime.
+- **nanobook-rebalancer tests for mutation groups G1 to G31, seams S1 and S2, and gated paths T1 and T2.**
+
+### Known issues
+
+- **nanobook-rebalancer: `constraints.min_trade_usd` in target.json does not change the run minimum.** The run still reads `config.risk.min_trade_usd`.
+- **nanobook-rebalancer: `TargetSpec::window_id` hashes with `DefaultHasher`.** The id can change after a Rust upgrade, so a cron window can fire twice.
+- **nanobook-rebalancer: without `write_ahead_logging`, the runner does not write `order_submitted`.** Graceful kill then cannot report a dangling order.
+- **nanobook-broker: the Binance `Broker::cancel_order` by order id is a placeholder.** It is refused: the adapter has an order cache with the symbol of each order, but `cancel_order` does not use it yet.
+- **nanobook-risk: an empty side prints `-0.0%`.** The "Weight allocation" detail shows `-0.0% long` (or short) when no target is on that side, because an empty `f64` sum is `-0.0` since Rust 1.83. The numbers are zero; only the sign in the text is wrong.
+
+### Security
+
+- **No `unsafe` code in the Rust crates.** The one `unsafe` block (`Symbol::as_str`)
+  now uses a checked UTF-8 conversion of at most 8 bytes, and `nanobook`,
+  `nanobook-broker`, `nanobook-risk` and `nanobook-rebalancer` start with
+  `#![forbid(unsafe_code)]`.
+- **Security policy and public rating.** `SECURITY.md` explains private reporting
+  (GitHub private vulnerability reporting is enabled), supported versions, and every
+  supply-chain check with where to verify it. An OpenSSF Scorecard workflow publishes
+  the repository's security rating weekly.
+- **Verifiable release binaries.** GitHub Releases now carry a `SHA256SUMS` file and a
+  signed build-provenance attestation for every `lob` binary
+  (`gh attestation verify <file> --repo BoringQuantSystems/nanobook`).
+- **Dependency updates for RustSec advisories.** The lock file now pins rustix
+  1.1.6 (RUSTSEC-2026-0486; only in tests, through tempfile) and quinn-udp 0.5.16
+  (RUSTSEC-2026-0538; only in nanobook-broker built with the `binance` feature).
+
+### Documentation
+
+- The README leads with the verification. The developer reference moved to
+  `docs/reference.md`, and its examples were brought in line with the current API;
+  every changed Rust example was compiled and run.
+- The Python type stubs match the runtime: `CostModel(commission_bps: float,
+  slippage_bps: float, min_commission: int)`, and no `open_orders` on the Python
+  brokers.
+- `Timestamp` is documented as what it is: an event counter starting at 1, not
+  nanoseconds. `Portfolio::equity_curve` documents its initial entry. Six doctests
+  that were marked `ignore` now compile and run.
 
 ## [0.19.3] - 2026-10-31
 

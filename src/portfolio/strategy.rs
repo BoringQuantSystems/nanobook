@@ -6,8 +6,8 @@
 //!
 //! # Example
 //!
-//! ```ignore
-//! use nanobook::portfolio::strategy::{Strategy, run_backtest, BacktestResult};
+//! ```
+//! use nanobook::portfolio::strategy::{Strategy, run_backtest};
 //! use nanobook::portfolio::CostModel;
 //! use nanobook::Symbol;
 //!
@@ -24,6 +24,13 @@
 //!         prices.iter().map(|&(sym, _)| (sym, 1.0 / n)).collect()
 //!     }
 //! }
+//!
+//! let prices = vec![
+//!     vec![(Symbol::new("AAPL"), 185_00), (Symbol::new("MSFT"), 370_00)],
+//!     vec![(Symbol::new("AAPL"), 187_00), (Symbol::new("MSFT"), 368_00)],
+//! ];
+//! let result = run_backtest(&EqualWeight, &prices, 1_000_000_00, CostModel::zero(), 252.0, 0.0);
+//! assert_eq!(result.portfolio.equity_curve().len(), prices.len() + 1);
 //! ```
 
 use crate::portfolio::{CostModel, Metrics, Portfolio};
@@ -247,5 +254,22 @@ mod tests {
         let strat = EqualWeight;
         let weights = strat.compute_weights(0, &[], &Portfolio::new(100_00, CostModel::zero()));
         assert!(weights.is_empty());
+    }
+
+    #[test]
+    fn equal_weight_splits_evenly_across_symbols() {
+        let portfolio = Portfolio::new(100_00, CostModel::zero());
+        let two = EqualWeight.compute_weights(
+            0,
+            &[(sym("AAPL"), 150_00), (sym("MSFT"), 300_00)],
+            &portfolio,
+        );
+        assert_eq!(two, vec![(sym("AAPL"), 0.5), (sym("MSFT"), 0.5)]);
+
+        let names = ["A", "B", "C", "D"];
+        let prices: Vec<(Symbol, i64)> = names.iter().map(|n| (sym(n), 10_00)).collect();
+        let four = EqualWeight.compute_weights(0, &prices, &portfolio);
+        assert_eq!(four.len(), 4);
+        assert!(four.iter().all(|&(_, w)| w == 0.25));
     }
 }

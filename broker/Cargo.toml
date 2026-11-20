@@ -51,7 +51,7 @@ futures-util = { version = "0.3", optional = true }
 
 [dev-dependencies]
 tempfile = "3"
-tokio = { version = "1.0", features = ["full"] }
+tokio = { version = "1.0", features = ["full", "test-util"] }
 serde_json = "1"
 
 [[test]]

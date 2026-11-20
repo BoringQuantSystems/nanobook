@@ -66,7 +66,7 @@ Constants: `Price::ZERO`, `Price::MAX` (market buys), `Price::MIN` (market sells
 ### Quantities and Timestamps
 
 - `Quantity = u64` — shares or contracts, always positive.
-- `Timestamp = u64` — monotonic nanosecond counter (not system clock), guaranteeing deterministic ordering.
+- `Timestamp = u64` — sequence number assigned by the exchange, starting at 1. Each new order, stop order, and trade takes the next value. A cancellation does not take a value. Not wall-clock time. The sequence orders those events.
 
 ### Determinism
 
@@ -144,7 +144,7 @@ assert_eq!(err.unwrap_err(), ValidationError::ZeroPrice);
 | `Quantity` | `type Quantity = u64` | Number of shares/contracts | — |
 | `OrderId` | `struct OrderId(pub u64)` | Unique order identifier | `O42` |
 | `TradeId` | `struct TradeId(pub u64)` | Unique trade identifier | `T7` |
-| `Timestamp` | `type Timestamp = u64` | Nanosecond counter (not wall clock) | — |
+| `Timestamp` | `type Timestamp = u64` | Sequence number, +1 per new order, stop order, or trade (cancellations take none; not wall clock) | — |
 
 ### Result Types
 
@@ -591,6 +591,7 @@ pub struct Quote {
 
 pub struct BrokerOrderStatus {
     pub id: OrderId,
+    pub symbol: Option<Symbol>,    // None when the adapter cannot tell (order_status by id alone)
     pub status: OrderState,        // Pending | Submitted | PartiallyFilled | Filled | Cancelled | Rejected
     pub filled_quantity: u64,
     pub remaining_quantity: u64,

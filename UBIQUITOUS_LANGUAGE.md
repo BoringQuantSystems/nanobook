@@ -58,7 +58,7 @@
 | **Symbol**          | A ticker identifier for a financial instrument (max 8 ASCII bytes)         | Ticker, instrument        |
 | **Quantity**        | The number of shares or contracts in an order or trade                    | Size, volume, amount      |
 | **Price**           | The monetary value per unit, stored as fixed-point integer in cents         | Rate, quote               |
-| **Timestamp**       | A monotonic nanosecond counter for deterministic ordering                  | Time, sequence number     |
+| **Timestamp**       | An event sequence number assigned by the exchange (starts at 1; not wall-clock time) | Time, nanoseconds |
 
 ## Risk
 

@@ -250,4 +250,37 @@ mod tests {
             other => panic!("Expected BackwardJump, got {:?}", other),
         }
     }
+
+    #[test]
+    fn boundary_equal_to_thresholds_is_ok() {
+        let ts1 = Utc::now();
+        let mut backward = ClockSkewDetector::with_thresholds(30, 2.0);
+        backward.check(ts1);
+        assert_eq!(backward.check(ts1 - Duration::seconds(30)), SkewResult::Ok);
+
+        let mut forward_rate = ClockSkewDetector::with_thresholds(30, 0.5);
+        forward_rate.check(ts1);
+        assert_eq!(
+            forward_rate.check(ts1 + Duration::seconds(30)),
+            SkewResult::Ok
+        );
+
+        let mut equal_rate = ClockSkewDetector::with_thresholds(30, 2.0);
+        equal_rate.check(ts1);
+        assert_eq!(
+            equal_rate.check(ts1 + Duration::seconds(60)),
+            SkewResult::Ok
+        );
+    }
+
+    #[test]
+    fn identical_timestamps_are_never_skew_even_with_negative_thresholds() {
+        // A zero difference is neither a backward nor a forward jump. With a
+        // negative threshold and a negative rate limit, a `<=` or `>=` boundary
+        // would classify it as a jump, because 0 > -1 and -0.0 > -1.0.
+        let ts = Utc::now();
+        let mut detector = ClockSkewDetector::with_thresholds(-1, -1.0);
+        assert_eq!(detector.check(ts), SkewResult::Ok);
+        assert_eq!(detector.check(ts), SkewResult::Ok);
+    }
 }

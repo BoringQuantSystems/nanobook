@@ -127,6 +127,14 @@ impl IbkrBroker {
     /// * `Ok(())` - Successfully reconnected
     /// * `Err(BrokerError::ReconnectFailed)` - All attempts failed
     pub fn reconnect_with_backoff(&mut self) -> Result<(), BrokerError> {
+        self.reconnect_with_backoff_using(&mut thread::sleep)
+    }
+
+    /// `reconnect_with_backoff` with the sleep injected.
+    fn reconnect_with_backoff_using(
+        &mut self,
+        sleep: &mut dyn FnMut(Duration),
+    ) -> Result<(), BrokerError> {
         const MAX_ATTEMPTS: u32 = 5;
         const INITIAL_DELAY_MS: u64 = 1000;
         const MAX_DELAY_MS: u64 = 16000;
@@ -142,7 +150,7 @@ impl IbkrBroker {
 
             // Sleep before attempting reconnect (except for first attempt)
             if attempt > 1 {
-                thread::sleep(delay);
+                sleep(delay);
             }
 
             // Attempt reconnect
@@ -172,48 +180,62 @@ impl IbkrBroker {
         let _positions = self.positions()?;
         let cached_orders = client.cached_orders()?;
 
-        let mut discrepancies = Vec::new();
-        for broker_order in &open_orders {
-            match client.get_cached_order(broker_order.id.0 as i32)? {
-                Some(cached) => {
-                    let local_status = orders::map_ibkr_order_status(&cached.status);
-                    if local_status != broker_order.status {
-                        discrepancies.push(Discrepancy::OrderStatusMismatch {
-                            order_id: broker_order.id,
-                            local_status: cached.status,
-                            broker_status: broker_order.status,
-                        });
-                    }
-                }
-                None => discrepancies.push(Discrepancy::OrphanOrder {
-                    order_id: broker_order.id,
-                }),
-            }
-        }
-
-        for cached in cached_orders {
-            if !open_orders
-                .iter()
-                .any(|broker_order| broker_order.id.0 == cached.order_id as u64)
-            {
-                discrepancies.push(Discrepancy::MissingOrder {
-                    order_id: OrderId(cached.order_id as u64),
-                });
-            }
-        }
-
-        let has_critical_issues = !discrepancies.is_empty();
+        let report = diff_orders(&open_orders, cached_orders, |order_id| {
+            client.get_cached_order(order_id)
+        })?;
 
         // Block reconciliation if critical issues found
-        if has_critical_issues {
+        if report.has_critical_issues {
             self.reconciliation_blocked = true;
         }
 
-        Ok(DiscrepancyReport {
-            has_critical_issues,
-            discrepancies,
-        })
+        Ok(report)
     }
+}
+
+/// Compare the broker's open orders with the locally cached orders.
+/// `lookup` returns the cached order for a broker order id.
+fn diff_orders(
+    open_orders: &[BrokerOrderStatus],
+    cached_orders: Vec<client::CachedOrder>,
+    lookup: impl Fn(i32) -> Result<Option<client::CachedOrder>, BrokerError>,
+) -> Result<DiscrepancyReport, BrokerError> {
+    let mut discrepancies = Vec::new();
+    for broker_order in open_orders {
+        match lookup(broker_order.id.0 as i32)? {
+            Some(cached) => {
+                let local_status = orders::map_ibkr_order_status(&cached.status);
+                if local_status != broker_order.status {
+                    discrepancies.push(Discrepancy::OrderStatusMismatch {
+                        order_id: broker_order.id,
+                        local_status: cached.status,
+                        broker_status: broker_order.status,
+                    });
+                }
+            }
+            None => discrepancies.push(Discrepancy::OrphanOrder {
+                order_id: broker_order.id,
+            }),
+        }
+    }
+
+    for cached in cached_orders {
+        if !open_orders
+            .iter()
+            .any(|broker_order| broker_order.id.0 == cached.order_id as u64)
+        {
+            discrepancies.push(Discrepancy::MissingOrder {
+                order_id: OrderId(cached.order_id as u64),
+            });
+        }
+    }
+
+    let has_critical_issues = !discrepancies.is_empty();
+
+    Ok(DiscrepancyReport {
+        has_critical_issues,
+        discrepancies,
+    })
 }
 
 impl Broker for IbkrBroker {
@@ -255,6 +277,7 @@ impl Broker for IbkrBroker {
         // storing active order subscriptions.
         Ok(BrokerOrderStatus {
             id,
+            symbol: None,
             status: OrderState::Submitted,
             filled_quantity: 0,
             remaining_quantity: 0,
@@ -280,5 +303,144 @@ impl Broker for IbkrBroker {
 
     fn quote(&self, symbol: &Symbol) -> Result<Quote, BrokerError> {
         self.require_client()?.quote(symbol)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_connected_follows_the_connection_state() {
+        let mut broker = IbkrBroker::new("127.0.0.1", 1, 100);
+        assert!(!broker.is_connected());
+
+        broker.connection_state = ConnectionState::Connected;
+        assert!(broker.is_connected());
+
+        broker.connection_state = ConnectionState::Reconnecting;
+        assert!(!broker.is_connected());
+    }
+
+    #[test]
+    fn disconnect_resets_the_connection_state() {
+        let mut broker = IbkrBroker::new("127.0.0.1", 1, 100);
+        broker.connection_state = ConnectionState::Connected;
+
+        broker.disconnect().unwrap();
+
+        assert_eq!(broker.connection_state(), ConnectionState::Disconnected);
+        assert!(!broker.is_connected());
+        assert!(broker.client().is_none());
+    }
+
+    fn open(id: u64, status: OrderState) -> BrokerOrderStatus {
+        BrokerOrderStatus {
+            id: OrderId(id),
+            symbol: None,
+            status,
+            filled_quantity: 0,
+            remaining_quantity: 0,
+            avg_fill_price_cents: 0,
+        }
+    }
+
+    fn cached(id: i32, status: &str) -> client::CachedOrder {
+        client::CachedOrder {
+            order_id: id,
+            symbol: Symbol::new("AAPL"),
+            quantity: 100,
+            side: "Buy".to_string(),
+            status: status.to_string(),
+            submitted_at: std::time::Instant::now(),
+        }
+    }
+
+    fn diff(
+        open_orders: &[BrokerOrderStatus],
+        cached_orders: Vec<client::CachedOrder>,
+    ) -> DiscrepancyReport {
+        let lookup = cached_orders.clone();
+        diff_orders(open_orders, cached_orders, |id| {
+            Ok(lookup.iter().find(|c| c.order_id == id).cloned())
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn diff_orders_reports_nothing_when_broker_and_cache_agree() {
+        let report = diff(
+            &[open(1, OrderState::Submitted), open(2, OrderState::Filled)],
+            vec![cached(1, "Submitted"), cached(2, "Filled")],
+        );
+
+        assert!(report.discrepancies.is_empty());
+        assert!(!report.has_critical_issues);
+    }
+
+    #[test]
+    fn diff_orders_reports_a_status_mismatch() {
+        let report = diff(
+            &[open(1, OrderState::PartiallyFilled)],
+            vec![cached(1, "Submitted")],
+        );
+
+        assert_eq!(
+            report.discrepancies,
+            vec![Discrepancy::OrderStatusMismatch {
+                order_id: OrderId(1),
+                local_status: "Submitted".to_string(),
+                broker_status: OrderState::PartiallyFilled,
+            }]
+        );
+        assert!(report.has_critical_issues);
+    }
+
+    #[test]
+    fn diff_orders_reports_an_uncached_broker_order_as_orphan() {
+        let report = diff(&[open(9, OrderState::Submitted)], Vec::new());
+
+        assert_eq!(
+            report.discrepancies,
+            vec![Discrepancy::OrphanOrder {
+                order_id: OrderId(9)
+            }]
+        );
+        assert!(report.has_critical_issues);
+    }
+
+    #[test]
+    fn diff_orders_reports_a_cached_order_absent_from_the_broker_as_missing() {
+        let report = diff(
+            &[open(1, OrderState::Submitted)],
+            vec![cached(1, "Submitted"), cached(3, "Submitted")],
+        );
+
+        assert_eq!(
+            report.discrepancies,
+            vec![Discrepancy::MissingOrder {
+                order_id: OrderId(3)
+            }]
+        );
+        assert!(report.has_critical_issues);
+    }
+
+    #[test]
+    fn backoff_sleeps_double_up_to_the_cap_and_the_last_error_is_reported() {
+        let mut broker = IbkrBroker::new("127.0.0.1", 1, 100);
+        let mut sleeps = Vec::new();
+
+        let result = broker.reconnect_with_backoff_using(&mut |d| sleeps.push(d.as_millis()));
+
+        // No sleep before the first attempt; then 2 s, 4 s, 8 s, 16 s.
+        assert_eq!(sleeps, vec![2_000, 4_000, 8_000, 16_000]);
+        match result {
+            Err(BrokerError::ReconnectFailed { attempts, reason }) => {
+                assert_eq!(attempts, 5);
+                assert_eq!(reason, "not connected");
+            }
+            other => panic!("expected ReconnectFailed, got {other:?}"),
+        }
+        assert_eq!(broker.connection_state(), ConnectionState::Disconnected);
     }
 }

@@ -78,11 +78,82 @@ use ibapi::contracts::Contract;
 #[cfg(not(feature = "strict-market-reject"))]
 use ibapi::orders::order_builder::market_order;
 use ibapi::orders::order_builder::{limit_order, stop, stop_limit};
-use ibapi::orders::{Action as IbAction, CancelOrder, Order, OrderData, PlaceOrder};
+use ibapi::orders::{Action as IbAction, CancelOrder, Order, OrderData, OrderUpdate, PlaceOrder};
 use log::{debug, info, warn};
 
 use crate::error::BrokerError;
 use crate::types::*;
+
+/// IBKR system codes 1100 (connectivity lost), 1101 and 1102 (connectivity
+/// restored, data lost or kept). During an order they end the wait with
+/// `ConnectionLost`, so the caller reconciles the partial fill.
+fn is_connection_lost(code: i32) -> bool {
+    (1100..=1102).contains(&code)
+}
+
+/// Notices this loop acts on: errors (code < 0), warnings (>= 2000) and
+/// connection codes 1100 to 1102.
+///
+/// ibapi 2.12 sends an error with request id -1 to the global order-update
+/// stream only, not to the order's own subscription. `OrderEvents` reads
+/// that stream and hands such a notice to this loop.
+fn is_order_notice(code: i32) -> bool {
+    !(0..2000).contains(&code) || is_connection_lost(code)
+}
+
+/// How long `OrderEvents` waits on the order's own stream before it looks at
+/// the global order-update stream again.
+const GLOBAL_STREAM_POLL: Duration = Duration::from_millis(500);
+
+/// One look at the order's own stream. Short-lived, so the size of `PlaceOrder`
+/// does not matter.
+#[allow(clippy::large_enum_variant)]
+enum OrderPoll {
+    Event(PlaceOrder),
+    /// Nothing arrived within the poll interval.
+    Idle,
+    /// The stream is over: closed, reset or shut down.
+    Ended,
+}
+
+/// The events of one order, plus connection notices (codes 1100 to 1102)
+/// read from the global order-update stream and passed on as
+/// `PlaceOrder::Message`, so `run_place_order_events` ends the wait with
+/// `ConnectionLost` when TWS reports the loss.
+///
+/// `next_order` looks at the order's own stream for at most
+/// `GLOBAL_STREAM_POLL`. `next_global_notice` returns the next notice from the
+/// global stream without waiting. The order's events come first, so a fill
+/// that arrived before the notice is counted.
+struct OrderEvents<O, G> {
+    next_order: O,
+    next_global_notice: G,
+}
+
+impl<O, G> Iterator for OrderEvents<O, G>
+where
+    O: FnMut() -> OrderPoll,
+    G: FnMut() -> Option<ibapi::messages::Notice>,
+{
+    type Item = PlaceOrder;
+
+    fn next(&mut self) -> Option<PlaceOrder> {
+        loop {
+            let poll = (self.next_order)();
+            if let OrderPoll::Event(event) = poll {
+                return Some(event);
+            }
+            while let Some(notice) = (self.next_global_notice)() {
+                if is_connection_lost(notice.code) {
+                    return Some(PlaceOrder::Message(notice));
+                }
+            }
+            if matches!(poll, OrderPoll::Ended) {
+                return None;
+            }
+        }
+    }
+}
 
 pub fn map_ibkr_order_status(status: &str) -> OrderState {
     match status {
@@ -121,6 +192,7 @@ pub fn broker_order_status_from_ibkr_parts(
 
     Ok(BrokerOrderStatus {
         id: OrderId(order_id as u64),
+        symbol: None,
         status: mapped,
         filled_quantity,
         remaining_quantity,
@@ -134,13 +206,15 @@ pub fn broker_order_status_from_ibkr_parts(
 pub fn broker_order_status_from_order_data(
     order_data: &OrderData,
 ) -> Result<BrokerOrderStatus, BrokerError> {
-    broker_order_status_from_ibkr_parts(
+    let mut status = broker_order_status_from_ibkr_parts(
         order_data.order_id,
         &order_data.order_state.status,
         0.0,
         order_data.order.total_quantity,
         0.0,
-    )
+    )?;
+    status.symbol = nanobook::Symbol::try_new(&order_data.contract.symbol.0);
+    Ok(status)
 }
 
 /// Deduplication key for order-status callbacks.
@@ -379,18 +453,8 @@ pub fn execute_limit_order(
 ) -> Result<OrderResult, BrokerError> {
     let contract = Contract::stock(symbol.as_str()).build();
 
-    let ib_action = match side {
-        BrokerSide::Buy => IbAction::Buy,
-        BrokerSide::Sell => IbAction::Sell,
-    };
-
-    let limit_price = limit_price_cents as f64 / 100.0;
-    let quantity = shares as f64;
-
-    let mut ib_order = limit_order(ib_action, quantity, limit_price);
-    if let Some(cid) = client_order_id {
-        ib_order.order_ref = cid.as_str().to_string();
-    }
+    let ib_order = build_limit_order(side, shares, limit_price_cents, client_order_id);
+    let limit_price = ib_order.limit_price.unwrap_or_default();
 
     let order_id = client
         .next_valid_order_id()
@@ -401,20 +465,100 @@ pub fn execute_limit_order(
         side, shares, symbol, limit_price, order_id
     );
 
+    // TWS reports a lost connection (1100 to 1102) on the global order-update
+    // stream only. Only one such stream exists at a time and it is released
+    // when dropped. If it is taken, the order still runs and a lost connection
+    // shows only as the end of the order's own stream.
+    let global_stream = match client.order_update_stream() {
+        Ok(stream) => Some(stream),
+        Err(e) => {
+            warn!(
+                "Order-update stream unavailable ({e}): a connection notice for order {order_id} will not be seen"
+            );
+            None
+        }
+    };
+
     let subscription = client
         .place_order(order_id, &contract, &ib_order)
         .map_err(|e| BrokerError::Order(format!("failed to place order {order_id}: {e}")))?;
 
+    let events = OrderEvents {
+        next_order: || match subscription.next_timeout(GLOBAL_STREAM_POLL) {
+            Some(event) => OrderPoll::Event(event),
+            None if subscription.error().is_some() || !client.is_connected() => OrderPoll::Ended,
+            None => OrderPoll::Idle,
+        },
+        next_global_notice: || {
+            let stream = global_stream.as_ref()?;
+            loop {
+                if let OrderUpdate::Message(notice) = stream.try_next()? {
+                    return Some(notice);
+                }
+            }
+        },
+    };
+
     let start = Instant::now();
+    let PlaceOrderOutcome {
+        status: final_status,
+        filled,
+        avg_price,
+        commission,
+    } = run_place_order_events(
+        events,
+        order_id,
+        timeout,
+        || start.elapsed(),
+        || cancel_order(client, order_id),
+        dedup_cache,
+    )?;
+
+    let result = OrderResult {
+        symbol,
+        order_id,
+        filled_shares: filled as i64,
+        avg_fill_price: avg_price,
+        commission,
+        status: final_status,
+    };
+
+    info!(
+        "Order {order_id}: {:?} -- filled {} @ ${:.2}",
+        final_status, result.filled_shares, avg_price
+    );
+
+    Ok(result)
+}
+
+/// What the order-event loop ended with.
+struct PlaceOrderOutcome {
+    status: OrderOutcome,
+    filled: f64,
+    avg_price: f64,
+    commission: f64,
+}
+
+/// Read the order events until the order is final, times out, or the
+/// connection is lost. `elapsed` is the time since submission; `cancel`
+/// cancels the order when the timeout is reached.
+fn run_place_order_events(
+    events: impl IntoIterator<Item = PlaceOrder>,
+    order_id: i32,
+    timeout: Duration,
+    mut elapsed: impl FnMut() -> Duration,
+    mut cancel: impl FnMut() -> Result<(), BrokerError>,
+    dedup_cache: Option<&CallbackDedupCache>,
+) -> Result<PlaceOrderOutcome, BrokerError> {
     let mut filled = 0.0_f64;
     let mut avg_price = 0.0_f64;
     let mut commission = 0.0_f64;
     let mut final_status = OrderOutcome::Failed;
 
-    for response in subscription {
-        if start.elapsed() > timeout {
+    for response in events {
+        if elapsed() > timeout {
             warn!("Order {order_id} timed out after {}s", timeout.as_secs());
-            match cancel_order(client, order_id) {
+            match cancel() {
                 Ok(()) => {}
                 Err(BrokerError::CancelReject {
                     order_id: oid,
@@ -510,10 +654,9 @@ pub fn execute_limit_order(
                 commission = comm.commission;
                 debug!("Commission: ${:.4}", commission);
             }
-            PlaceOrder::Message(notice) if notice.code < 0 || notice.code >= 2000 => {
+            PlaceOrder::Message(notice) if is_order_notice(notice.code) => {
                 warn!("Order {order_id} error {}: {}", notice.code, notice.message);
-                // Detect disconnect errors (IBKR error code 1100, 1101, 1102)
-                if notice.code == 1100 || notice.code == 1101 || notice.code == 1102 {
+                if is_connection_lost(notice.code) {
                     warn!(
                         "AUDIT: Connection lost during order {order_id} execution (filled={})",
                         filled
@@ -531,7 +674,7 @@ pub fn execute_limit_order(
 
     // Detect silent disconnect: if loop terminated without final status and not timeout
     // This can happen when the connection drops without an explicit error message
-    if final_status == OrderOutcome::Failed && start.elapsed() < timeout {
+    if final_status == OrderOutcome::Failed && elapsed() < timeout {
         // Subscription terminated early without explicit error - likely silent disconnect
         warn!(
             "AUDIT: Subscription terminated early for order {order_id} (filled={}) - likely silent disconnect",
@@ -546,21 +689,34 @@ pub fn execute_limit_order(
         }
     }
 
-    let result = OrderResult {
-        symbol,
-        order_id,
-        filled_shares: filled as i64,
-        avg_fill_price: avg_price,
-        commission,
+    Ok(PlaceOrderOutcome {
         status: final_status,
+        filled,
+        avg_price,
+        commission,
+    })
+}
+
+/// Build the limit order sent by `execute_limit_order`.
+fn build_limit_order(
+    side: BrokerSide,
+    shares: i64,
+    limit_price_cents: i64,
+    client_order_id: Option<&ClientOrderId>,
+) -> Order {
+    let ib_action = match side {
+        BrokerSide::Buy => IbAction::Buy,
+        BrokerSide::Sell => IbAction::Sell,
     };
 
-    info!(
-        "Order {order_id}: {:?} -- filled {} @ ${:.2}",
-        final_status, result.filled_shares, avg_price
-    );
+    let limit_price = limit_price_cents as f64 / 100.0;
+    let quantity = shares as f64;
 
-    Ok(result)
+    let mut ib_order = limit_order(ib_action, quantity, limit_price);
+    if let Some(cid) = client_order_id {
+        ib_order.order_ref = cid.as_str().to_string();
+    }
+    ib_order
 }
 
 /// Cancel an order by ID.
@@ -599,71 +755,80 @@ pub fn cancel_order(client: &Client, order_id: i32) -> Result<(), BrokerError> {
         std::time::SystemTime::now()
     );
     match client.cancel_order(order_id, "") {
-        Ok(subscription) => {
-            for response in subscription {
-                match response {
-                    CancelOrder::OrderStatus(s) => {
-                        debug!("Cancel status for {order_id}: {}", s.status);
-                        // Order is already cancelled or filled - cancel is moot
-                        if s.status == "Cancelled" || s.status == "Filled" {
-                            info!(
-                                "AUDIT: Cancel confirmed for order {} (status: {})",
-                                order_id, s.status
-                            );
-                            return Ok(());
-                        }
-                    }
-                    CancelOrder::Notice(notice) => {
-                        debug!("Cancel notice for {order_id}: {}", notice.message);
-                        // Parse for explicit cancel rejection
-                        // IBKR error codes indicating rejection:
-                        // - 102: Order cancelled
-                        // - 201: Order rejected
-                        // - 202: Order cancelled - reason
-                        // - 1100: Connectivity between IB and TWS has been lost
-                        // - 460: Error reading request
-                        // We look for messages that indicate the order cannot be cancelled
-                        let msg = notice.message.to_lowercase();
-                        if msg.contains("cannot cancel")
-                            || msg.contains("already filled")
-                            || msg.contains("order completed")
-                            || msg.contains("no such order")
-                        {
-                            // Audit log: cancel rejection
-                            info!(
-                                "AUDIT: Cancel rejected for order {} - reason: {}",
-                                order_id, notice.message
-                            );
-                            return Err(BrokerError::CancelReject {
-                                order_id,
-                                reason: notice.message,
-                            });
-                        }
-                    }
+        Ok(subscription) => cancel_from_responses(order_id, subscription),
+        Err(e) => cancel_request_error(order_id, &e),
+    }
+}
+
+/// Classify the responses to a cancel request.
+fn cancel_from_responses(
+    order_id: i32,
+    responses: impl IntoIterator<Item = CancelOrder>,
+) -> Result<(), BrokerError> {
+    for response in responses {
+        match response {
+            CancelOrder::OrderStatus(s) => {
+                debug!("Cancel status for {order_id}: {}", s.status);
+                // Order is already cancelled or filled - cancel is moot
+                if s.status == "Cancelled" || s.status == "Filled" {
+                    info!(
+                        "AUDIT: Cancel confirmed for order {} (status: {})",
+                        order_id, s.status
+                    );
+                    return Ok(());
                 }
             }
-            info!("AUDIT: Cancel request sent for order {}", order_id);
-            Ok(())
-        }
-        Err(e) => {
-            warn!("Failed to cancel order {order_id}: {e}");
-            // If the error indicates the order is already complete, treat as success
-            let err_msg = e.to_string().to_lowercase();
-            if err_msg.contains("already filled")
-                || err_msg.contains("order completed")
-                || err_msg.contains("no such order")
-            {
-                info!(
-                    "AUDIT: Cancel moot for order {} (already completed)",
-                    order_id
-                );
-                return Ok(());
+            CancelOrder::Notice(notice) => {
+                debug!("Cancel notice for {order_id}: {}", notice.message);
+                // Parse for explicit cancel rejection
+                // IBKR error codes indicating rejection:
+                // - 102: Order cancelled
+                // - 201: Order rejected
+                // - 202: Order cancelled - reason
+                // - 1100: Connectivity between IB and TWS has been lost
+                // - 460: Error reading request
+                // We look for messages that indicate the order cannot be cancelled
+                let msg = notice.message.to_lowercase();
+                if msg.contains("cannot cancel")
+                    || msg.contains("already filled")
+                    || msg.contains("order completed")
+                    || msg.contains("no such order")
+                {
+                    // Audit log: cancel rejection
+                    info!(
+                        "AUDIT: Cancel rejected for order {} - reason: {}",
+                        order_id, notice.message
+                    );
+                    return Err(BrokerError::CancelReject {
+                        order_id,
+                        reason: notice.message,
+                    });
+                }
             }
-            Err(BrokerError::Order(format!(
-                "failed to cancel order {order_id}: {e}"
-            )))
         }
     }
+    info!("AUDIT: Cancel request sent for order {}", order_id);
+    Ok(())
+}
+
+/// Classify a failed cancel request: an already-complete order counts as cancelled.
+fn cancel_request_error(order_id: i32, e: &dyn std::fmt::Display) -> Result<(), BrokerError> {
+    warn!("Failed to cancel order {order_id}: {e}");
+    // If the error indicates the order is already complete, treat as success
+    let err_msg = e.to_string().to_lowercase();
+    if err_msg.contains("already filled")
+        || err_msg.contains("order completed")
+        || err_msg.contains("no such order")
+    {
+        info!(
+            "AUDIT: Cancel moot for order {} (already completed)",
+            order_id
+        );
+        return Ok(());
+    }
+    Err(BrokerError::Order(format!(
+        "failed to cancel order {order_id}: {e}"
+    )))
 }
 
 /// Reconcile order state when cancel is rejected.
@@ -743,15 +908,18 @@ pub fn reconcile_filled_order(order_id: i32, rejection_reason: &str) -> Result<b
 ///
 /// This function is called after a reconnect to detect partial fills that occurred
 /// during the disconnect window. It compares the pre-disconnect filled quantity
-/// against the current position to determine if additional shares were filled.
+/// against the change in position since the order began to determine if
+/// additional shares were filled.
 ///
 /// # Reconciliation Strategy
 ///
 /// The reconciliation uses ground truth from IBKR's position API:
 /// 1. Query current positions after reconnect
 /// 2. Find the position for the order's symbol
-/// 3. Compare current quantity against expected quantity
-/// 4. If current > expected, a partial fill occurred during disconnect
+/// 3. Subtract the position held before the order (`baseline_position`), and
+///    take the change on the order's side: shares filled since the order began
+/// 4. If that exceeds the pre-disconnect filled quantity, a partial fill occurred
+///    during disconnect
 /// 5. Update order state to PartialFill with the reconciled quantity
 ///
 /// # Important: No Double-Submit
@@ -768,6 +936,9 @@ pub fn reconcile_filled_order(order_id: i32, rejection_reason: &str) -> Result<b
 /// * `symbol` - The symbol of the order
 /// * `pre_disconnect_filled` - The filled quantity before disconnect
 /// * `expected_total` - The total expected quantity (original order size)
+/// * `baseline_position` - Signed position in the symbol (long positive, short
+///   negative) held before the order was submitted; 0 if there was none. Shares
+///   held before the order are not fills of this order.
 /// * `current_positions` - Current positions from reconnect (ground truth)
 /// * `side` - The order side (Buy/Sell)
 ///
@@ -790,32 +961,49 @@ pub fn reconcile_partial_fill(
     symbol: nanobook::Symbol,
     pre_disconnect_filled: i64,
     expected_total: i64,
+    baseline_position: i64,
     current_positions: &[Position],
     side: BrokerSide,
 ) -> Result<OrderResult, BrokerError> {
     info!(
-        "AUDIT: Reconciling order {} after disconnect - symbol={}, pre_disconnect_filled={}, expected_total={}",
-        order_id, symbol, pre_disconnect_filled, expected_total
+        "AUDIT: Reconciling order {} after disconnect - symbol={}, pre_disconnect_filled={}, expected_total={}, baseline_position={}",
+        order_id, symbol, pre_disconnect_filled, expected_total, baseline_position
     );
 
-    // Find the position for this symbol
-    let current_position = current_positions.iter().find(|p| p.symbol == symbol);
+    // Find the position for this symbol. A symbol missing from the positions is
+    // flat. If a position was held before the order, flat is a change (closed
+    // out), so compare it as quantity 0 instead of reporting "not found".
+    let flat = Position {
+        symbol,
+        quantity: 0,
+        avg_cost_cents: 0,
+        market_value_cents: 0,
+        unrealized_pnl_cents: 0,
+    };
+    let current_position = current_positions
+        .iter()
+        .find(|p| p.symbol == symbol)
+        .or((baseline_position != 0).then_some(&flat));
 
     match current_position {
         Some(pos) => {
-            let current_qty = pos.quantity;
+            // Change in position since the order began. A position held before
+            // the order is in the baseline and is not a fill.
+            let current_qty = pos.quantity - baseline_position;
 
-            // For buy orders, positive quantity indicates long position
-            // For sell orders, negative quantity indicates short position
+            // For buy orders, a rise in the position is a fill
+            // For sell orders, a fall in the position is a fill
             let signed_current_qty = match side {
                 BrokerSide::Buy => current_qty,
                 BrokerSide::Sell => -current_qty,
             };
 
-            // Compare current quantity against pre-disconnect filled
-            if signed_current_qty.abs() > pre_disconnect_filled {
+            // Compare the change on the order's side against pre-disconnect
+            // filled. Signed, not absolute: a buy against a short position (or a
+            // sell against a long one) is not a fill of this order.
+            if signed_current_qty > pre_disconnect_filled {
                 // Additional shares were filled during disconnect
-                let reconciled_filled = signed_current_qty.abs();
+                let reconciled_filled = signed_current_qty;
                 let remainder = expected_total - reconciled_filled;
 
                 info!(
@@ -831,7 +1019,7 @@ pub fn reconcile_partial_fill(
                     commission: 0.0,     // Would need to query execution history
                     status: OrderOutcome::PartialFill,
                 })
-            } else if signed_current_qty.abs() == pre_disconnect_filled {
+            } else if signed_current_qty == pre_disconnect_filled {
                 // No additional fills during disconnect
                 info!(
                     "AUDIT: Order {} no additional fills detected during disconnect (filled={})",
@@ -854,9 +1042,7 @@ pub fn reconcile_partial_fill(
                 // Position decreased - unexpected, manual review required
                 warn!(
                     "AUDIT: Order {} position decreased after disconnect (pre={}, current={}) - manual review required",
-                    order_id,
-                    pre_disconnect_filled,
-                    signed_current_qty.abs()
+                    order_id, pre_disconnect_filled, signed_current_qty
                 );
 
                 Ok(OrderResult {
@@ -940,6 +1126,25 @@ mod tests {
         assert_eq!(ib_order.total_quantity, 10.0);
         assert_eq!(ib_order.aux_price, Some(182.50));
         assert_eq!(ib_order.limit_price, Some(181.00));
+    }
+
+    #[test]
+    fn connection_codes_reach_the_order_loop() {
+        for code in [1100, 1101, 1102] {
+            assert!(
+                is_order_notice(code),
+                "code {code} must reach the order loop"
+            );
+            assert!(is_connection_lost(code), "code {code} is a connection loss");
+        }
+        for code in [1099, 1103, 2104, -1, 0, 201] {
+            assert!(
+                !is_connection_lost(code),
+                "code {code} is not a connection loss"
+            );
+        }
+        assert!(is_order_notice(-1) && is_order_notice(2104));
+        assert!(!is_order_notice(201) && !is_order_notice(1099));
     }
 
     #[test]
@@ -1066,6 +1271,7 @@ mod tests {
             symbol,
             pre_disconnect_filled,
             expected_total,
+            0,
             &positions,
             side,
         );
@@ -1103,6 +1309,7 @@ mod tests {
             symbol,
             pre_disconnect_filled,
             expected_total,
+            0,
             &positions,
             side,
         );
@@ -1133,6 +1340,7 @@ mod tests {
             symbol,
             pre_disconnect_filled,
             expected_total,
+            0,
             &positions,
             side,
         );
@@ -1144,6 +1352,39 @@ mod tests {
             "Should report pre-disconnect fill quantity"
         );
         assert_eq!(order_result.status, OrderOutcome::PartialFill);
+    }
+
+    #[test]
+    fn test_reconcile_partial_fill_nothing_filled_and_flat_position_is_failed() {
+        // Nothing filled before the disconnect and the account is still flat
+        // after it: the order did not fill, so it is Failed, not a 0-share
+        // PartialFill.
+        let symbol = nanobook::Symbol::try_new("AAPL").unwrap();
+        let positions = vec![Position {
+            symbol,
+            quantity: 0,
+            avg_cost_cents: 0,
+            market_value_cents: 0,
+            unrealized_pnl_cents: 0,
+        }];
+
+        let result =
+            reconcile_partial_fill(1, symbol, 0, 100, 0, &positions, BrokerSide::Buy).unwrap();
+
+        assert_eq!(result.order_id, 1);
+        assert_eq!(result.filled_shares, 0);
+        assert_eq!(result.status, OrderOutcome::Failed);
+    }
+
+    #[test]
+    fn test_reconcile_partial_fill_nothing_filled_and_no_position_is_failed() {
+        let symbol = nanobook::Symbol::try_new("AAPL").unwrap();
+
+        let result = reconcile_partial_fill(1, symbol, 0, 100, 0, &[], BrokerSide::Buy).unwrap();
+
+        assert_eq!(result.order_id, 1);
+        assert_eq!(result.filled_shares, 0);
+        assert_eq!(result.status, OrderOutcome::Failed);
     }
 
     #[test]
@@ -1169,6 +1410,7 @@ mod tests {
             symbol,
             pre_disconnect_filled,
             expected_total,
+            0,
             &positions,
             side,
         );
@@ -1180,6 +1422,117 @@ mod tests {
             "Should detect additional 25 shares sold"
         );
         assert_eq!(order_result.status, OrderOutcome::PartialFill);
+    }
+
+    fn position(quantity: i64) -> Vec<Position> {
+        vec![Position {
+            symbol: nanobook::Symbol::try_new("AAPL").unwrap(),
+            quantity,
+            avg_cost_cents: 15000,
+            market_value_cents: quantity * 15000,
+            unrealized_pnl_cents: 0,
+        }]
+    }
+
+    #[test]
+    fn test_reconcile_buy_against_a_short_position_is_not_a_fill() {
+        // A short of 75 is on the other side of a buy order: no shares of this
+        // order were filled. The old absolute comparison reported 75 filled.
+        let symbol = nanobook::Symbol::try_new("AAPL").unwrap();
+        let result =
+            reconcile_partial_fill(1, symbol, 0, 100, 0, &position(-75), BrokerSide::Buy).unwrap();
+        assert_eq!(result.filled_shares, 0);
+        assert_eq!(result.status, OrderOutcome::PartialFill);
+    }
+
+    #[test]
+    fn test_reconcile_buy_counts_only_the_change_since_the_baseline() {
+        // 75 shares were held before the order. The position is still 75 after
+        // the reconnect, so none of the order's shares filled. The old code
+        // compared the position itself (75) against the filled quantity and
+        // reported 75 shares filled.
+        let symbol = nanobook::Symbol::try_new("AAPL").unwrap();
+        let result =
+            reconcile_partial_fill(1, symbol, 0, 100, 75, &position(75), BrokerSide::Buy).unwrap();
+        assert_eq!(result.filled_shares, 0);
+        assert_eq!(result.status, OrderOutcome::Failed);
+
+        // 25 further shares filled during the disconnect: 100 - 75.
+        let result =
+            reconcile_partial_fill(1, symbol, 0, 100, 75, &position(100), BrokerSide::Buy).unwrap();
+        assert_eq!(result.filled_shares, 25);
+        assert_eq!(result.status, OrderOutcome::PartialFill);
+    }
+
+    #[test]
+    fn test_reconcile_counts_a_position_missing_from_the_list_as_flat() {
+        // 75 shares were held before a sell of 100. After the reconnect the
+        // symbol is not in the list at all: the position was sold down to flat,
+        // 75 shares of this order filled. Reporting "not found" would give 0.
+        let symbol = nanobook::Symbol::try_new("AAPL").unwrap();
+        let result = reconcile_partial_fill(1, symbol, 0, 100, 75, &[], BrokerSide::Sell).unwrap();
+        assert_eq!(result.filled_shares, 75);
+        assert_eq!(result.status, OrderOutcome::PartialFill);
+
+        // A short of 30 covered by a buy of 30 (flat): 30 filled.
+        let result = reconcile_partial_fill(1, symbol, 0, 30, -30, &[], BrokerSide::Buy).unwrap();
+        assert_eq!(result.filled_shares, 30);
+        assert_eq!(result.status, OrderOutcome::PartialFill);
+    }
+
+    #[test]
+    fn test_reconcile_sell_counts_only_the_change_since_the_baseline() {
+        // A short of 30 was held before the sell order; 20 more were sold.
+        let symbol = nanobook::Symbol::try_new("AAPL").unwrap();
+        let result =
+            reconcile_partial_fill(1, symbol, 5, 100, -30, &position(-50), BrokerSide::Sell)
+                .unwrap();
+        assert_eq!(result.filled_shares, 20);
+        assert_eq!(result.status, OrderOutcome::PartialFill);
+    }
+
+    #[test]
+    fn test_reconcile_sell_against_a_long_position_is_not_a_fill() {
+        let symbol = nanobook::Symbol::try_new("AAPL").unwrap();
+        let result =
+            reconcile_partial_fill(1, symbol, 50, 100, 0, &position(75), BrokerSide::Sell).unwrap();
+        assert_eq!(result.filled_shares, 50);
+        assert_eq!(result.status, OrderOutcome::PartialFill);
+    }
+
+    #[test]
+    fn test_order_data_status_carries_the_contract_symbol() {
+        let data = OrderData {
+            order_id: 5,
+            contract: Contract {
+                symbol: ibapi::contracts::Symbol::new("AAPL"),
+                ..Contract::default()
+            },
+            order: Order {
+                total_quantity: 100.0,
+                ..Order::default()
+            },
+            ..OrderData::default()
+        };
+
+        let status = broker_order_status_from_order_data(&data).unwrap();
+
+        assert_eq!(status.id, OrderId(5));
+        assert_eq!(status.symbol, Some(nanobook::Symbol::new("AAPL")));
+        assert_eq!(status.remaining_quantity, 100);
+
+        // A symbol that `Symbol` cannot hold (over 8 bytes) is left out.
+        let long = OrderData {
+            contract: Contract {
+                symbol: ibapi::contracts::Symbol::new("ABCDEFGHIJ"),
+                ..Contract::default()
+            },
+            ..OrderData::default()
+        };
+        assert_eq!(
+            broker_order_status_from_order_data(&long).unwrap().symbol,
+            None
+        );
     }
 
     #[test]
@@ -1194,5 +1547,622 @@ mod tests {
         assert!(error_string.contains("connection lost"));
         assert!(error_string.contains("12345"));
         assert!(error_string.contains("50"));
+    }
+
+    // ---- build_limit_order ---------------------------------------------
+
+    #[test]
+    fn limit_order_carries_price_quantity_and_client_order_id() {
+        let cid = ClientOrderId::new("cid-1").unwrap();
+
+        let order = build_limit_order(BrokerSide::Buy, 100, 18_550, Some(&cid));
+
+        assert_eq!(order.order_type, "LMT");
+        assert!(matches!(order.action, IbAction::Buy));
+        assert_eq!(order.total_quantity, 100.0);
+        assert_eq!(order.limit_price, Some(185.5));
+        assert_eq!(order.order_ref, "cid-1");
+    }
+
+    #[test]
+    fn limit_order_sell_without_client_order_id() {
+        let order = build_limit_order(BrokerSide::Sell, 7, 100_00, None);
+
+        assert!(matches!(order.action, IbAction::Sell));
+        assert_eq!(order.total_quantity, 7.0);
+        assert_eq!(order.limit_price, Some(100.0));
+        assert!(order.order_ref.is_empty());
+    }
+
+    // ---- run_place_order_events ----------------------------------------
+
+    const TIMEOUT: Duration = Duration::from_secs(10);
+    const ORDER_ID: i32 = 7;
+
+    fn st(status: &str, filled: f64, remaining: f64, avg: f64) -> PlaceOrder {
+        PlaceOrder::OrderStatus(ibapi::orders::OrderStatus {
+            order_id: ORDER_ID,
+            status: status.to_string(),
+            filled,
+            remaining,
+            average_fill_price: avg,
+            ..Default::default()
+        })
+    }
+
+    fn notice(code: i32, message: &str) -> ibapi::messages::Notice {
+        ibapi::messages::Notice {
+            code,
+            message: message.to_string(),
+            error_time: None,
+        }
+    }
+
+    fn secs(seconds: &[u64]) -> Vec<Duration> {
+        seconds.iter().map(|s| Duration::from_secs(*s)).collect()
+    }
+
+    type Run = (Result<(OrderOutcome, f64, f64, f64), BrokerError>, usize);
+
+    /// Run the event loop. `elapsed` answers successive calls in order and
+    /// repeats its last value; returns the result and the cancel-call count.
+    fn run(
+        events: Vec<PlaceOrder>,
+        elapsed: &[Duration],
+        cancel: fn() -> Result<(), BrokerError>,
+        dedup: Option<&CallbackDedupCache>,
+    ) -> Run {
+        let cancels = std::cell::Cell::new(0usize);
+        let calls = std::cell::Cell::new(0usize);
+        let result = run_place_order_events(
+            events,
+            ORDER_ID,
+            TIMEOUT,
+            || {
+                let i = calls.get().min(elapsed.len() - 1);
+                calls.set(calls.get() + 1);
+                elapsed[i]
+            },
+            || {
+                cancels.set(cancels.get() + 1);
+                cancel()
+            },
+            dedup,
+        )
+        .map(|o| (o.status, o.filled, o.avg_price, o.commission));
+        (result, cancels.get())
+    }
+
+    fn cancel_ok() -> Result<(), BrokerError> {
+        Ok(())
+    }
+
+    fn fresh() -> [Duration; 1] {
+        [Duration::ZERO]
+    }
+
+    #[test]
+    fn events_fill_ends_the_order() {
+        let (result, cancels) = run(
+            vec![
+                st("Submitted", 0.0, 100.0, 0.0),
+                st("Filled", 100.0, 0.0, 185.5),
+            ],
+            &fresh(),
+            cancel_ok,
+            None,
+        );
+
+        assert_eq!(result.unwrap(), (OrderOutcome::Filled, 100.0, 185.5, 0.0));
+        assert_eq!(cancels, 0);
+    }
+
+    #[test]
+    fn events_cancel_after_a_partial_fill_is_a_partial_fill() {
+        let (result, cancels) = run(
+            vec![
+                st("Submitted", 40.0, 60.0, 10.0),
+                st("Cancelled", 40.0, 60.0, 10.0),
+            ],
+            &fresh(),
+            cancel_ok,
+            None,
+        );
+
+        assert_eq!(
+            result.unwrap(),
+            (OrderOutcome::PartialFill, 40.0, 10.0, 0.0)
+        );
+        assert_eq!(cancels, 0);
+    }
+
+    #[test]
+    fn events_cancel_with_nothing_filled_is_cancelled() {
+        let (result, _) = run(
+            vec![st("Cancelled", 0.0, 100.0, 0.0)],
+            &fresh(),
+            cancel_ok,
+            None,
+        );
+
+        assert_eq!(result.unwrap(), (OrderOutcome::Cancelled, 0.0, 0.0, 0.0));
+    }
+
+    #[test]
+    fn events_commission_report_is_returned() {
+        let (result, _) = run(
+            vec![
+                PlaceOrder::CommissionReport(ibapi::orders::CommissionReport {
+                    commission: 1.25,
+                    ..Default::default()
+                }),
+                st("Filled", 100.0, 0.0, 185.5),
+            ],
+            &fresh(),
+            cancel_ok,
+            None,
+        );
+
+        assert_eq!(result.unwrap(), (OrderOutcome::Filled, 100.0, 185.5, 1.25));
+    }
+
+    #[test]
+    fn events_timeout_after_a_partial_fill_cancels_and_reports_partial() {
+        let (result, cancels) = run(
+            vec![
+                st("Submitted", 30.0, 70.0, 10.0),
+                st("Submitted", 30.0, 70.0, 10.0),
+            ],
+            &secs(&[0, 11]),
+            cancel_ok,
+            None,
+        );
+
+        assert_eq!(
+            result.unwrap(),
+            (OrderOutcome::PartialFill, 30.0, 10.0, 0.0)
+        );
+        assert_eq!(cancels, 1);
+    }
+
+    #[test]
+    fn events_timeout_with_nothing_filled_cancels_and_reports_cancelled() {
+        let (result, cancels) = run(
+            vec![st("Submitted", 0.0, 100.0, 0.0)],
+            &secs(&[11]),
+            cancel_ok,
+            None,
+        );
+
+        assert_eq!(result.unwrap(), (OrderOutcome::Cancelled, 0.0, 0.0, 0.0));
+        assert_eq!(cancels, 1);
+    }
+
+    #[test]
+    fn events_exactly_at_the_timeout_do_not_cancel() {
+        let (result, cancels) = run(
+            vec![
+                st("Submitted", 30.0, 70.0, 10.0),
+                st("Filled", 100.0, 0.0, 12.0),
+            ],
+            &secs(&[10]),
+            cancel_ok,
+            None,
+        );
+
+        assert_eq!(result.unwrap(), (OrderOutcome::Filled, 100.0, 12.0, 0.0));
+        assert_eq!(cancels, 0);
+    }
+
+    #[test]
+    fn events_timeout_cancel_rejected_because_filled_reports_filled() {
+        fn rejected() -> Result<(), BrokerError> {
+            Err(BrokerError::CancelReject {
+                order_id: ORDER_ID,
+                reason: "Order already filled".to_string(),
+            })
+        }
+        let (result, cancels) = run(
+            vec![st("Submitted", 0.0, 100.0, 0.0)],
+            &secs(&[11]),
+            rejected,
+            None,
+        );
+
+        assert_eq!(result.unwrap().0, OrderOutcome::Filled);
+        assert_eq!(cancels, 1);
+    }
+
+    #[test]
+    fn events_timeout_with_uncertain_cancel_reject_or_failure_is_not_filled() {
+        fn uncertain() -> Result<(), BrokerError> {
+            Err(BrokerError::CancelReject {
+                order_id: ORDER_ID,
+                reason: "Cannot cancel order at this time".to_string(),
+            })
+        }
+        fn failed() -> Result<(), BrokerError> {
+            Err(BrokerError::Order(
+                "failed to cancel order 7: boom".to_string(),
+            ))
+        }
+        let cancellers: [fn() -> Result<(), BrokerError>; 2] = [uncertain, failed];
+        for cancel in cancellers {
+            let (result, cancels) = run(
+                vec![st("Submitted", 0.0, 100.0, 0.0)],
+                &secs(&[11]),
+                cancel,
+                None,
+            );
+
+            assert_eq!(result.unwrap().0, OrderOutcome::Cancelled);
+            assert_eq!(cancels, 1);
+        }
+    }
+
+    #[test]
+    fn events_end_with_a_fill_is_a_silent_disconnect() {
+        let (result, _) = run(
+            vec![st("Submitted", 30.0, 70.0, 10.0)],
+            &fresh(),
+            cancel_ok,
+            None,
+        );
+
+        assert!(matches!(
+            result,
+            Err(BrokerError::ConnectionLost {
+                order_id: ORDER_ID,
+                filled_quantity: 30
+            })
+        ));
+    }
+
+    #[test]
+    fn events_end_with_nothing_filled_is_failed() {
+        let (result, _) = run(Vec::new(), &fresh(), cancel_ok, None);
+
+        assert_eq!(result.unwrap(), (OrderOutcome::Failed, 0.0, 0.0, 0.0));
+    }
+
+    #[test]
+    fn events_end_at_or_after_the_timeout_is_not_a_disconnect() {
+        for after in [10, 11] {
+            let (result, cancels) = run(
+                vec![st("Submitted", 30.0, 70.0, 10.0)],
+                &secs(&[0, after]),
+                cancel_ok,
+                None,
+            );
+
+            assert_eq!(
+                result.unwrap(),
+                (OrderOutcome::Failed, 30.0, 10.0, 0.0),
+                "elapsed {after} s"
+            );
+            assert_eq!(cancels, 0);
+        }
+    }
+
+    #[test]
+    fn events_dedup_records_each_new_callback_and_drops_old_ones() {
+        let cache = CallbackDedupCache::default();
+        let stale_key = OrderCallbackKey {
+            order_id: 99,
+            status: "Submitted".to_string(),
+            filled_quantity: 0,
+        };
+        let stale_time = Instant::now()
+            .checked_sub(Duration::from_secs(301))
+            .expect("monotonic clock older than 301 s");
+        cache.lock().unwrap().insert(stale_key.clone(), stale_time);
+
+        let (result, _) = run(
+            vec![
+                st("Submitted", 0.0, 100.0, 0.0),
+                st("Submitted", 0.0, 100.0, 0.0),
+                st("Filled", 100.0, 0.0, 185.5),
+            ],
+            &fresh(),
+            cancel_ok,
+            Some(&cache),
+        );
+
+        assert_eq!(result.unwrap().0, OrderOutcome::Filled);
+        let keys = cache.lock().unwrap();
+        assert_eq!(keys.len(), 2);
+        assert!(!keys.contains_key(&stale_key));
+        for (status, filled) in [("Submitted", 0), ("Filled", 100)] {
+            assert!(keys.contains_key(&OrderCallbackKey {
+                order_id: ORDER_ID,
+                status: status.to_string(),
+                filled_quantity: filled,
+            }));
+        }
+    }
+
+    #[test]
+    fn events_duplicate_callback_is_skipped() {
+        let cache = CallbackDedupCache::default();
+        // The repeated callback carries a different average price: skipping
+        // it keeps 10.0; processing it would give 99.0.
+        let (result, _) = run(
+            vec![
+                st("Submitted", 30.0, 70.0, 10.0),
+                st("Submitted", 30.0, 70.0, 99.0),
+                st("Submitted", 31.0, 69.0, 5.0),
+            ],
+            &secs(&[0, 0, 11]),
+            cancel_ok,
+            Some(&cache),
+        );
+
+        assert_eq!(
+            result.unwrap(),
+            (OrderOutcome::PartialFill, 30.0, 10.0, 0.0)
+        );
+    }
+
+    #[test]
+    fn events_ordinary_notices_do_not_abort_the_order() {
+        for code in [2104, 201, 1099, 1103, -1] {
+            let (result, _) = run(
+                vec![
+                    PlaceOrder::Message(notice(code, "notice")),
+                    st("Filled", 100.0, 0.0, 185.5),
+                ],
+                &fresh(),
+                cancel_ok,
+                None,
+            );
+
+            assert_eq!(
+                result.unwrap().0,
+                OrderOutcome::Filled,
+                "code {code} must not abort"
+            );
+        }
+    }
+
+    #[test]
+    fn events_connection_codes_end_the_order_with_connection_lost() {
+        for code in [1100, 1101, 1102] {
+            let (result, _) = run(
+                vec![
+                    st("Submitted", 30.0, 70.0, 10.0),
+                    PlaceOrder::Message(notice(code, "connectivity")),
+                    st("Filled", 100.0, 0.0, 185.5),
+                ],
+                &fresh(),
+                cancel_ok,
+                None,
+            );
+
+            assert!(
+                matches!(
+                    result,
+                    Err(BrokerError::ConnectionLost {
+                        order_id: ORDER_ID,
+                        filled_quantity: 30
+                    })
+                ),
+                "code {code}"
+            );
+        }
+
+        let (result, _) = run(
+            vec![PlaceOrder::Message(notice(1100, "lost"))],
+            &fresh(),
+            cancel_ok,
+            None,
+        );
+        assert!(matches!(
+            result,
+            Err(BrokerError::ConnectionLost {
+                order_id: ORDER_ID,
+                filled_quantity: 0
+            })
+        ));
+    }
+
+    // ---- OrderEvents: notices from the global order-update stream ------
+
+    /// Run the order loop over `OrderEvents`. `polls` are the successive looks
+    /// at the order's own stream (the stream ends when they run out) and
+    /// `global` the successive reads of the global stream (empty when they
+    /// run out).
+    fn run_merged(
+        polls: Vec<OrderPoll>,
+        global: Vec<Option<ibapi::messages::Notice>>,
+    ) -> Result<(OrderOutcome, f64), BrokerError> {
+        let mut polls = std::collections::VecDeque::from(polls);
+        let mut global = std::collections::VecDeque::from(global);
+        let events = OrderEvents {
+            next_order: || polls.pop_front().unwrap_or(OrderPoll::Ended),
+            next_global_notice: || global.pop_front().flatten(),
+        };
+        run_place_order_events(
+            events,
+            ORDER_ID,
+            TIMEOUT,
+            || Duration::ZERO,
+            cancel_ok,
+            None,
+        )
+        .map(|o| (o.status, o.filled))
+    }
+
+    fn event(status: &str, filled: f64, remaining: f64, avg: f64) -> OrderPoll {
+        OrderPoll::Event(st(status, filled, remaining, avg))
+    }
+
+    #[test]
+    fn global_connection_notice_ends_the_wait_while_the_order_stream_is_quiet() {
+        // The order's own stream stays open and silent; the loss is reported
+        // only on the global stream. Without reading it the wait ends with
+        // `Ok(Failed)` when the stream finally ends.
+        for code in [1100, 1101, 1102] {
+            let result = run_merged(
+                vec![OrderPoll::Idle, OrderPoll::Idle, OrderPoll::Idle],
+                vec![None, Some(notice(code, "connectivity"))],
+            );
+
+            assert!(
+                matches!(
+                    result,
+                    Err(BrokerError::ConnectionLost {
+                        order_id: ORDER_ID,
+                        filled_quantity: 0
+                    })
+                ),
+                "code {code}: {result:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn fills_already_on_the_order_stream_count_before_a_global_notice() {
+        // The notice is ready from the start, but the 40-share fill came
+        // first on the order's stream.
+        let result = run_merged(
+            vec![
+                event("Submitted", 40.0, 60.0, 10.0),
+                OrderPoll::Idle,
+                OrderPoll::Idle,
+            ],
+            vec![Some(notice(1100, "connectivity"))],
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(BrokerError::ConnectionLost {
+                    order_id: ORDER_ID,
+                    filled_quantity: 40
+                })
+            ),
+            "{result:?}"
+        );
+    }
+
+    #[test]
+    fn global_notice_at_the_end_of_the_order_stream_is_still_read() {
+        let result = run_merged(
+            vec![OrderPoll::Ended],
+            vec![Some(notice(1100, "connectivity"))],
+        );
+
+        assert!(matches!(
+            result,
+            Err(BrokerError::ConnectionLost {
+                order_id: ORDER_ID,
+                filled_quantity: 0
+            })
+        ));
+    }
+
+    #[test]
+    fn other_global_notices_do_not_abort_the_order() {
+        let result = run_merged(
+            vec![OrderPoll::Idle, event("Filled", 100.0, 0.0, 185.5)],
+            vec![
+                Some(notice(2104, "market data farm connection is OK")),
+                Some(notice(201, "order rejected")),
+                Some(notice(1103, "other")),
+                None,
+            ],
+        );
+
+        assert_eq!(result.unwrap().0, OrderOutcome::Filled);
+    }
+
+    // ---- cancel_from_responses / cancel_request_error ------------------
+
+    fn cancel_status(status: &str) -> CancelOrder {
+        CancelOrder::OrderStatus(ibapi::orders::OrderStatus {
+            status: status.to_string(),
+            ..Default::default()
+        })
+    }
+
+    fn cancel_notice(message: &str) -> CancelOrder {
+        CancelOrder::Notice(notice(202, message))
+    }
+
+    #[test]
+    fn cancel_notice_after_pending_cancel_is_a_reject() {
+        let result = cancel_from_responses(
+            ORDER_ID,
+            vec![
+                cancel_status("PendingCancel"),
+                cancel_notice("Order already filled"),
+            ],
+        );
+
+        match result {
+            Err(BrokerError::CancelReject { order_id, reason }) => {
+                assert_eq!(order_id, ORDER_ID);
+                assert_eq!(reason, "Order already filled");
+            }
+            other => panic!("expected CancelReject, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cancel_confirmed_status_ends_the_cancel_before_later_notices() {
+        for status in ["Cancelled", "Filled"] {
+            let result = cancel_from_responses(
+                ORDER_ID,
+                vec![cancel_status(status), cancel_notice("Cannot cancel")],
+            );
+
+            assert!(result.is_ok(), "status {status}");
+        }
+    }
+
+    #[test]
+    fn cancel_each_rejection_phrase_is_a_reject() {
+        for phrase in [
+            "Cannot cancel order",
+            "ORDER ALREADY FILLED",
+            "order completed",
+            "No such order",
+        ] {
+            let result = cancel_from_responses(ORDER_ID, vec![cancel_notice(phrase)]);
+
+            assert!(
+                matches!(result, Err(BrokerError::CancelReject { .. })),
+                "{phrase}"
+            );
+        }
+    }
+
+    #[test]
+    fn cancel_other_notices_and_empty_responses_are_ok() {
+        assert!(
+            cancel_from_responses(ORDER_ID, vec![cancel_notice("cancel acknowledged")]).is_ok()
+        );
+        assert!(cancel_from_responses(ORDER_ID, Vec::new()).is_ok());
+    }
+
+    #[test]
+    fn cancel_request_error_treats_a_complete_order_as_cancelled() {
+        for message in [
+            "Order already filled",
+            "ORDER COMPLETED",
+            "no such order 42",
+        ] {
+            assert!(cancel_request_error(42, &message).is_ok(), "{message}");
+        }
+    }
+
+    #[test]
+    fn cancel_request_error_reports_other_failures() {
+        match cancel_request_error(42, &"connection reset") {
+            Err(BrokerError::Order(message)) => {
+                assert_eq!(message, "failed to cancel order 42: connection reset");
+            }
+            other => panic!("expected Order error, got {other:?}"),
+        }
     }
 }

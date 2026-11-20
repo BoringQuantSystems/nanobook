@@ -5,9 +5,12 @@
 //!
 //! # Usage
 //!
-//! ```ignore
-//! use nanobook::persistence;
+//! ```no_run
+//! use nanobook::{Exchange, Price, Side, TimeInForce};
 //! use std::path::Path;
+//!
+//! let mut exchange = Exchange::new();
+//! exchange.submit_limit(Side::Buy, Price(100_00), 100, TimeInForce::GTC);
 //!
 //! // Save exchange state
 //! exchange.save(Path::new("orders.jsonl")).unwrap();

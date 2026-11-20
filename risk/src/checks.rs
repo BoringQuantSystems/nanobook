@@ -411,4 +411,178 @@ mod tests {
                 .contains("$250 > $100 max_batch_value_cents")
         );
     }
+
+    fn find<'a>(report: &'a RiskReport, name: &str) -> Option<&'a RiskCheck> {
+        report.checks.iter().find(|c| c.name == name)
+    }
+
+    fn named<'a>(report: &'a RiskReport, name: &str) -> &'a RiskCheck {
+        find(report, name).unwrap_or_else(|| panic!("no check named {name:?} in {report}"))
+    }
+
+    // ---- Leverage check (cargo-mutants 0.20.0: never failed in any test) ----
+
+    #[test]
+    fn leverage_above_limit_fails() {
+        // gross 500 * 18_500 = 9_250_000 over equity 5_000_000 = 1.85x > 1.5x
+        let orders = vec![(aapl(), BrokerSide::Buy, 500_u64, 18_500_i64)];
+        let targets = vec![(aapl(), 0.40)];
+        let report = check_batch(
+            &default_config(),
+            &orders,
+            &account(5_000_000),
+            &[],
+            &targets,
+        );
+        let lev = named(&report, "Leverage");
+        assert_eq!(lev.status, RiskStatus::Fail);
+        assert!(lev.detail.contains("1.85x > 1.50x limit"), "{}", lev.detail);
+    }
+
+    #[test]
+    fn leverage_exactly_at_limit_passes() {
+        // gross 1000 * 15_000 = 15_000_000 over equity 10_000_000 = 1.50x
+        let mut config = default_config();
+        config.max_order_value_cents = 0; // disabled, so only leverage is under test
+        let orders = vec![(aapl(), BrokerSide::Buy, 1000_u64, 15_000_i64)];
+        let report = check_batch(&config, &orders, &account(10_000_000), &[], &[]);
+        let lev = named(&report, "Leverage");
+        assert_eq!(lev.status, RiskStatus::Pass);
+        assert!(
+            lev.detail.contains("1.50x <= 1.50x limit"),
+            "{}",
+            lev.detail
+        );
+    }
+
+    #[test]
+    fn zero_equity_fails_leverage_and_short_exposure() {
+        // ratio_or_inf returns infinity for equity <= 0, also for 0 / 0
+        let report = check_batch(&default_config(), &[], &account(0), &[], &[]);
+        let lev = named(&report, "Leverage");
+        assert_eq!(lev.status, RiskStatus::Fail);
+        assert!(lev.detail.contains("infx > 1.50x limit"), "{}", lev.detail);
+        assert_eq!(named(&report, "Short exposure").status, RiskStatus::Fail);
+    }
+
+    // ---- Short-selling logic ----
+
+    #[test]
+    fn selling_down_a_long_is_not_short_selling() {
+        let mut config = default_config();
+        config.allow_short = false;
+        let current = vec![(aapl(), 100_i64)];
+        // Sell 50 leaves 50 long; Sell 100 leaves exactly flat.
+        for qty in [50_u64, 100] {
+            let orders = vec![(aapl(), BrokerSide::Sell, qty, 18_500_i64)];
+            let report = check_batch(&config, &orders, &account(10_000_000), &current, &[]);
+            assert!(!report.has_failures(), "qty {qty}: {report}");
+            assert!(find(&report, "Short selling").is_none(), "qty {qty}");
+            assert_eq!(named(&report, "Short exposure").status, RiskStatus::Pass);
+        }
+    }
+
+    #[test]
+    fn short_exposure_counts_only_short_positions() {
+        // Only SPY is short: 50 * 43_000 = 2_150_000 over 10_000_000 = 21.5%.
+        // The long AAPL (18.5%) must not be counted, and the short must be.
+        let mut config = default_config();
+        config.max_short_pct = 0.20;
+        let orders = vec![
+            (aapl(), BrokerSide::Buy, 100_u64, 18_500_i64),
+            (spy(), BrokerSide::Sell, 50, 43_000),
+        ];
+        let report = check_batch(&config, &orders, &account(10_000_000), &[], &[]);
+        let short = named(&report, "Short exposure");
+        assert_eq!(short.status, RiskStatus::Fail);
+        assert!(
+            short.detail.contains("21.5% > 20.0% limit"),
+            "{}",
+            short.detail
+        );
+    }
+
+    #[test]
+    fn short_exposure_boundary() {
+        let config = default_config(); // max_short_pct 0.30
+        // exactly 3_000_000 / 10_000_000 = 30.0%: passes
+        let at = vec![(spy(), BrokerSide::Sell, 100_u64, 30_000_i64)];
+        let report = check_batch(&config, &at, &account(10_000_000), &[], &[]);
+        let short = named(&report, "Short exposure");
+        assert_eq!(short.status, RiskStatus::Pass);
+        assert!(
+            short.detail.contains("30.0% <= 30.0% limit"),
+            "{}",
+            short.detail
+        );
+        // 3_030_000 / 10_000_000 = 30.3%: fails
+        let over = vec![(spy(), BrokerSide::Sell, 101_u64, 30_000_i64)];
+        let report = check_batch(&config, &over, &account(10_000_000), &[], &[]);
+        assert_eq!(named(&report, "Short exposure").status, RiskStatus::Fail);
+    }
+
+    // ---- Limits at their boundary and disabled at 0 ----
+
+    #[test]
+    fn target_weight_exactly_at_max_position_passes() {
+        let targets = vec![(aapl(), 0.40)]; // default_config max_position_pct is 0.40
+        let report = check_batch(&default_config(), &[], &account(10_000_000), &[], &targets);
+        assert_eq!(named(&report, "Max position").status, RiskStatus::Pass);
+    }
+
+    #[test]
+    fn zero_order_and_batch_limits_mean_no_limit() {
+        let mut config = default_config();
+        config.max_order_value_cents = 0;
+        config.max_batch_value_cents = 0;
+        let orders = vec![(aapl(), BrokerSide::Buy, 1000_u64, 18_500_i64)];
+        let report = check_batch(&config, &orders, &account(100_000_000), &[], &[]);
+        assert!(find(&report, "Max order value").is_none());
+        assert!(find(&report, "Max batch value").is_none());
+    }
+
+    #[test]
+    fn max_trade_size_warning_threshold() {
+        let mut config = default_config();
+        config.max_trade_usd = 1000.0; // 100_000 cents
+        // notional exactly 100_000 cents: no warning
+        let at = vec![(aapl(), BrokerSide::Buy, 10_u64, 10_000_i64)];
+        let report = check_batch(&config, &at, &account(100_000_000), &[], &[]);
+        assert!(find(&report, "Max trade size").is_none());
+        // notional 100_001 cents: one warning
+        let over = vec![(aapl(), BrokerSide::Buy, 1_u64, 100_001_i64)];
+        let report = check_batch(&config, &over, &account(100_000_000), &[], &[]);
+        assert_eq!(named(&report, "Max trade size").status, RiskStatus::Warn);
+    }
+
+    // ---- Detail strings: worst-weight symbol and weight allocation ----
+
+    #[test]
+    fn max_position_detail_names_the_first_of_tied_weights() {
+        let tied = vec![(aapl(), 0.20), (spy(), 0.20)];
+        let report = check_batch(&default_config(), &[], &account(10_000_000), &[], &tied);
+        assert_eq!(
+            named(&report, "Max position").detail,
+            "20.0% (AAPL) <= 40.0% limit"
+        );
+
+        // A zero weight is not larger than the starting value 0.0, so the
+        // placeholder symbol stays.
+        let zero = vec![(aapl(), 0.0)];
+        let report = check_batch(&default_config(), &[], &account(10_000_000), &[], &zero);
+        assert_eq!(
+            named(&report, "Max position").detail,
+            "0.0% (?) <= 40.0% limit"
+        );
+    }
+
+    #[test]
+    fn weight_allocation_splits_long_short_and_cash() {
+        let msft = Symbol::new("MSFT");
+        let targets = vec![(aapl(), 0.50), (spy(), -0.20), (msft, 0.0)];
+        let report = check_batch(&default_config(), &[], &account(10_000_000), &[], &targets);
+        let check = named(&report, "Weight allocation");
+        assert_eq!(check.status, RiskStatus::Pass);
+        assert_eq!(check.detail, "50.0% long, 20.0% short, 50.0% cash");
+    }
 }

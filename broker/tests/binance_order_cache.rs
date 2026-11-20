@@ -98,3 +98,90 @@ fn test_update_cached_order_status() {
     let cached = broker.get_cached_order(order_id).unwrap();
     assert_eq!(cached.status, OrderState::Filled);
 }
+
+fn cached(
+    symbol: &str,
+    quantity: i64,
+    side: BrokerSide,
+    status: OrderState,
+    binance_order_id: &str,
+) -> CachedOrder {
+    CachedOrder {
+        symbol: Symbol::new(symbol),
+        quantity,
+        side,
+        status,
+        binance_order_id: binance_order_id.to_string(),
+        client_order_id: Some(format!("client-{binance_order_id}")),
+        submitted_at: Utc::now(),
+    }
+}
+
+#[test]
+fn test_cache_persistence_covers_every_side_and_status() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("orders.json");
+
+    let rows = [
+        (1, BrokerSide::Buy, OrderState::Pending),
+        (2, BrokerSide::Sell, OrderState::Submitted),
+        (3, BrokerSide::Buy, OrderState::PartiallyFilled),
+        (4, BrokerSide::Sell, OrderState::Filled),
+        (5, BrokerSide::Buy, OrderState::Cancelled),
+        (6, BrokerSide::Sell, OrderState::Rejected),
+    ];
+    let mut cache = BinanceOrderCache::new();
+    for (id, side, status) in rows {
+        cache.orders.insert(
+            OrderId(id),
+            cached(
+                "BTC",
+                10 * id as i64,
+                side,
+                status,
+                &format!("{}", 7000 + id),
+            ),
+        );
+    }
+
+    cache.save_to_disk(&path).unwrap();
+    let loaded = BinanceOrderCache::load_from_disk(&path).unwrap();
+
+    assert_eq!(loaded.orders.len(), 6);
+    for (id, side, status) in rows {
+        let order = &loaded.orders[&OrderId(id)];
+        assert_eq!(order.side, side, "order {id}");
+        assert_eq!(order.status, status, "order {id}");
+        assert_eq!(order.quantity, 10 * id as i64, "order {id}");
+        assert_eq!(order.binance_order_id, format!("{}", 7000 + id));
+    }
+}
+
+#[test]
+fn test_broker_saves_and_loads_its_cache() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("broker_cache.json");
+
+    let broker = BinanceBroker::new("api-key", "secret-key", true);
+    broker.cache_order(
+        OrderId(42),
+        Symbol::new("BTC"),
+        100,
+        BrokerSide::Buy,
+        Some("c-42".to_string()),
+    );
+    broker.update_cached_order_status(OrderId(42), OrderState::PartiallyFilled);
+    broker.save_cache_to_disk(&path).unwrap();
+    assert!(path.exists());
+
+    let fresh = BinanceBroker::new("api-key", "secret-key", true);
+    assert!(fresh.get_cached_order(OrderId(42)).is_none());
+    fresh.load_cache_from_disk(&path).unwrap();
+
+    let order = fresh.get_cached_order(OrderId(42)).unwrap();
+    assert_eq!(order.symbol, Symbol::new("BTC"));
+    assert_eq!(order.quantity, 100);
+    assert_eq!(order.side, BrokerSide::Buy);
+    assert_eq!(order.status, OrderState::PartiallyFilled);
+    assert_eq!(order.client_order_id.as_deref(), Some("c-42"));
+}

@@ -370,4 +370,60 @@ mod tests {
         let spec2 = TargetSpec::from_json(json2).unwrap();
         assert_ne!(spec1.window_id(), spec2.window_id());
     }
+
+    #[test]
+    fn eight_byte_symbol_is_valid() {
+        let json = r#"{
+            "timestamp": "2026-02-08T15:30:00Z",
+            "targets": [
+                { "symbol": "ABCDEFGH", "weight": 0.5 }
+            ]
+        }"#;
+        assert!(TargetSpec::from_json(json).is_ok());
+    }
+
+    #[test]
+    fn weight_magnitude_boundaries() {
+        let too_short = r#"{
+            "timestamp": "2026-02-08T15:30:00Z",
+            "targets": [
+                { "symbol": "AAPL", "weight": -1.5 }
+            ]
+        }"#;
+        assert!(TargetSpec::from_json(too_short).is_err());
+        let long_one = r#"{
+            "timestamp": "2026-02-08T15:30:00Z",
+            "targets": [
+                { "symbol": "AAPL", "weight": 1.0 }
+            ]
+        }"#;
+        assert!(TargetSpec::from_json(long_one).is_ok());
+        let short_one = r#"{
+            "timestamp": "2026-02-08T15:30:00Z",
+            "targets": [
+                { "symbol": "AAPL", "weight": -1.0 }
+            ]
+        }"#;
+        assert!(TargetSpec::from_json(short_one).is_ok());
+    }
+
+    #[test]
+    fn long_weights_sum_to_one() {
+        let json = r#"{
+            "timestamp": "2026-02-08T15:30:00Z",
+            "targets": [
+                { "symbol": "AAPL", "weight": 0.5 },
+                { "symbol": "MSFT", "weight": 0.5 }
+            ]
+        }"#;
+        assert!(TargetSpec::from_json(json).is_ok());
+        let over = r#"{
+            "timestamp": "2026-02-08T15:30:00Z",
+            "targets": [
+                { "symbol": "AAPL", "weight": 0.6 },
+                { "symbol": "MSFT", "weight": 0.5 }
+            ]
+        }"#;
+        assert!(TargetSpec::from_json(over).is_err());
+    }
 }

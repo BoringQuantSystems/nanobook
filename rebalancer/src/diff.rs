@@ -85,8 +85,17 @@ pub fn compute_diff(
             continue;
         }
         if let Some(&price) = price_map.get(&pos.symbol) {
+            if price <= 0 {
+                tracing::warn!(
+                    symbol = %pos.symbol,
+                    quantity = pos.quantity,
+                    price,
+                    "skip close order: quote price is not positive"
+                );
+                continue;
+            }
             let shares = pos.quantity.abs();
-            let limit = compute_limit_price(price, pos.quantity < 0, limit_offset_bps);
+            let limit = compute_limit_price(price, pos.quantity > 0, limit_offset_bps);
             let notional = shares * price;
 
             let (action, desc) = if pos.quantity > 0 {
@@ -240,6 +249,77 @@ mod tests {
     }
     fn spy() -> Symbol {
         Symbol::new("SPY")
+    }
+
+    #[test]
+    fn classify_trade_table() {
+        assert_eq!(classify_trade(0, 5), (Action::Buy, "open"));
+        assert_eq!(classify_trade(0, -5), (Action::SellShort, "open short"));
+        assert_eq!(classify_trade(4, 5), (Action::Buy, "increase"));
+        assert_eq!(classify_trade(4, -3), (Action::Sell, "decrease"));
+        assert_eq!(classify_trade(4, -4), (Action::Sell, "decrease"));
+        assert_eq!(classify_trade(4, -6), (Action::Sell, "flip to short"));
+        assert_eq!(classify_trade(-4, 3), (Action::BuyCover, "decrease short"));
+        assert_eq!(classify_trade(-4, 4), (Action::BuyCover, "decrease short"));
+        assert_eq!(classify_trade(-4, 6), (Action::BuyCover, "flip to long"));
+        assert_eq!(
+            classify_trade(-4, -3),
+            (Action::SellShort, "increase short")
+        );
+    }
+
+    #[test]
+    fn compute_diff_classify_end_to_end() {
+        let decrease = compute_diff(
+            100_000_000,
+            &[CurrentPosition {
+                symbol: aapl(),
+                quantity: 4000,
+                avg_cost_cents: 10_000,
+            }],
+            &[(aapl(), 0.25)],
+            &[(aapl(), 10_000)],
+            0,
+            0,
+        );
+        assert_eq!(decrease.len(), 1);
+        assert_eq!(decrease[0].action, Action::Sell);
+        assert_eq!(decrease[0].shares, 1500);
+        assert_eq!(decrease[0].description, "decrease");
+
+        let flip_short = compute_diff(
+            100_000_000,
+            &[CurrentPosition {
+                symbol: aapl(),
+                quantity: 1000,
+                avg_cost_cents: 10_000,
+            }],
+            &[(aapl(), -0.25)],
+            &[(aapl(), 10_000)],
+            0,
+            0,
+        );
+        assert_eq!(flip_short.len(), 1);
+        assert_eq!(flip_short[0].action, Action::Sell);
+        assert_eq!(flip_short[0].shares, 3500);
+        assert_eq!(flip_short[0].description, "flip to short");
+
+        let flip_long = compute_diff(
+            100_000_000,
+            &[CurrentPosition {
+                symbol: aapl(),
+                quantity: -1000,
+                avg_cost_cents: 10_000,
+            }],
+            &[(aapl(), 0.25)],
+            &[(aapl(), 10_000)],
+            0,
+            0,
+        );
+        assert_eq!(flip_long.len(), 1);
+        assert_eq!(flip_long[0].action, Action::BuyCover);
+        assert_eq!(flip_long[0].shares, 3500);
+        assert_eq!(flip_long[0].description, "flip to long");
     }
 
     #[test]
@@ -403,5 +483,204 @@ mod tests {
         assert_eq!(orders[0].action, Action::BuyCover);
         assert_eq!(orders[0].shares, 100);
         assert_eq!(orders[0].description, "close short");
+    }
+
+    #[test]
+    fn close_long_limit_is_mid_minus_offset() {
+        let orders = compute_diff(
+            100_000_000,
+            &[CurrentPosition {
+                symbol: msft(),
+                quantity: 200,
+                avg_cost_cents: 40_000,
+            }],
+            &[(aapl(), 0.5)],
+            &[(aapl(), 18_500), (msft(), 41_000)],
+            10,
+            0,
+        );
+        let close = orders.iter().find(|o| o.symbol == msft()).unwrap();
+        assert_eq!(close.action, Action::Sell);
+        assert_eq!(close.shares, 200);
+        assert_eq!(close.description, "close long");
+        assert_eq!(close.limit_price_cents, 40_959);
+        assert_eq!(close.notional_cents, 8_200_000);
+    }
+
+    #[test]
+    fn close_short_limit_is_mid_plus_offset() {
+        let orders = compute_diff(
+            100_000_000,
+            &[CurrentPosition {
+                symbol: spy(),
+                quantity: -100,
+                avg_cost_cents: 43_000,
+            }],
+            &[],
+            &[(spy(), 43_000)],
+            10,
+            0,
+        );
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0].action, Action::BuyCover);
+        assert_eq!(orders[0].shares, 100);
+        assert_eq!(orders[0].description, "close short");
+        assert_eq!(orders[0].limit_price_cents, 43_043);
+        assert_eq!(orders[0].notional_cents, 4_300_000);
+    }
+
+    #[test]
+    fn close_skips_non_positive_quote() {
+        let orders = compute_diff(
+            100_000_000,
+            &[CurrentPosition {
+                symbol: msft(),
+                quantity: 200,
+                avg_cost_cents: 40_000,
+            }],
+            &[(aapl(), 0.5)],
+            &[(aapl(), 18_500), (msft(), 0)],
+            0,
+            0,
+        );
+        assert!(orders.iter().all(|o| o.symbol != msft()));
+    }
+
+    #[test]
+    fn close_notional_with_zero_offset() {
+        let orders = compute_diff(
+            100_000_000,
+            &[CurrentPosition {
+                symbol: msft(),
+                quantity: 200,
+                avg_cost_cents: 40_000,
+            }],
+            &[(aapl(), 0.5)],
+            &[(aapl(), 18_500), (msft(), 41_000)],
+            0,
+            0,
+        );
+        let close = orders.iter().find(|o| o.symbol == msft()).unwrap();
+        assert_eq!(close.notional_cents, 8_200_000);
+        assert_eq!(close.shares, 200);
+    }
+
+    #[test]
+    fn compute_diff_skips_non_positive_rebalance_price() {
+        let orders = compute_diff(
+            100_000_000,
+            &[],
+            &[(aapl(), 0.5), (msft(), 0.25)],
+            &[(aapl(), 0), (msft(), -100)],
+            0,
+            0,
+        );
+        assert!(orders.is_empty());
+    }
+
+    #[test]
+    fn min_trade_filter_at_exact_notional() {
+        let at_min = compute_diff(
+            1_048_576,
+            &[],
+            &[(aapl(), 0.015625)],
+            &[(aapl(), 8192)],
+            0,
+            16_384,
+        );
+        assert_eq!(at_min.len(), 1);
+        assert_eq!(at_min[0].action, Action::Buy);
+        assert_eq!(at_min[0].shares, 2);
+        assert_eq!(at_min[0].description, "open");
+        assert_eq!(at_min[0].notional_cents, 16_384);
+
+        let below = compute_diff(
+            1_048_576,
+            &[],
+            &[(aapl(), 0.015625)],
+            &[(aapl(), 8192)],
+            0,
+            16_385,
+        );
+        assert!(below.is_empty());
+    }
+
+    #[test]
+    fn sell_limit_is_mid_minus_offset() {
+        let orders = compute_diff(
+            100_000_000,
+            &[CurrentPosition {
+                symbol: aapl(),
+                quantity: 4000,
+                avg_cost_cents: 10_000,
+            }],
+            &[(aapl(), 0.25), (msft(), 0.25)],
+            &[(aapl(), 10_000), (msft(), 20_000)],
+            10,
+            0,
+        );
+        let aapl_order = orders.iter().find(|o| o.symbol == aapl()).unwrap();
+        assert_eq!(aapl_order.action, Action::Sell);
+        assert_eq!(aapl_order.shares, 1500);
+        assert_eq!(aapl_order.description, "decrease");
+        assert_eq!(aapl_order.limit_price_cents, 9_990);
+        assert_eq!(aapl_order.notional_cents, 15_000_000);
+        let msft_order = orders.iter().find(|o| o.symbol == msft()).unwrap();
+        assert_eq!(msft_order.action, Action::Buy);
+        assert_eq!(msft_order.shares, 1250);
+        assert_eq!(msft_order.description, "open");
+        assert_eq!(msft_order.limit_price_cents, 20_020);
+    }
+
+    #[test]
+    fn estimate_cost_commission_and_slippage() {
+        let orders = [
+            RebalanceOrder {
+                symbol: aapl(),
+                action: Action::Buy,
+                shares: 1000,
+                limit_price_cents: 20_000,
+                notional_cents: 20_000_000,
+                description: "open",
+            },
+            RebalanceOrder {
+                symbol: msft(),
+                action: Action::Buy,
+                shares: 2,
+                limit_price_cents: 20_000,
+                notional_cents: 40_000,
+                description: "open",
+            },
+        ];
+        let cost = estimate_cost(&orders, 0.5, 2.0, 10);
+        assert_eq!(cost.commission_cents, 50_200);
+        assert_eq!(cost.slippage_cents, 20_040);
+        assert_eq!(cost.total_cents(), 70_240);
+        assert_eq!(
+            format!("{cost}"),
+            "$502.00 commission + $200.40 slippage = $702.40"
+        );
+    }
+
+    #[test]
+    fn classify_trade_zero_change_falls_through_to_rebalance() {
+        // No arm matches a zero change, whatever the current position is.
+        for current in [0, 4, -4, i64::MIN] {
+            assert_eq!(
+                classify_trade(current, 0),
+                (Action::Buy, "rebalance"),
+                "classify_trade({current}, 0)"
+            );
+        }
+    }
+
+    #[test]
+    fn classify_trade_short_arms_do_not_take_abs_of_min() {
+        // The "flip to long" arm must stop at its sign tests before calling
+        // `c.abs()`, which overflows for i64::MIN.
+        assert_eq!(
+            classify_trade(i64::MIN, -1),
+            (Action::SellShort, "increase short")
+        );
     }
 }

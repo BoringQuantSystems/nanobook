@@ -3011,4 +3011,48 @@ mod tests {
         let mut log = AuditLog::open_in(&path, dir.path()).unwrap();
         assert!(log.validate_checkpoints().is_ok());
     }
+
+    #[test]
+    fn max_checkpoint_sequence_missing_file_is_zero() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(
+            max_checkpoint_sequence(&dir.path().join("missing.jsonl")).unwrap(),
+            0
+        );
+        assert!(max_checkpoint_sequence(dir.path()).is_err());
+    }
+
+    #[cfg(feature = "write_ahead_logging")]
+    #[test]
+    fn cancel_result_must_follow_cancel_intent() {
+        let ok = parse_audit_events_from_str(
+            r#"{"event":"run_started","ts":"2026-01-01T00:00:00Z","sequence_number":1,"checkpoint":"RunStarted"}
+{"event":"positions_intent","ts":"2026-01-01T00:00:00Z","sequence_number":2,"checkpoint":"PositionsIntent"}
+{"event":"positions_result","ts":"2026-01-01T00:00:00Z","sequence_number":3,"checkpoint":"PositionsResult"}
+{"event":"diff_computed","ts":"2026-01-01T00:00:00Z","sequence_number":4,"checkpoint":"DiffComputed","orders":[]}
+{"event":"cancel_intent","ts":"2026-01-01T00:00:00Z","sequence_number":5,"checkpoint":"CancelIntent"}
+{"event":"cancel_result","ts":"2026-01-01T00:00:00Z","sequence_number":6,"checkpoint":"CancelResult"}
+"#,
+        )
+        .unwrap();
+        assert!(validate_checkpoints_from_parsed(&ok).is_ok());
+
+        let swapped = parse_audit_events_from_str(
+            r#"{"event":"run_started","ts":"2026-01-01T00:00:00Z","sequence_number":1,"checkpoint":"RunStarted"}
+{"event":"positions_intent","ts":"2026-01-01T00:00:00Z","sequence_number":2,"checkpoint":"PositionsIntent"}
+{"event":"positions_result","ts":"2026-01-01T00:00:00Z","sequence_number":3,"checkpoint":"PositionsResult"}
+{"event":"diff_computed","ts":"2026-01-01T00:00:00Z","sequence_number":4,"checkpoint":"DiffComputed","orders":[]}
+{"event":"cancel_result","ts":"2026-01-01T00:00:00Z","sequence_number":5,"checkpoint":"CancelResult"}
+{"event":"cancel_intent","ts":"2026-01-01T00:00:00Z","sequence_number":6,"checkpoint":"CancelIntent"}
+"#,
+        )
+        .unwrap();
+        let err = validate_checkpoints_from_parsed(&swapped).unwrap_err();
+        match err {
+            Error::AuditValidation(m) => {
+                assert!(m.contains("CancelResult must come after CancelIntent"));
+            }
+            other => panic!("expected AuditValidation, got {other:?}"),
+        }
+    }
 }

@@ -47,6 +47,13 @@ pub struct ExecutionReport {
     pub raw: Value,
 }
 
+/// Delay before reconnect attempt `attempt` (1-based): 1 s, 2 s, 4 s, 8 s, then 16 s.
+///
+/// The exponent is clamped before `pow`, so any `max_reconnect_attempts` is safe.
+fn backoff_delay(attempt: u32) -> Duration {
+    Duration::from_secs(2u64.pow(attempt.saturating_sub(1).min(4)))
+}
+
 /// Binance WebSocket client.
 pub struct BinanceWebSocket {
     api_key: String,
@@ -62,6 +69,9 @@ pub struct BinanceWebSocket {
     // Auto-reconnect mechanism
     max_reconnect_attempts: u32,
     reconnect_attempts: u32,
+    /// Test-only: connect here instead of the Binance stream.
+    #[cfg(test)]
+    endpoint_override: Option<String>,
 }
 
 impl BinanceWebSocket {
@@ -79,6 +89,8 @@ impl BinanceWebSocket {
             heartbeat_interval: Duration::from_secs(10),
             max_reconnect_attempts: 5,
             reconnect_attempts: 0,
+            #[cfg(test)]
+            endpoint_override: None,
         }
     }
 
@@ -100,11 +112,13 @@ impl BinanceWebSocket {
     /// Connect to the Binance WebSocket endpoint.
     pub async fn connect(&mut self) -> Result<(), Box<dyn Error>> {
         self.state = ConnectionState::Reconnecting;
-        self.reconnect_attempts = 0;
-        let (stream, _) = connect_async(self.endpoint()).await.inspect_err(|_| {
+        let endpoint = self.endpoint().to_string();
+        let (stream, _) = connect_async(endpoint).await.inspect_err(|_| {
             self.connected.store(false, Ordering::SeqCst);
             self.state = ConnectionState::Disconnected;
         })?;
+        // Reset only on success: reconnect_with_backoff counts failed connects.
+        self.reconnect_attempts = 0;
 
         self.client = Some(stream);
         self.connected.store(true, Ordering::SeqCst);
@@ -189,12 +203,8 @@ impl BinanceWebSocket {
             self.reconnect_attempts += 1;
             self.state = ConnectionState::Reconnecting;
 
-            // Calculate backoff delay: 2^(attempt-1) seconds, capped at 16s
-            let backoff_secs = 2u64.pow(self.reconnect_attempts.saturating_sub(1)).min(16);
-            let backoff = Duration::from_secs(backoff_secs);
-
             // Wait for backoff
-            sleep(backoff).await;
+            sleep(backoff_delay(self.reconnect_attempts)).await;
 
             // Attempt to reconnect
             if let Ok(()) = self.connect().await {
@@ -255,9 +265,17 @@ impl BinanceWebSocket {
         self.heartbeat_interval = interval;
     }
 
-    fn endpoint(&self) -> &'static str {
-        let _ = (&self.api_key, &self.secret_key, self.testnet);
-        "wss://stream.binance.com:9443/ws"
+    fn endpoint(&self) -> &str {
+        let _ = (&self.api_key, &self.secret_key);
+        #[cfg(test)]
+        if let Some(endpoint) = &self.endpoint_override {
+            return endpoint;
+        }
+        if self.testnet {
+            "wss://stream.testnet.binance.vision/ws"
+        } else {
+            "wss://stream.binance.com:9443/ws"
+        }
     }
 
     fn parse_frame(message: Message) -> Result<Option<BinanceWebSocketEvent>, Box<dyn Error>> {
@@ -308,5 +326,204 @@ impl BinanceWebSocket {
             }
             _ => Ok(BinanceWebSocketEvent::Other(value)),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const EXECUTION_REPORT: &str =
+        r#"{"e":"executionReport","E":5,"s":"BTCUSDT","i":42,"c":"cid-1","X":"FILLED"}"#;
+
+    fn execution_report_event() -> BinanceWebSocketEvent {
+        BinanceWebSocketEvent::ExecutionReport(ExecutionReport {
+            event_time: Some(5),
+            symbol: Some("BTCUSDT".to_string()),
+            order_id: Some(42),
+            client_order_id: Some("cid-1".to_string()),
+            order_status: Some("FILLED".to_string()),
+            raw: serde_json::from_str(EXECUTION_REPORT).unwrap(),
+        })
+    }
+
+    #[test]
+    fn execution_report_fields_are_extracted() {
+        let event = BinanceWebSocket::parse_text_message(EXECUTION_REPORT).unwrap();
+
+        assert_eq!(event, execution_report_event());
+    }
+
+    #[test]
+    fn account_events_become_account_updates() {
+        for kind in ["outboundAccountPosition", "balanceUpdate"] {
+            let text = format!(r#"{{"e":"{kind}","E":7}}"#);
+
+            let event = BinanceWebSocket::parse_text_message(&text).unwrap();
+
+            assert_eq!(
+                event,
+                BinanceWebSocketEvent::AccountUpdate(AccountUpdate {
+                    event_time: Some(7),
+                    raw: serde_json::from_str(&text).unwrap(),
+                }),
+                "{kind}"
+            );
+        }
+    }
+
+    #[test]
+    fn unknown_events_stay_untyped() {
+        let event = BinanceWebSocket::parse_text_message(r#"{"e":"other"}"#).unwrap();
+
+        assert_eq!(
+            event,
+            BinanceWebSocketEvent::Other(serde_json::json!({"e": "other"}))
+        );
+    }
+
+    #[test]
+    fn frames_carry_events_only_for_text_and_binary() {
+        let text = BinanceWebSocket::parse_frame(Message::Text(EXECUTION_REPORT.into())).unwrap();
+        assert_eq!(text, Some(execution_report_event()));
+
+        let binary = BinanceWebSocket::parse_frame(Message::Binary(
+            EXECUTION_REPORT.as_bytes().to_vec().into(),
+        ))
+        .unwrap();
+        assert_eq!(binary, Some(execution_report_event()));
+
+        for message in [
+            Message::Ping(Vec::new().into()),
+            Message::Pong(Vec::new().into()),
+            Message::Close(None),
+        ] {
+            assert_eq!(BinanceWebSocket::parse_frame(message).unwrap(), None);
+        }
+    }
+
+    #[test]
+    fn endpoint_is_the_production_stream() {
+        let ws = BinanceWebSocket::new("key", "secret", false);
+
+        assert_eq!(ws.endpoint(), "wss://stream.binance.com:9443/ws");
+    }
+
+    #[test]
+    fn endpoint_follows_testnet() {
+        // Testnet keys do not work on the production stream, and a testnet
+        // session must never see production events.
+        let ws = BinanceWebSocket::new("key", "secret", true);
+
+        assert_eq!(ws.endpoint(), "wss://stream.testnet.binance.vision/ws");
+    }
+
+    #[test]
+    fn is_connected_follows_the_connected_flag() {
+        let ws = BinanceWebSocket::new("key", "secret", true);
+        assert!(!ws.is_connected());
+
+        ws.connected.store(true, Ordering::SeqCst);
+        assert!(ws.is_connected());
+    }
+
+    #[test]
+    fn events_returns_the_buffered_events() {
+        let mut ws = BinanceWebSocket::new("key", "secret", true);
+        assert!(ws.events().is_empty());
+
+        ws.events.push(execution_report_event());
+        assert_eq!(ws.events(), &[execution_report_event()]);
+    }
+
+    #[test]
+    fn backoff_doubles_to_16_seconds_and_stays_there() {
+        let secs: Vec<u64> = [0, 1, 2, 3, 4, 5, 6, 65, u32::MAX]
+            .iter()
+            .map(|&attempt| backoff_delay(attempt).as_secs())
+            .collect();
+        assert_eq!(secs, vec![1, 1, 2, 4, 8, 16, 16, 16, 16]);
+    }
+
+    #[test]
+    fn reconnect_attempts_reports_the_counter() {
+        let mut ws = BinanceWebSocket::new("key", "secret", true);
+        ws.reconnect_attempts = 3;
+
+        assert_eq!(ws.reconnect_attempts(), 3);
+    }
+
+    #[tokio::test]
+    async fn reconnect_gives_up_after_the_attempt_limit() {
+        // A port that was free a moment ago refuses the connection at once.
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let mut ws = BinanceWebSocket::new("key", "secret", true);
+        ws.endpoint_override = Some(format!("ws://127.0.0.1:{port}/ws"));
+        ws.set_max_reconnect_attempts(2);
+
+        // Real time (a paused clock jumps ahead while a socket connects):
+        // backoff 1 s + 2 s. Before the fix, each failed connect reset the
+        // counter and the loop never ended.
+        let result = tokio::time::timeout(Duration::from_secs(30), ws.reconnect_with_backoff())
+            .await
+            .expect("reconnect loop must stop after its attempt limit");
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Failed to reconnect after 2 attempts"
+        );
+        assert_eq!(ws.reconnect_attempts(), 2);
+        assert_eq!(ws.state(), ConnectionState::Disconnected);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn heartbeat_times_out_when_the_interval_has_elapsed_exactly() {
+        let mut ws = BinanceWebSocket::new("key", "secret", true);
+        ws.set_heartbeat_interval(Duration::from_secs(10));
+        ws.update_heartbeat();
+
+        tokio::time::advance(Duration::from_millis(9_999)).await;
+        assert!(ws.check_heartbeat());
+
+        // Elapsed time equal to the interval is a timeout.
+        tokio::time::advance(Duration::from_millis(1)).await;
+        assert!(!ws.check_heartbeat());
+    }
+
+    #[tokio::test]
+    async fn subscribe_checks_the_heartbeat_before_the_connection() {
+        let mut ws = BinanceWebSocket::new("key", "secret", true);
+
+        // No heartbeat yet: reported as a timeout.
+        let err = ws.subscribe_user_data().await.unwrap_err();
+        assert_eq!(err.to_string(), "Heartbeat timeout detected");
+        assert_eq!(ws.state(), ConnectionState::Disconnected);
+
+        // Fresh heartbeat but no socket.
+        ws.update_heartbeat();
+        let err = ws.subscribe_user_data().await.unwrap_err();
+        assert_eq!(err.to_string(), "Binance WebSocket is not connected");
+    }
+
+    #[tokio::test]
+    async fn reconnect_with_zero_attempts_fails_at_once_without_dialling() {
+        let mut ws = BinanceWebSocket::new("key", "secret", true);
+        ws.set_max_reconnect_attempts(0);
+
+        // One attempt would sleep 1 s first; the call must return before that.
+        let result = tokio::time::timeout(Duration::from_millis(500), ws.reconnect_with_backoff())
+            .await
+            .expect("zero attempts must not sleep or dial");
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Failed to reconnect after 0 attempts"
+        );
+        assert_eq!(ws.reconnect_attempts(), 0);
+        assert_eq!(ws.state(), ConnectionState::Disconnected);
     }
 }

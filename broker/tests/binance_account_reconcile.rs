@@ -165,6 +165,20 @@ mod binance_reconcile_tests {
         // Flag should be set
         assert!(broker.is_reconciliation_blocked());
     }
+
+    #[test]
+    fn test_cancel_order_without_symbol_is_refused() {
+        // The trait-level cancel has no symbol, which Binance requires: it
+        // must report an error, never a cancel that did not happen.
+        let broker = BinanceBroker::new("test_key", "test_secret", true);
+
+        match broker.cancel_order(OrderId(1)) {
+            Err(BrokerError::Order(message)) => {
+                assert!(message.contains("symbol"), "got {message}");
+            }
+            other => panic!("expected Order error, got {other:?}"),
+        }
+    }
 }
 
 // ============================================================================

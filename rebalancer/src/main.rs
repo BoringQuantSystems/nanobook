@@ -1,5 +1,7 @@
 //! CLI entry point for the nanobook rebalancer.
 
+#![forbid(unsafe_code)]
+
 use std::path::PathBuf;
 use std::process;
 
@@ -18,6 +20,7 @@ use nanobook_rebalancer::validator;
 #[command(name = "rebalancer")]
 #[command(about = "Portfolio rebalancer: nanobook → Interactive Brokers")]
 #[command(version)]
+#[command(after_help = "Exit codes: 0 success. 1 general error. 2 risk check failed. 3 aborted.")]
 struct Cli {
     /// Path to config.toml
     #[arg(long, default_value = "config.toml")]
@@ -192,16 +195,14 @@ fn main() {
         match &e {
             Error::RiskFailed(msg) => {
                 eprintln!("\nAborted: {msg}");
-                process::exit(2);
             }
             Error::Aborted(msg) => {
                 eprintln!("{msg}");
-                process::exit(0);
             }
             _ => {
                 eprintln!("Error: {e}");
-                process::exit(1);
             }
         }
+        process::exit(nanobook_rebalancer::error::exit_code(&e));
     }
 }

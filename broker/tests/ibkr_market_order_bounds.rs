@@ -106,3 +106,33 @@ fn strict_feature_rejects_all_market_orders() {
 
     assert!(matches!(res, Err(BrokerError::MarketOrderRejected)));
 }
+
+#[test]
+fn stop_order_price_is_the_stop_price_in_dollars() {
+    let (price, qty) = encode_order(
+        &mk_order(BrokerSide::Buy, BrokerOrderType::Stop(Price(182_50))),
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(price, 182.5);
+    assert_eq!(qty, 100.0);
+}
+
+#[test]
+fn stop_limit_order_price_is_the_limit_price_in_dollars() {
+    let (price, qty) = encode_order(
+        &mk_order(
+            BrokerSide::Sell,
+            BrokerOrderType::StopLimit {
+                stop: Price(182_50),
+                limit: Price(181_00),
+            },
+        ),
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(price, 181.0);
+    assert_eq!(qty, 100.0);
+}

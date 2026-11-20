@@ -6,6 +6,8 @@
 //! - **IBKR** (feature `ibkr`): Interactive Brokers via TWS API
 //! - **Binance** (feature `binance`): Binance spot REST API
 
+#![forbid(unsafe_code)]
+
 pub mod error;
 pub mod mock;
 pub mod types;
@@ -62,6 +64,7 @@ use nanobook::Symbol;
 ///     fn order_status(&self, id: OrderId) -> Result<BrokerOrderStatus, BrokerError> {
 ///         Ok(BrokerOrderStatus {
 ///             id,
+///             symbol: None,
 ///             status: OrderState::Submitted,
 ///             filled_quantity: 0,
 ///             remaining_quantity: 10,

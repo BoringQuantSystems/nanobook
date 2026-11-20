@@ -393,4 +393,21 @@ mod tests {
         let expected: i128 = 1_000_000i128 * price as i128;
         assert_eq!(pos.market_value(price) as i128, expected);
     }
+
+    #[test]
+    fn shares_zero_is_neither_positive_nor_negative() {
+        assert!(!Shares::ZERO.is_positive());
+        assert!(!Shares::ZERO.is_negative());
+        assert!(Shares::from_raw(1).is_positive());
+        assert!(Shares::from_raw(-1).is_negative());
+    }
+
+    #[test]
+    fn shares_unsigned_abs_and_sub() {
+        assert_eq!(Shares::from_whole(-3).unsigned_abs(), 3_000_000);
+        assert_eq!(Shares::from_whole(3).unsigned_abs(), 3_000_000);
+        assert_eq!(Shares::ZERO.unsigned_abs(), 0);
+        assert_eq!(w(5) - w(3), w(2));
+        assert_eq!(w(3) - w(5), w(-2));
+    }
 }

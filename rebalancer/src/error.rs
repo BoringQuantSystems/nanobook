@@ -80,4 +80,33 @@ pub enum Error {
     Recovery(String),
 }
 
+/// Return the process exit code for this error.
+pub fn exit_code(error: &Error) -> i32 {
+    match error {
+        Error::RiskFailed(_) => 2,
+        Error::Aborted(_) => 3,
+        _ => 1,
+    }
+}
+
 pub type Result<T> = std::result::Result<T, Error>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exit_code_maps_risk_failed_to_2() {
+        assert_eq!(exit_code(&Error::RiskFailed("x".into())), 2);
+    }
+
+    #[test]
+    fn exit_code_maps_config_to_1() {
+        assert_eq!(exit_code(&Error::Config("x".into())), 1);
+    }
+
+    #[test]
+    fn exit_code_maps_aborted_to_3() {
+        assert_eq!(exit_code(&Error::Aborted("x".into())), 3);
+    }
+}

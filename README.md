@@ -7,7 +7,15 @@
 [![Lean proofs](https://github.com/BoringQuantSystems/nanobook/actions/workflows/lean.yml/badge.svg)](https://github.com/BoringQuantSystems/nanobook/actions/workflows/lean.yml)
 [![OCaml oracle](https://github.com/BoringQuantSystems/nanobook/actions/workflows/oracle.yml/badge.svg)](https://github.com/BoringQuantSystems/nanobook/actions/workflows/oracle.yml)
 [![docs.rs](https://docs.rs/nanobook/badge.svg)](https://docs.rs/nanobook)
-[![cargo-deny](https://img.shields.io/badge/cargo--deny-audited-brightgreen)](https://github.com/BoringQuantSystems/nanobook/actions/workflows/ci.yml)
+[![cargo-deny](https://img.shields.io/badge/cargo--deny-audited-brightgreen)](https://github.com/BoringQuantSystems/nanobook/actions/workflows/audit.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/BoringQuantSystems/nanobook/badge)](https://scorecard.dev/viewer/?uri=github.com/BoringQuantSystems/nanobook)
+[![Socket crate](https://socket.dev/api/badge/cargo/package/nanobook)](https://socket.dev/cargo/package/nanobook)
+[![Socket PyPI](https://socket.dev/api/badge/pypi/package/nanobook)](https://socket.dev/pypi/package/nanobook)
+
+> **Order matching proved in Lean 4.** Eleven laws of the order book are
+> machine-checked on a model of the engine, and CI runs the Rust engine against
+> that model on every push. No `sorry`, three standard axioms, 12 000 lines.
+> [How it is verified](VERIFICATION.md).
 
 `nanobook` is a small execution kernel for the part of a trading system that is
 easy to underestimate: state. Your Python code can keep doing research,
@@ -16,12 +24,60 @@ that strategy: portfolio accounting, transaction costs, stops, deterministic
 limit-order-book simulation, pre-trade risk checks, and optional IBKR
 rebalancing.
 
-Eleven laws of its order-book matching are proved in Lean, on a model of the
-engine that CI tests against the Rust code on every change.
-
 Use it when you want to ask: "if my strategy emits these target weights, what
 exactly happens to cash, holdings, risk checks, order-book events, and audit
 logs?"
+
+## See it work
+
+`python/examples/tour.py` shows what nanobook does in five short scenes. It runs offline in
+under a second, with no API keys:
+
+From a clone of this repository, with nanobook 0.20 or later installed:
+
+```bash
+pip install "nanobook>=0.20"
+python python/examples/tour.py        # add --figure (with matplotlib) to draw the chart below
+```
+
+Trimmed output of one run (synthetic, seeded prices):
+
+```text
+=== Scene 1: From weights to a backtest ===
+3 synthetic stocks, 252 daily bars, inverse-volatility weights, rebalanced every 21 days,
+10 bps commission + 5 bps slippage.
+  final equity     $1,127,584.21  (start $1,000,000.00)
+  Sharpe           1.22
+  max drawdown     9.88 %
+  backtest time    0.70 ms
+cost effect: trading costs took $4,182.84 of final equity.
+
+=== Scene 2: The order book does the right thing ===
+fill-or-kill buy 100 @ $102.00, only 20 are available:
+  result Cancelled, filled 0, trades 0
+  book unchanged: True; stored record: None
+immediate-or-cancel buy 100 @ $102.00, 20 fill and the rest cannot rest:
+  get_order -> status 'cancelled', filled 20, remaining 0
+
+=== Scene 3: Risk checks stop bad orders ===
+batch B: buy $90,000 AAA + $95,000 BBB (1.85x):
+  FAIL  Leverage           1.85x > 1.50x limit
+order C: sell 10 CCC @ $50.00 while holding none (a short):
+  FAIL  Short selling      short selling not allowed
+
+=== Scene 4: What a rebalance does, without a broker ===
+period 21, second rebalance (the change from drifted holdings):
+  sell  550.0000 CCC @ $217.91  notional $119,850.50  cost $119.85
+
+=== Scene 5: Proof, not promises ===
+  law  7: A fill-or-kill submit trades its whole quantity, or trades nothing and leaves
+          every order and level unchanged.
+  ... eleven laws, and the command that rechecks them: verification/lean/check.sh 0
+```
+
+<p align="center">
+  <img src="assets/tour-equity.png" alt="Equity of the tour backtest, gross and net of trading costs" width="700">
+</p>
 
 ## Matching rules proved in Lean
 
@@ -71,7 +127,8 @@ The model uses unbounded integers, so overflow is covered by Rust tests and chec
 arithmetic, not by the proofs. The portfolio, risk, broker and rebalancer layers are
 tested, not proved.
 
-Check it yourself:
+The full write-up, with the Lean statements, the deliberate-break results and the
+mutation-testing numbers, is in [VERIFICATION.md](VERIFICATION.md). Check it yourself:
 
 ```bash
 verification/lean/check.sh 1000   # proofs, axioms, kernel recheck, corpus, 1000 random logs
@@ -82,6 +139,26 @@ engine in `oracle-ocaml/` replays the golden corpus, and CI (`.github/workflows/
 compares its trades with Rust byte for byte. To run it locally, build `corpus-replay`
 (`cargo build --release --features serde --bin corpus-replay`), run the loop in
 `oracle-ocaml/test/corpus/README.md`, and fix any divergence before merging.
+
+## Security and supply chain
+
+This is what installing nanobook asks you to trust. Each point can be checked in the
+repository or on a public service:
+
+- **No `unsafe` code** in the Rust crates: each one starts with `#![forbid(unsafe_code)]`.
+- **One runtime dependency.** The `nanobook` crate with default features depends only on
+  `rustc-hash`; everything else is behind an opt-in feature. The Python package has no
+  Python runtime dependencies and downloads nothing at install time.
+- **Network code is opt-in.** The broker adapters live in `nanobook-broker` behind the
+  `ibkr` and `binance` features and are not in the PyPI wheels.
+- **Audited dependencies.** `cargo deny` and `cargo audit` run on every dependency
+  change and weekly; Dependabot keeps them current; Socket scans every pull request.
+- **Hardened CI.** Every GitHub Action is pinned to a commit hash, workflows get
+  read-only tokens by default, and the OpenSSF Scorecard rates the setup publicly.
+- **Verifiable releases.** PyPI releases use trusted publishing with PEP 740
+  attestations: you can check that a wheel was built by this repository's workflow.
+
+Report a vulnerability privately as described in [SECURITY.md](SECURITY.md).
 
 ## Architecture
 
@@ -133,8 +210,9 @@ compares its trades with Rust byte for byte. To run it locally, build `corpus-re
 - Fallible risk-engine construction instead of config-time panics.
 - `rustls` default TLS backend, zeroize-on-drop for Binance credentials, and scrubbed broker logs.
 - Audit logs constrained to the working directory, with `0o600` permissions on Unix.
-- cargo-fuzz harnesses for matching and ITCH, plus an 89.76 % mutation-testing
-  baseline for the matcher.
+- cargo-fuzz harnesses for matching and ITCH, and mutation testing of the risk,
+  broker, portfolio and rebalancer code: every surviving change is killed by a test
+  or explained ([VERIFICATION.md](VERIFICATION.md#mutation-testing-does-all-of-this-catch-real-bugs-in-the-rust-code)).
 
 ## Competitive Positioning
 

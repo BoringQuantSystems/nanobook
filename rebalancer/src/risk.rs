@@ -140,6 +140,9 @@ mod tests {
     fn spy() -> Symbol {
         Symbol::new("SPY")
     }
+    fn msft() -> Symbol {
+        Symbol::new("MSFT")
+    }
 
     #[test]
     fn all_pass_simple() {
@@ -257,5 +260,125 @@ mod tests {
         };
         let s = format!("{report}");
         assert!(s.contains("[PASS]"));
+    }
+
+    #[test]
+    fn invalid_adapted_fields_fail_order_validation() {
+        let cases = [
+            {
+                let mut cfg = default_risk_config();
+                cfg.max_leverage = 0.5;
+                cfg
+            },
+            {
+                let mut cfg = default_risk_config();
+                cfg.min_trade_usd = -1.0;
+                cfg
+            },
+            {
+                let mut cfg = default_risk_config();
+                cfg.max_trade_usd = -1.0;
+                cfg
+            },
+            {
+                let mut cfg = default_risk_config();
+                cfg.max_short_pct = -0.1;
+                cfg
+            },
+        ];
+        for cfg in cases {
+            let report = check_risk(&[], 10_000_000, &[], &[], &FxHashMap::default(), &cfg);
+            assert_eq!(report.checks.len(), 1);
+            assert_eq!(report.checks[0].name, "Order validation");
+            assert_eq!(report.checks[0].status, RiskStatus::Fail);
+        }
+    }
+
+    #[test]
+    fn disabled_batch_cap_does_not_fail_large_order() {
+        let orders = vec![RebalanceOrder {
+            symbol: aapl(),
+            action: Action::Buy,
+            shares: 10_000,
+            limit_price_cents: 18_500,
+            notional_cents: 185_000_000,
+            description: "open",
+        }];
+        let cfg = RiskConfig {
+            max_position_pct: 0.25,
+            max_leverage: 1.5,
+            min_trade_usd: 100.0,
+            max_trade_usd: 10_000_000.0,
+            allow_short: true,
+            max_short_pct: 0.30,
+        };
+        let report = check_risk(
+            &orders,
+            1_000_000_000,
+            &[(aapl(), 0.185)],
+            &[(aapl(), 18_500)],
+            &FxHashMap::default(),
+            &cfg,
+        );
+        assert!(!report.has_failures());
+        assert!(!report.has_warnings());
+    }
+
+    #[test]
+    fn held_short_is_seeded_as_sell() {
+        let mut cfg = default_risk_config();
+        cfg.allow_short = false;
+        let orders = vec![RebalanceOrder {
+            symbol: aapl(),
+            action: Action::Buy,
+            shares: 10,
+            limit_price_cents: 18_500,
+            notional_cents: 185_000,
+            description: "open",
+        }];
+        let mut current = FxHashMap::default();
+        current.insert(spy(), -50);
+        let report = check_risk(
+            &orders,
+            100_000_000,
+            &[(aapl(), 0.1)],
+            &[(aapl(), 18_500), (spy(), 43_000)],
+            &current,
+            &cfg,
+        );
+        assert!(
+            report
+                .checks
+                .iter()
+                .any(|c| c.name == "Short selling" && c.status == RiskStatus::Fail)
+        );
+    }
+
+    #[test]
+    fn held_long_is_seeded_into_leverage() {
+        let orders = vec![RebalanceOrder {
+            symbol: msft(),
+            action: Action::Buy,
+            shares: 1,
+            limit_price_cents: 100,
+            notional_cents: 100,
+            description: "open",
+        }];
+        let mut current = FxHashMap::default();
+        current.insert(aapl(), 1000);
+        let report = check_risk(
+            &orders,
+            10_000_000,
+            &[(msft(), 0.001)],
+            &[(msft(), 100), (aapl(), 18_500)],
+            &current,
+            &default_risk_config(),
+        );
+        assert!(
+            report
+                .checks
+                .iter()
+                .any(|c| c.name == "Leverage" && c.status == RiskStatus::Fail)
+        );
     }
 }
