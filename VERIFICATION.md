@@ -140,17 +140,20 @@ Result on the 0.20.0 code (only changes that compile are counted):
 |---|---|---|---|---|---|---|
 | `nanobook-risk` | 149 | 146 | 0 | 1 | 2 | 0 |
 | `nanobook`: portfolio, metrics, backtest bridge | 1005 | 970 | 8 | 27 | 0 | 0 |
-| `nanobook-broker` (IBKR and Binance) | 428 | 388 | 0 | 5 | 6 | 29 |
-| `nanobook-rebalancer` (both builds) | 753 | 717 | 4 | 29 | 1 | 2 |
+| `nanobook-broker` (IBKR and Binance) | 434 | 392 | 0 | 3 | 6 | 33 |
+| `nanobook-rebalancer` (both builds) | 757 | 721 | 4 | 29 | 1 | 2 |
 
 - "Cannot change any result": no reachable input gives a different answer, for
   example `>` against `>=` where the equal case is filtered out a few lines earlier.
   The table gives counts only; the reason for each change is not published here.
-- "Out of reach of tests": 27 broker changes need a live Interactive Brokers
-  connection (whole-function replacements on the client, its order cache and its
-  callback de-duplication), one needs the Binance network, and one differs only when
+- "Out of reach of tests": 31 broker changes need a live Interactive Brokers
+  connection (whole-function replacements on the client, its order cache, its
+  callback de-duplication, and the check that an order's own update stream has
+  ended), one needs the Binance network, and one differs only when
   a 300 s age equals the limit to the nanosecond on a clock the test cannot set; in
   the rebalancer, two replace the interactive confirmation prompt.
+- One rebalancer change (the log-directory error check) survived the last run and is
+  caught by a test added after it; that kill was checked by hand.
 - The matching engine itself (`book.rs`, `level.rs`, `matching.rs`,
   `exchange.rs`, `price_levels.rs`) had no surviving change in the full core run
   (5046 changes). A test added for 0.20.0 also pins the order record after a

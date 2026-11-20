@@ -578,6 +578,19 @@ mod tests {
             "{}",
             issues[0].message
         );
+
+        // A path through a file fails with "not a directory", not "not found"
+        // (Unix; Windows reports such a path as not found).
+        #[cfg(unix)]
+        {
+            let issues = validate_disk_space(&valid_config(&file.join("sub")));
+            assert_eq!(issues.len(), 1);
+            assert!(
+                issues[0].message.contains("directory cannot be read"),
+                "{}",
+                issues[0].message
+            );
+        }
     }
 
     #[test]
