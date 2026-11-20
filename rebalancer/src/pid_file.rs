@@ -40,12 +40,22 @@ pub const DEFAULT_PID_FILE: &str = "rebalancer.pid";
 
 /// Write the current process ID to a PID file.
 ///
+/// The PID goes to `<path>.tmp` first and is renamed over `path`, so a reader
+/// (`--kill`, which does not take the lock) never sees an empty or partial file.
+///
 /// # Errors
 ///
 /// Returns an error if the file cannot be written or if the PID cannot be obtained.
 pub fn write_pid_file(path: &Path) -> Result<()> {
     let pid = std::process::id();
-    fs::write(path, pid.to_string()).map_err(Error::Audit)?;
+    let mut tmp_name = path.as_os_str().to_owned();
+    tmp_name.push(".tmp");
+    let tmp = PathBuf::from(tmp_name);
+    fs::write(&tmp, pid.to_string()).map_err(Error::Audit)?;
+    if let Err(error) = fs::rename(&tmp, path) {
+        let _ = fs::remove_file(&tmp);
+        return Err(Error::Audit(error));
+    }
     Ok(())
 }
 
@@ -206,6 +216,43 @@ mod tests {
     }
 
     #[test]
+    fn a_reader_never_sees_an_empty_pid_file_while_it_is_rewritten() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("rebalancer.pid");
+        write_pid_file(&path).unwrap();
+
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let reader = {
+            let (path, stop) = (path.clone(), stop.clone());
+            std::thread::spawn(move || {
+                let mut reads = 0_u32;
+                while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                    // Every read must hold the whole PID.
+                    assert_eq!(read_pid_file(&path).unwrap(), std::process::id());
+                    reads += 1;
+                }
+                reads
+            })
+        };
+        for _ in 0..20_000 {
+            write_pid_file(&path).unwrap();
+        }
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        assert!(reader.join().unwrap() > 0);
+        assert!(!path.with_extension("pid.tmp").exists());
+    }
+
+    /// Kills and reaps the holder process even when an assertion fails.
+    struct KillOnDrop(std::process::Child);
+
+    impl Drop for KillOnDrop {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+
+    #[test]
     fn a_second_guard_cannot_replace_a_live_pid_file() {
         if std::env::var_os("NANOBOOK_PID_HOLDER").is_some() {
             let path = PathBuf::from(std::env::var("NANOBOOK_PID_PATH").unwrap());
@@ -218,33 +265,33 @@ mod tests {
 
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("rebalancer.pid");
-        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
-            .arg("pid_file::tests::a_second_guard_cannot_replace_a_live_pid_file")
-            .arg("--exact")
-            .env("NANOBOOK_PID_HOLDER", "1")
-            .env("NANOBOOK_PID_PATH", &path)
-            .spawn()
-            .unwrap();
+        let child = KillOnDrop(
+            std::process::Command::new(std::env::current_exe().unwrap())
+                .arg("pid_file::tests::a_second_guard_cannot_replace_a_live_pid_file")
+                .arg("--exact")
+                .env("NANOBOOK_PID_HOLDER", "1")
+                .env("NANOBOOK_PID_PATH", &path)
+                .spawn()
+                .unwrap(),
+        );
         let ready = path.with_extension("ready");
         let started = std::time::Instant::now();
         while !ready.exists() {
             if started.elapsed() > std::time::Duration::from_secs(10) {
-                let _ = child.kill();
-                let _ = child.wait();
                 panic!("holder did not lock the PID file");
             }
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
 
         // --kill reads the PID file while the holder runs.
-        assert_eq!(read_pid_file(&path).unwrap(), child.id());
+        assert_eq!(read_pid_file(&path).unwrap(), child.0.id());
         let error = PidFileGuard::create(path.clone()).unwrap_err();
         assert!(
             error.to_string().contains("in use by another rebalancer"),
             "{error}"
         );
-        let _ = child.kill();
-        let _ = child.wait();
+        // Kill and reap the holder; a failed assertion above does the same on drop.
+        drop(child);
         // Windows may release a killed process's lock a moment after the process exits.
         let started = std::time::Instant::now();
         let guard = loop {
