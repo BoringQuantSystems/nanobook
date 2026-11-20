@@ -591,6 +591,7 @@ pub struct Quote {
 
 pub struct BrokerOrderStatus {
     pub id: OrderId,
+    pub symbol: Option<Symbol>,    // None when the adapter cannot tell (order_status by id alone)
     pub status: OrderState,        // Pending | Submitted | PartiallyFilled | Filled | Cancelled | Rejected
     pub filled_quantity: u64,
     pub remaining_quantity: u64,
