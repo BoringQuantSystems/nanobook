@@ -554,4 +554,35 @@ mod tests {
         let report = check_batch(&config, &over, &account(100_000_000), &[], &[]);
         assert_eq!(named(&report, "Max trade size").status, RiskStatus::Warn);
     }
+
+    // ---- Detail strings: worst-weight symbol and weight allocation ----
+
+    #[test]
+    fn max_position_detail_names_the_first_of_tied_weights() {
+        let tied = vec![(aapl(), 0.20), (spy(), 0.20)];
+        let report = check_batch(&default_config(), &[], &account(10_000_000), &[], &tied);
+        assert_eq!(
+            named(&report, "Max position").detail,
+            "20.0% (AAPL) <= 40.0% limit"
+        );
+
+        // A zero weight is not larger than the starting value 0.0, so the
+        // placeholder symbol stays.
+        let zero = vec![(aapl(), 0.0)];
+        let report = check_batch(&default_config(), &[], &account(10_000_000), &[], &zero);
+        assert_eq!(
+            named(&report, "Max position").detail,
+            "0.0% (?) <= 40.0% limit"
+        );
+    }
+
+    #[test]
+    fn weight_allocation_splits_long_short_and_cash() {
+        let msft = Symbol::new("MSFT");
+        let targets = vec![(aapl(), 0.50), (spy(), -0.20), (msft, 0.0)];
+        let report = check_batch(&default_config(), &[], &account(10_000_000), &[], &targets);
+        let check = named(&report, "Weight allocation");
+        assert_eq!(check.status, RiskStatus::Pass);
+        assert_eq!(check.detail, "50.0% long, 20.0% short, 50.0% cash");
+    }
 }

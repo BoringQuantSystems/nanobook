@@ -29,3 +29,17 @@ impl fmt::Display for RiskError {
 }
 
 impl std::error::Error for RiskError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn invalid_config_displays_its_message() {
+        let error = RiskError::InvalidConfig("max_leverage must be positive".to_string());
+        assert_eq!(
+            error.to_string(),
+            "invalid RiskConfig: max_leverage must be positive"
+        );
+    }
+}

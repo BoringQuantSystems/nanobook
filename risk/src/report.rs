@@ -86,4 +86,34 @@ mod tests {
         assert!(!report(&[RiskStatus::Pass, RiskStatus::Warn]).has_failures());
         assert!(report(&[RiskStatus::Pass, RiskStatus::Fail]).has_failures());
     }
+
+    #[test]
+    fn status_displays_as_upper_case_word() {
+        assert_eq!(RiskStatus::Pass.to_string(), "PASS");
+        assert_eq!(RiskStatus::Warn.to_string(), "WARN");
+        assert_eq!(RiskStatus::Fail.to_string(), "FAIL");
+    }
+
+    #[test]
+    fn report_displays_one_line_per_check() {
+        let report = RiskReport {
+            checks: vec![
+                RiskCheck {
+                    name: "Leverage",
+                    status: RiskStatus::Pass,
+                    detail: "1.00x <= 1.50x limit".to_string(),
+                },
+                RiskCheck {
+                    name: "Max trade size",
+                    status: RiskStatus::Warn,
+                    detail: "AAPL: $2000 > $1000 max_trade_usd".to_string(),
+                },
+            ],
+        };
+        assert_eq!(
+            report.to_string(),
+            "RISK CHECKS:\n  [PASS] Leverage: 1.00x <= 1.50x limit\n  [WARN] Max trade size: AAPL: $2000 > $1000 max_trade_usd\n"
+        );
+        assert_eq!(RiskReport { checks: vec![] }.to_string(), "RISK CHECKS:\n");
+    }
 }
