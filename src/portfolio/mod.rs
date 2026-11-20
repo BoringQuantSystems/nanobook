@@ -2667,6 +2667,67 @@ mod tests {
         assert_eq!(portfolio.last_rebalance_order_count(), 0);
     }
 
+    // --- degenerate-input guards of the private sizing helpers ---
+
+    #[test]
+    fn buy_cash_required_is_zero_for_non_positive_quantity_or_price() {
+        // A zero notional would still be charged the 7-cent minimum commission.
+        let cost = CostModel {
+            commission_bps: 0.0,
+            slippage_bps: 0.0,
+            min_commission: 7,
+        };
+        assert_eq!(buy_cash_required(0, 100, &cost), 0);
+        assert_eq!(buy_cash_required(-5, 100, &cost), 0);
+        assert_eq!(buy_cash_required(Shares::SCALE, 0, &cost), 0);
+        assert_eq!(buy_cash_required(Shares::SCALE, -100, &cost), 0);
+        // One share at 100 cents plus the minimum commission.
+        assert_eq!(buy_cash_required(Shares::SCALE, 100, &cost), 107);
+    }
+
+    #[test]
+    fn largest_affordable_buy_qty_is_zero_for_non_positive_step_or_price() {
+        let cost = CostModel::zero();
+        let affordable =
+            |step, price| largest_affordable_buy_qty(5_000_000, 1_000_000, step, price, &cost);
+        assert_eq!(affordable(0, 100), Shares::ZERO);
+        assert_eq!(affordable(-1, 100), Shares::ZERO);
+        assert_eq!(affordable(Shares::SCALE, 0), Shares::ZERO);
+        assert_eq!(affordable(Shares::SCALE, -100), Shares::ZERO);
+        // 5 shares at 100 cents cost 500 and fit in 1_000_000 cents of cash.
+        assert_eq!(affordable(Shares::SCALE, 100), Shares::from_whole(5));
+    }
+
+    #[test]
+    fn truncate_qty_to_max_value_is_zero_for_degenerate_inputs() {
+        let qty = Shares::from_whole(10);
+        let truncate =
+            |price, step, max_value| truncate_qty_to_max_value(qty, price, step, max_value);
+        assert_eq!(truncate(0, Shares::SCALE, 500), Shares::ZERO);
+        assert_eq!(truncate(100, 0, 500), Shares::ZERO);
+        assert_eq!(truncate(100, -1, 500), Shares::ZERO);
+        assert_eq!(truncate(100, Shares::SCALE, 0), Shares::ZERO);
+        assert_eq!(truncate(100, Shares::SCALE, -500), Shares::ZERO);
+        assert_eq!(truncate(100, Shares::SCALE, 500), Shares::from_whole(5));
+    }
+
+    #[test]
+    fn size_qty_is_zero_for_degenerate_inputs() {
+        assert_eq!(size_qty(0, 100, Shares::SCALE), Shares::ZERO);
+        assert_eq!(size_qty(10_000, 0, Shares::SCALE), Shares::ZERO);
+        assert_eq!(size_qty(10_000, -100, Shares::SCALE), Shares::ZERO);
+        assert_eq!(size_qty(10_000, 100, 0), Shares::ZERO);
+        assert_eq!(size_qty(10_000, 100, -1), Shares::ZERO);
+        assert_eq!(
+            size_qty(10_000, 100, Shares::SCALE),
+            Shares::from_whole(100)
+        );
+        assert_eq!(
+            size_qty(-10_000, 100, Shares::SCALE),
+            Shares::from_whole(-100)
+        );
+    }
+
     // --- truncate_qty_to_max_value, sells ---
 
     #[test]

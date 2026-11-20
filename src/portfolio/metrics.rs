@@ -1020,6 +1020,31 @@ mod tests {
         assert_eq!(norm_ppf(1.0), f64::INFINITY);
     }
 
+    /// Inside 1e-15 of the median the function returns exactly 0.0; the
+    /// central formula would give about 2.8e-16 at the next float above 0.5.
+    #[test]
+    fn norm_ppf_is_exactly_zero_next_to_the_median() {
+        let above = f64::from_bits(0.5_f64.to_bits() + 1); // 0.5 + 2^-53
+        let below = f64::from_bits(0.5_f64.to_bits() - 1); // 0.5 - 2^-54
+        assert_eq!(norm_ppf(0.5), 0.0);
+        assert_eq!(norm_ppf(above), 0.0);
+        assert_eq!(norm_ppf(below), 0.0);
+    }
+
+    /// p = 0.02425 is not below the lower-tail limit, so the central rational
+    /// approximation applies. Reference: the central formula with Acklam's
+    /// coefficients evaluated in Python (-1.9729610490848712); the lower-tail
+    /// formula gives -1.972961053530962 there, 4.4e-9 away.
+    #[test]
+    fn norm_ppf_uses_the_central_formula_at_the_lower_limit() {
+        assert_close(
+            norm_ppf(0.02425),
+            -1.972_961_049_084_871_2,
+            1e-12,
+            "norm_ppf(0.02425)",
+        );
+    }
+
     /// A2-G7: parametric CVaR sigma (sample variance) and strict threshold.
     #[test]
     fn cvar_parametric_tail_selection() {

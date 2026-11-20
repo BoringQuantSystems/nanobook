@@ -2881,4 +2881,25 @@ mod tests {
         assert!(check(0, 0, 0, 0), "all zero");
         assert!(check(10, 10, 10, 10), "all positive");
     }
+
+    #[test]
+    fn unpriced_holding_display_names_symbol_period_and_price_map() {
+        let at_fill = UnpricedHolding {
+            period_index: 3,
+            symbol: aapl(),
+            at_fill: true,
+        };
+        assert_eq!(
+            at_fill.to_string(),
+            "unpriced holding AAPL at period 3 (fill)"
+        );
+        let at_close = UnpricedHolding {
+            at_fill: false,
+            ..at_fill
+        };
+        assert_eq!(
+            at_close.to_string(),
+            "unpriced holding AAPL at period 3 (close)"
+        );
+    }
 }
