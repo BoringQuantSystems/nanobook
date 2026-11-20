@@ -136,6 +136,8 @@ tests, fuzzing or mutation testing.
 - **nanobook-rebalancer: `constraints.min_trade_usd` in target.json does not change the run minimum.** The run still reads `config.risk.min_trade_usd`.
 - **nanobook-rebalancer: `TargetSpec::window_id` hashes with `DefaultHasher`.** The id can change after a Rust upgrade, so a cron window can fire twice.
 - **nanobook-rebalancer: without `write_ahead_logging`, the runner does not write `order_submitted`.** Graceful kill then cannot report a dangling order.
+- **nanobook-broker: two Binance `Broker` methods are placeholders.** `open_orders` always returns an empty list, and `cancel_order` by order id is refused because the adapter keeps no id-to-symbol map.
+- **nanobook-risk: an empty side prints `-0.0%`.** The "Weight allocation" detail shows `-0.0% long` (or short) when no target is on that side, because an empty `f64` sum is `-0.0` since Rust 1.83. The numbers are zero; only the sign in the text is wrong.
 
 ### Security
 

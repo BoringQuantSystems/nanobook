@@ -90,7 +90,7 @@ def test_scene5_laws_match_verification_md(output):
     s = scene(output, 5)
     assert len(re.findall(r"^\s+law\s+\d+:", s, flags=re.M)) == 11
     assert "verification/lean/check.sh 0" in s
-    assert "mutation score: see VERIFICATION.md" in s
+    assert "mutation-testing results, crate by crate: VERIFICATION.md" in s
     if not VERIFICATION.exists():
         pytest.skip("VERIFICATION.md not next to python/ (installed layout)")
     table = re.findall(r"^\| (\d+) \| (.*?) \| `", VERIFICATION.read_text(), flags=re.M)

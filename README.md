@@ -211,8 +211,9 @@ Report a vulnerability privately as described in [SECURITY.md](SECURITY.md).
 - Fallible risk-engine construction instead of config-time panics.
 - `rustls` default TLS backend, zeroize-on-drop for Binance credentials, and scrubbed broker logs.
 - Audit logs constrained to the working directory, with `0o600` permissions on Unix.
-- cargo-fuzz harnesses for matching and ITCH, plus an 89.76 % mutation-testing
-  baseline for the matcher.
+- cargo-fuzz harnesses for matching and ITCH, and mutation testing of the risk,
+  broker, portfolio and rebalancer code: every surviving change is killed by a test
+  or explained ([VERIFICATION.md](VERIFICATION.md#mutation-testing-does-all-of-this-catch-real-bugs-in-the-rust-code)).
 
 ## Competitive Positioning
 

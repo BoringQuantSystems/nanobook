@@ -302,7 +302,7 @@ def scene5():
     print()
     print("recheck the proofs yourself, from the repository root:")
     print("  verification/lean/check.sh 0")
-    print("mutation score: see VERIFICATION.md")  # placeholder until the 0.20.0 score is final
+    print("mutation-testing results, crate by crate: VERIFICATION.md")
 
 
 # --------------------------------------------------------------------------- figure

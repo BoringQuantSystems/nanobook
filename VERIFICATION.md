@@ -128,7 +128,55 @@ part.
 
 ## Mutation testing: does all of this catch real bugs in the Rust code?
 
-<!-- MUTATION-RESULTS: filled in from the 0.20.0 cargo-mutants run -->
+[cargo-mutants](https://mutants.rs) plants one small change at a time in the code (a
+`<` turned into `<=`, a `+` into `-`, a function body replaced by a constant) and runs
+the test suite. If no test fails, the change "survives": the tests would not notice that
+bug. For 0.20.0 we ran it on the risk, broker, portfolio and rebalancer code, with
+every surviving change either killed by a new test or explained.
+
+Result on the 0.20.0 code (only changes that compile are counted):
+
+| Code | Changes | Caught by a failing test | Hang, stopped by the time limit | Cannot change any result | Text or unused code only | Out of reach of tests |
+|---|---|---|---|---|---|---|
+| `nanobook-risk` | 149 | 146 | 0 | 1 | 2 | 0 |
+| `nanobook`: portfolio, metrics, backtest bridge | 1005 | 970 | 8 | 27 | 0 | 0 |
+| `nanobook-broker` (IBKR and Binance) | 428 | 388 | 0 | 5 | 6 | 29 |
+| `nanobook-rebalancer` (both builds) | 753 | 717 | 4 | 29 | 1 | 2 |
+
+- "Cannot change any result": no reachable input gives a different answer, for
+  example `>` against `>=` where the equal case is filtered out a few lines earlier.
+  Each one is listed with its reason in the triage notes.
+- "Out of reach of tests": 27 broker changes need a live Interactive Brokers
+  connection (whole-function replacements on the client, its order cache and its
+  callback de-duplication), one needs the Binance network, and one differs only when
+  a 300 s age equals the limit to the nanosecond on a clock the test cannot set; in
+  the rebalancer, two replace the interactive confirmation prompt.
+- The matching engine itself (`book.rs`, `level.rs`, `matching.rs`,
+  `exchange.rs`, `price_levels.rs`) had no surviving change in the full core run
+  (5046 changes). A test added for 0.20.0 also pins the order record after a
+  self-trade stop (`tests/stp_policy.rs`).
+
+Sorting the surviving changes and writing the tests found twelve bugs, all fixed in
+0.20.0 with a regression test: the ITCH Stock Directory symbol offset; the deflated
+Sharpe ratio formula; IBKR connection-loss codes that never reached their check; IBKR
+reconciliation that ignored the order's side; a Binance websocket that ignored
+`testnet` and a reconnect loop that never gave up; and six in the rebalancer, among
+them close orders priced on the wrong side of mid, an aborted run that exited with
+code 0, and audit limits read as cents instead of dollars. The changelog lists each.
+
+Not covered yet: the statistics, indicator, volatility, scenario and optimisation
+modules (`stats.rs`, `indicators.rs`, `volatility.rs`, `scenarios.rs`,
+`optimize.rs`, `garch.rs`, `cv.rs`) and the command-line tools. In the core run they
+left 1153 surviving changes, most of them missing exact-value tests. They are the
+next step after 0.20.0.
+
+**How it was run.** cargo-mutants 27.1 on a separate Linux machine, each package on its
+own (`--package`), the broker with `--features ibkr,binance`, the core with
+`--all-features`, the rebalancer twice (default features, and
+`--features write_ahead_logging,guaranteed_kill_switch`), with `--timeout 900`. The
+time limit matters: the rebalancer's write-ahead tests take about 75 s, and with a
+180 s limit 15 surviving changes were wrongly counted as hangs. A change counts as
+caught when a test fails in at least one build that compiles it.
 
 ## What this work found
 
