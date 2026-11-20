@@ -403,3 +403,179 @@ fn risk_engine_accepts_valid_config() {
         "default RiskConfig must be valid"
     );
 }
+
+// ============================================================================
+// Threshold boundaries (cargo-mutants 0.20.0 showed these were never checked)
+// ============================================================================
+
+fn status_of(report: &nanobook_risk::RiskReport, name: &str) -> RiskStatus {
+    report
+        .checks
+        .iter()
+        .find(|c| c.name == name)
+        .unwrap_or_else(|| panic!("no check named {name:?} in {report}"))
+        .status
+}
+
+#[test]
+fn selling_a_whole_long_with_shorts_disallowed_passes() {
+    let engine = RiskEngine::new(RiskConfig {
+        allow_short: false,
+        ..RiskConfig::default()
+    })
+    .unwrap();
+    // 100 held, sell 100: post quantity is exactly 0, not short.
+    let report = engine.check_order(
+        &aapl(),
+        BrokerSide::Sell,
+        100,
+        150_00,
+        &account(10_000_000),
+        &[(aapl(), 100)],
+    );
+    assert!(!report.has_failures(), "{report}");
+    assert!(!report.checks.iter().any(|c| c.name == "Short selling"));
+}
+
+#[test]
+fn order_size_warning_threshold_is_max_trade_usd() {
+    let engine = RiskEngine::new(RiskConfig {
+        max_trade_usd: 1000.0, // 100_000 cents
+        max_position_pct: 1.0,
+        ..RiskConfig::default()
+    })
+    .unwrap();
+    // notional exactly 100_000 cents: no warning
+    let at = engine.check_order(
+        &aapl(),
+        BrokerSide::Buy,
+        10,
+        10_000,
+        &account(100_000_000),
+        &[],
+    );
+    let size = at.checks.iter().find(|c| c.name == "Order size").unwrap();
+    assert_eq!(size.status, RiskStatus::Pass);
+    assert_eq!(size.detail, "$1000.00 <= $1000.00 max");
+    assert!(!at.has_warnings());
+    // one cent over: warns
+    let over = engine.check_order(
+        &aapl(),
+        BrokerSide::Buy,
+        1,
+        100_001,
+        &account(100_000_000),
+        &[],
+    );
+    assert_eq!(status_of(&over, "Order size"), RiskStatus::Warn);
+}
+
+#[test]
+fn position_exactly_at_max_position_pct_passes() {
+    // 25 * 100_000 = 2_500_000 over 10_000_000 equity = 0.25 = the limit
+    let report = engine().check_order(
+        &aapl(),
+        BrokerSide::Buy,
+        25,
+        100_000,
+        &account(10_000_000),
+        &[],
+    );
+    assert_eq!(status_of(&report, "Max position"), RiskStatus::Pass);
+}
+
+#[test]
+fn zero_max_order_value_means_no_limit() {
+    let engine = RiskEngine::new(RiskConfig {
+        max_order_value_cents: 0,
+        ..RiskConfig::default()
+    })
+    .unwrap();
+    let report = engine.check_order(
+        &aapl(),
+        BrokerSide::Buy,
+        1000,
+        15_000,
+        &account(100_000_000),
+        &[],
+    );
+    assert_eq!(status_of(&report, "Max order value"), RiskStatus::Pass);
+}
+
+#[test]
+fn engine_config_returns_the_configured_limits() {
+    let engine = RiskEngine::new(RiskConfig {
+        max_position_pct: 0.5,
+        max_leverage: 2.0,
+        ..RiskConfig::default()
+    })
+    .unwrap();
+    assert_eq!(engine.config().max_position_pct, 0.5);
+    assert_eq!(engine.config().max_leverage, 2.0);
+}
+
+#[test]
+fn has_warnings_false_for_a_small_order() {
+    let report = engine().check_order(
+        &aapl(),
+        BrokerSide::Buy,
+        10,
+        150_00,
+        &account(10_000_000),
+        &[],
+    );
+    assert!(!report.has_warnings());
+}
+
+// ============================================================================
+// RiskConfig::validate: non-finite values and boundaries
+// ============================================================================
+
+#[test]
+fn max_drawdown_pct_one_validates_and_above_one_fails() {
+    let at = RiskConfig {
+        max_drawdown_pct: 1.0,
+        ..RiskConfig::default()
+    };
+    assert!(at.validate().is_ok());
+    let over = RiskConfig {
+        max_drawdown_pct: 1.5,
+        ..RiskConfig::default()
+    };
+    assert!(over.validate().is_err());
+}
+
+#[test]
+fn non_finite_short_and_trade_limits_fail_validation() {
+    for bad in [f64::INFINITY, f64::NAN] {
+        let short = RiskConfig {
+            max_short_pct: bad,
+            ..RiskConfig::default()
+        };
+        assert!(short.validate().is_err(), "max_short_pct {bad}");
+        let min_trade = RiskConfig {
+            min_trade_usd: bad,
+            ..RiskConfig::default()
+        };
+        assert!(min_trade.validate().is_err(), "min_trade_usd {bad}");
+        let max_trade = RiskConfig {
+            max_trade_usd: bad,
+            ..RiskConfig::default()
+        };
+        assert!(max_trade.validate().is_err(), "max_trade_usd {bad}");
+    }
+}
+
+#[test]
+fn zero_order_and_batch_value_limits_validate() {
+    let order = RiskConfig {
+        max_order_value_cents: 0,
+        ..RiskConfig::default()
+    };
+    assert!(order.validate().is_ok());
+    let batch = RiskConfig {
+        max_batch_value_cents: 0,
+        ..RiskConfig::default()
+    };
+    assert!(batch.validate().is_ok());
+}

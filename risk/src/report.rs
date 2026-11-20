@@ -55,3 +55,35 @@ impl std::fmt::Display for RiskReport {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn report(statuses: &[RiskStatus]) -> RiskReport {
+        RiskReport {
+            checks: statuses
+                .iter()
+                .map(|&status| RiskCheck {
+                    name: "check",
+                    status,
+                    detail: String::new(),
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn has_warnings_is_true_only_for_warn_status() {
+        assert!(!report(&[]).has_warnings());
+        assert!(!report(&[RiskStatus::Pass, RiskStatus::Pass]).has_warnings());
+        assert!(!report(&[RiskStatus::Pass, RiskStatus::Fail]).has_warnings());
+        assert!(report(&[RiskStatus::Pass, RiskStatus::Warn]).has_warnings());
+    }
+
+    #[test]
+    fn has_failures_is_true_only_for_fail_status() {
+        assert!(!report(&[RiskStatus::Pass, RiskStatus::Warn]).has_failures());
+        assert!(report(&[RiskStatus::Pass, RiskStatus::Fail]).has_failures());
+    }
+}
