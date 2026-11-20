@@ -7,9 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
-nanobook and the Python package move from 0.19.3 to 0.20.0, and nanobook-broker
-from 0.10.1 to 0.10.2. nanobook-risk and nanobook-rebalancer are republished only if
-their code changes before the release.
+nanobook and the Python package move from 0.19.3 to 0.20.0. nanobook-broker moves
+from 0.10.1 to 0.11.0 and nanobook-rebalancer from 0.10.2 to 0.11.0: both have
+breaking changes (see Changed). nanobook-risk moves from 0.8.1 to 0.8.2 (no API
+change: `#![forbid(unsafe_code)]` and tests).
 
 ### Highlight: matching rules proved in Lean 4
 
