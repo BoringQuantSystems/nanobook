@@ -2497,6 +2497,348 @@ mod tests {
         );
         assert_eq!(portfolio.trimmed_shortfall_cents(), 0);
     }
+
+    // === Exact-value pins (cargo-mutants 0.20.0 showed these were never checked) ===
+
+    fn qty_of(portfolio: &Portfolio, symbol: &Symbol) -> Shares {
+        portfolio
+            .position(symbol)
+            .map_or(Shares::ZERO, |p| p.quantity)
+    }
+
+    // --- rebalance_lob ---
+
+    use crate::{MultiExchange, OrderId, Price, Side, TimeInForce};
+
+    /// A book for `aapl` with a 10_000-share bid at 99_00 and ask at 101_00
+    /// (order ids 1 and 2, mid price 100_00).
+    fn lob_with_spread() -> MultiExchange {
+        let mut multi = MultiExchange::new();
+        let ex = multi.get_or_create(&aapl());
+        ex.submit_limit(Side::Buy, Price(99_00), 10_000, TimeInForce::GTC);
+        ex.submit_limit(Side::Sell, Price(101_00), 10_000, TimeInForce::GTC);
+        multi
+    }
+
+    #[test]
+    fn rebalance_lob_sizes_sides_and_prices_orders_exactly() {
+        let mut multi = lob_with_spread();
+        let mut portfolio = Portfolio::new(1_000_000_00, CostModel::zero());
+
+        // T1: target 50% at mid 100_00: 50_000_000 / 100_00 = 5000 shares,
+        // bought from the ask at 101_00.
+        portfolio.rebalance_lob(&[(aapl(), 0.5)], &mut multi);
+        assert_eq!(qty_of(&portfolio, &aapl()), Shares::from_whole(5000));
+        assert_eq!(portfolio.cash(), 49_500_000);
+        let ask = multi.get(&aapl()).unwrap().get_order(OrderId(2)).unwrap();
+        assert_eq!(ask.remaining_quantity, 5000);
+
+        // T2: equity = 49_500_000 + 5000 * 100_00 = 99_500_000; target 25%
+        // = 24_875_000; diff = -25_125_000; 2512 shares sold at the bid 99_00.
+        portfolio.rebalance_lob(&[(aapl(), 0.25)], &mut multi);
+        assert_eq!(qty_of(&portfolio, &aapl()), Shares::from_whole(2488));
+        assert_eq!(portfolio.cash(), 74_368_800);
+
+        // T3: no targets closes the whole position at the bid.
+        portfolio.rebalance_lob(&[], &mut multi);
+        assert!(portfolio.position(&aapl()).unwrap().is_flat());
+        assert_eq!(portfolio.cash(), 99_000_000);
+
+        // T5a: a flat position places no order. Ids so far: 2 limits and 3
+        // market orders, so the next order gets id 6.
+        portfolio.rebalance_lob(&[], &mut multi);
+        let probe =
+            multi
+                .get_or_create(&aapl())
+                .submit_limit(Side::Buy, Price(90_00), 1, TimeInForce::GTC);
+        assert_eq!(probe.order_id, OrderId(6));
+    }
+
+    #[test]
+    fn rebalance_lob_skips_a_symbol_with_a_zero_mid_price() {
+        let z = Symbol::new("Z");
+        let mut multi = MultiExchange::new();
+        multi
+            .get_or_create(&z)
+            .submit_limit(Side::Buy, Price(0), 10, TimeInForce::GTC);
+        let mut portfolio = Portfolio::new(1_000_00, CostModel::zero());
+        portfolio.rebalance_lob(&[(z, 0.5)], &mut multi);
+        assert!(portfolio.position(&z).is_none());
+        assert_eq!(portfolio.cash(), 1_000_00);
+        assert_eq!(multi.get(&z).unwrap().best_bid(), Some(Price(0)));
+    }
+
+    /// Closing a sub-share long position (whole() == 0) takes the buy side
+    /// branch with quantity 0 and trades nothing.
+    #[test]
+    fn rebalance_lob_close_of_fractional_long_submits_a_zero_buy() {
+        let mut multi = lob_with_spread();
+        let mut portfolio = Portfolio::new(1_000_000_00, CostModel::zero());
+        portfolio.execute_fill(aapl(), Shares::from_raw(500_000), 100_00);
+        portfolio.rebalance_lob(&[], &mut multi);
+        let order = multi.get(&aapl()).unwrap().get_order(OrderId(3)).unwrap();
+        assert_eq!(order.side, Side::Buy);
+        assert_eq!(qty_of(&portfolio, &aapl()), Shares::from_raw(500_000));
+    }
+
+    // --- close loop of rebalance_simple (positions absent from the targets) ---
+
+    #[test]
+    fn close_loop_respects_no_trade_band() {
+        let (a, b, c) = (Symbol::new("A"), Symbol::new("B"), Symbol::new("C"));
+        let prices = [(a, 10_00), (b, 100_00), (c, 100_00)];
+        let mut portfolio = Portfolio::new(1_000_00, CostModel::zero());
+        portfolio.rebalance_simple(&[(a, 0.02), (b, 0.4), (c, 0.3)], &prices);
+        assert_eq!(qty_of(&portfolio, &a), Shares::from_whole(2));
+        assert_eq!(qty_of(&portfolio, &b), Shares::from_whole(4));
+        assert_eq!(qty_of(&portfolio, &c), Shares::from_whole(3));
+        assert_eq!(portfolio.cash(), 28_000);
+
+        portfolio.set_no_trade_band_bps(500.0);
+        portfolio.rebalance_simple(&[(b, 0.4)], &prices);
+        // A drifts 200 bps (kept), C drifts 3000 bps (closed).
+        assert_eq!(qty_of(&portfolio, &a), Shares::from_whole(2));
+        assert_eq!(qty_of(&portfolio, &b), Shares::from_whole(4));
+        assert_eq!(qty_of(&portfolio, &c), Shares::ZERO);
+        assert_eq!(portfolio.cash(), 58_000);
+        assert_eq!(portfolio.last_rebalance_order_count(), 1);
+        assert_eq!(portfolio.last_rebalance_notional(), 30_000);
+    }
+
+    #[test]
+    fn close_loop_with_band_zero_closes_a_position_priced_at_zero() {
+        let mut portfolio = Portfolio::new(1_000_00, CostModel::zero());
+        portfolio.rebalance_simple(&[(aapl(), 0.5)], &[(aapl(), 100_00)]);
+        assert_eq!(qty_of(&portfolio, &aapl()), Shares::from_whole(5));
+        assert_eq!(portfolio.cash(), 50_000);
+
+        // Price 0: drift 0, band 0 (disabled): the close is still placed.
+        portfolio.rebalance_simple(&[], &[(aapl(), 0)]);
+        assert_eq!(qty_of(&portfolio, &aapl()), Shares::ZERO);
+        assert_eq!(portfolio.last_rebalance_order_count(), 1);
+        assert_eq!(portfolio.last_rebalance_notional(), 0);
+    }
+
+    #[test]
+    fn close_loop_truncates_to_max_order_value() {
+        let mut portfolio = Portfolio::new(1_000_00, CostModel::zero());
+        portfolio.rebalance_simple(&[(aapl(), 1.0)], &[(aapl(), 100_00)]);
+        assert_eq!(qty_of(&portfolio, &aapl()), Shares::from_whole(10));
+        assert_eq!(portfolio.cash(), 0);
+
+        portfolio.set_max_order_value(300_00);
+        portfolio.rebalance_simple(&[], &[(aapl(), 100_00)]);
+        assert_eq!(qty_of(&portfolio, &aapl()), Shares::from_whole(7));
+        assert_eq!(portfolio.cash(), 30_000);
+        assert_eq!(portfolio.last_rebalance_order_count(), 1);
+        assert_eq!(portfolio.last_rebalance_notional(), 30_000);
+    }
+
+    #[test]
+    fn close_loop_skips_closes_below_min_order_value() {
+        let (a, b, c) = (Symbol::new("A"), Symbol::new("B"), Symbol::new("C"));
+        let prices = [(a, 10_00), (b, 10_00), (c, 10_00)];
+        let mut portfolio = Portfolio::new(10_000_00, CostModel::zero());
+        portfolio.rebalance_simple(&[(a, 0.1), (b, 0.005), (c, 0.01)], &prices);
+        assert_eq!(qty_of(&portfolio, &a), Shares::from_whole(100));
+        assert_eq!(qty_of(&portfolio, &b), Shares::from_whole(5));
+        assert_eq!(qty_of(&portfolio, &c), Shares::from_whole(10));
+        assert_eq!(portfolio.cash(), 885_000);
+
+        portfolio.set_min_order_value(100_00);
+        portfolio.rebalance_simple(&[], &prices);
+        // A notional 100_000 closes, B 5_000 < min stays, C 10_000 == min closes.
+        assert_eq!(qty_of(&portfolio, &a), Shares::ZERO);
+        assert_eq!(qty_of(&portfolio, &b), Shares::from_whole(5));
+        assert_eq!(qty_of(&portfolio, &c), Shares::ZERO);
+        assert_eq!(portfolio.last_rebalance_order_count(), 2);
+        assert_eq!(portfolio.last_rebalance_notional(), 110_000);
+        assert_eq!(portfolio.cash(), 995_000);
+    }
+
+    #[test]
+    fn close_loop_ignores_flat_positions() {
+        let mut portfolio = Portfolio::new(1_000_00, CostModel::zero());
+        portfolio.rebalance_simple(&[(aapl(), 0.5)], &[(aapl(), 100_00)]);
+        portfolio.rebalance_simple(&[], &[(aapl(), 100_00)]);
+        assert_eq!(portfolio.last_rebalance_order_count(), 1);
+        // AAPL is now flat but still in the map: nothing to close.
+        portfolio.rebalance_simple(&[], &[(aapl(), 100_00)]);
+        assert_eq!(portfolio.last_rebalance_order_count(), 0);
+    }
+
+    // --- truncate_qty_to_max_value, sells ---
+
+    #[test]
+    fn truncate_qty_to_max_value_keeps_the_sign_of_a_sell() {
+        assert_eq!(
+            truncate_qty_to_max_value(Shares::from_whole(-10), 100, Shares::SCALE, 500),
+            Shares::from_whole(-5)
+        );
+        assert_eq!(
+            truncate_qty_to_max_value(Shares::from_whole(10), 100, Shares::SCALE, 500),
+            Shares::from_whole(5)
+        );
+    }
+
+    #[test]
+    fn max_order_value_truncates_a_sell_and_does_not_buy() {
+        let mut portfolio = Portfolio::new(1_000_00, CostModel::zero());
+        portfolio.rebalance_simple(&[(aapl(), 1.0)], &[(aapl(), 100_00)]);
+        portfolio.set_max_order_value(300_00);
+        portfolio.rebalance_simple(&[(aapl(), 0.0)], &[(aapl(), 100_00)]);
+        assert_eq!(qty_of(&portfolio, &aapl()), Shares::from_whole(7));
+        assert_eq!(portfolio.cash(), 30_000);
+    }
+
+    // --- per-rebalance notional cap with a minimum order value ---
+
+    #[test]
+    fn max_rebalance_notional_truncated_order_above_min_order_value_is_admitted() {
+        let s: Vec<Symbol> = (0..3).map(|i| Symbol::new(&format!("S{i}"))).collect();
+        let prices: Vec<(Symbol, i64)> = s.iter().map(|&x| (x, 100_00)).collect();
+        let mut portfolio = Portfolio::new(100_000_00, CostModel::zero());
+        portfolio.set_max_rebalance_notional(20_000_00);
+        portfolio.set_min_order_value(1_000_00);
+        portfolio.rebalance_simple(&[(s[0], 0.05), (s[1], 0.10), (s[2], 0.15)], &prices);
+        // S2 (1500 bps) takes 1_500_000, S1 is cut to the 500_000 left and
+        // clears the 100_000 minimum, S0 gets nothing.
+        assert_eq!(qty_of(&portfolio, &s[2]), Shares::from_whole(150));
+        assert_eq!(qty_of(&portfolio, &s[1]), Shares::from_whole(50));
+        assert_eq!(qty_of(&portfolio, &s[0]), Shares::ZERO);
+        assert_eq!(portfolio.last_rebalance_order_count(), 2);
+        assert_eq!(portfolio.last_rebalance_notional(), 20_000_00);
+        assert_eq!(portfolio.cash(), 8_000_000);
+    }
+
+    // --- orders whose notional equals a cap exactly, with a fractional quantity ---
+
+    /// 20 cents, step 1 micro-share: 50% at price 3 sizes 3_333_333 raw
+    /// (10 cents / 3), whose notional floors to 9 cents.
+    fn fractional_cap_portfolio() -> Portfolio {
+        Portfolio::with_quantity_step(20, CostModel::zero(), 1)
+    }
+
+    #[test]
+    fn order_at_max_order_value_is_not_truncated() {
+        let mut portfolio = fractional_cap_portfolio();
+        portfolio.set_max_order_value(9);
+        portfolio.rebalance_simple(&[(aapl(), 0.5)], &[(aapl(), 3)]);
+        assert_eq!(qty_of(&portfolio, &aapl()), Shares::from_raw(3_333_333));
+        assert_eq!(portfolio.cash(), 11);
+    }
+
+    #[test]
+    fn close_at_max_order_value_is_not_truncated() {
+        let mut portfolio = fractional_cap_portfolio();
+        portfolio.rebalance_simple(&[(aapl(), 0.5)], &[(aapl(), 3)]);
+        assert_eq!(qty_of(&portfolio, &aapl()), Shares::from_raw(3_333_333));
+        portfolio.set_max_order_value(9);
+        portfolio.rebalance_simple(&[], &[(aapl(), 3)]);
+        assert_eq!(qty_of(&portfolio, &aapl()), Shares::ZERO);
+    }
+
+    #[test]
+    fn order_at_max_rebalance_notional_is_not_truncated() {
+        let mut portfolio = fractional_cap_portfolio();
+        portfolio.set_max_rebalance_notional(9);
+        portfolio.rebalance_simple(&[(aapl(), 0.5)], &[(aapl(), 3)]);
+        assert_eq!(qty_of(&portfolio, &aapl()), Shares::from_raw(3_333_333));
+    }
+
+    // --- close_position_at, unpriced holdings, execute_fill edges ---
+
+    #[test]
+    fn close_position_at_a_flat_position_returns_false() {
+        let mut portfolio = Portfolio::new(1_000_000_00, CostModel::zero());
+        portfolio.rebalance_simple(&[(aapl(), 0.8)], &[(aapl(), 150_00)]);
+        assert!(portfolio.close_position_at(aapl(), 155_00));
+        assert!(!portfolio.close_position_at(aapl(), 155_00));
+        assert!(!portfolio.close_position_at(msft(), 155_00));
+    }
+
+    #[test]
+    fn unpriced_holding_needs_a_positive_price() {
+        let mut portfolio = Portfolio::new(100_00, CostModel::zero());
+        portfolio.rebalance_simple(&[(aapl(), 1.0)], &[(aapl(), 10_00)]);
+        assert_eq!(qty_of(&portfolio, &aapl()), Shares::from_whole(10));
+        assert_eq!(portfolio.unpriced_holding(&[(aapl(), 0)]), Some(aapl()));
+        assert_eq!(portfolio.unpriced_holding(&[(aapl(), -5)]), Some(aapl()));
+        assert_eq!(portfolio.unpriced_holding(&[]), Some(aapl()));
+        assert_eq!(portfolio.unpriced_holding(&[(aapl(), 10_00)]), None);
+    }
+
+    #[test]
+    fn sell_leaving_cash_at_exactly_zero_is_filled() {
+        let model = CostModel {
+            commission_bps: 0.0,
+            slippage_bps: 0.0,
+            min_commission: 100,
+        };
+        let mut portfolio = Portfolio::new(0, model);
+        // Proceeds 100 cents equal the 100-cent minimum commission.
+        portfolio.execute_fill(aapl(), Shares::from_whole(-1), 100);
+        assert_eq!(qty_of(&portfolio, &aapl()), Shares::from_whole(-1));
+        assert_eq!(portfolio.cash(), 0);
+    }
+
+    #[test]
+    fn buy_with_zero_cash_and_fine_step_is_skipped() {
+        let mut portfolio = Portfolio::with_quantity_step(0, CostModel::zero(), 1);
+        portfolio.execute_fill(aapl(), Shares::from_whole(5), 100);
+        assert!(portfolio.position(&aapl()).is_none());
+        assert_eq!(portfolio.cash(), 0);
+        assert_eq!(portfolio.trimmed_fill_count(), 1);
+        assert_eq!(
+            largest_affordable_buy_qty(5_000_000, 0, 1, 100, &CostModel::zero()),
+            Shares::ZERO
+        );
+    }
+
+    // --- record_return with zero previous equity ---
+
+    #[test]
+    fn record_return_with_zero_equity_from_the_start_records_no_return() {
+        let mut portfolio = Portfolio::new(0, CostModel::zero());
+        portfolio.record_return(&[]);
+        assert!(portfolio.returns().is_empty());
+        assert_eq!(portfolio.equity_curve(), &[0, 0]);
+    }
+
+    #[test]
+    fn record_return_after_equity_hits_zero_keeps_one_return_per_call() {
+        let mut portfolio = Portfolio::new(100_00, CostModel::zero());
+        portfolio.rebalance_simple(&[(aapl(), 1.0)], &[(aapl(), 10_00)]);
+        portfolio.record_return(&[(aapl(), 10_00)]);
+        portfolio.record_return(&[(aapl(), 0)]);
+        portfolio.record_return(&[(aapl(), 0)]);
+        assert_eq!(portfolio.returns(), &[0.0, -1.0, 0.0]);
+    }
+
+    // --- getters read back what the setters stored ---
+
+    #[test]
+    fn getters_return_the_configured_values() {
+        let model = CostModel {
+            commission_bps: 7.5,
+            slippage_bps: 2.5,
+            min_commission: 3,
+        };
+        let mut portfolio = Portfolio::new(1_000_00, model);
+        portfolio.set_min_order_value(500_00);
+        portfolio.set_max_order_value(30_000_00);
+        portfolio.set_no_trade_band_bps(25.0);
+        portfolio.set_max_trades_per_rebalance(Some(4));
+        portfolio.set_max_rebalance_notional(20_000_00);
+        assert_eq!(portfolio.min_order_value(), 500_00);
+        assert_eq!(portfolio.max_order_value(), 30_000_00);
+        assert_eq!(portfolio.no_trade_band_bps(), 25.0);
+        assert_eq!(portfolio.max_trades_per_rebalance(), Some(4));
+        assert_eq!(portfolio.max_rebalance_notional(), 20_000_00);
+        assert_eq!(portfolio.cost_model().commission_bps, 7.5);
+        assert_eq!(portfolio.cost_model().slippage_bps, 2.5);
+        assert_eq!(portfolio.cost_model().min_commission, 3);
+    }
 }
 
 #[cfg(all(test, feature = "persistence"))]
@@ -2505,6 +2847,20 @@ mod persistence_tests {
 
     fn aapl() -> Symbol {
         Symbol::new("AAPL")
+    }
+
+    /// JSON saved before `quantity_step` existed loads with whole-share sizing.
+    #[test]
+    fn json_without_quantity_step_defaults_to_whole_shares() {
+        let mut value =
+            serde_json::to_value(Portfolio::new(1_000_000_00, CostModel::zero())).unwrap();
+        value
+            .as_object_mut()
+            .unwrap()
+            .remove("quantity_step")
+            .expect("quantity_step is serialized");
+        let portfolio: Portfolio = serde_json::from_value(value).unwrap();
+        assert_eq!(portfolio.quantity_step(), Shares::SCALE);
     }
 
     #[test]

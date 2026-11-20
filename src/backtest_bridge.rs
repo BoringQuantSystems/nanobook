@@ -2631,4 +2631,254 @@ mod tests {
         assert_eq!(result.stop_events[0].symbol, aapl());
         assert!(result.holdings[2].iter().any(|(sym, _)| *sym == msft()));
     }
+
+    // === Exact-value pins (cargo-mutants 0.20.0 showed these were never checked) ===
+
+    fn run_simple(
+        weights: &[Vec<(Symbol, f64)>],
+        prices: &[Vec<(Symbol, BarPrices)>],
+        fill_policy: FillPolicy,
+        options: BacktestBridgeOptions,
+    ) -> BacktestBridgeResult {
+        backtest_weights_with_options(
+            weights,
+            prices,
+            1_000_000_00,
+            CostModel::zero(),
+            fill_policy,
+            252.0,
+            0.0,
+            options,
+        )
+    }
+
+    /// The ATR buffer keeps the last `6 * atr_period` absolute changes. A
+    /// position held longer than that must not panic while trimming.
+    #[test]
+    fn stop_tracker_trims_abs_changes_to_six_atr_periods() {
+        let mut tracker = StopTracker::new(100_00, 1);
+        for i in 1..=20 {
+            tracker.update(100_00 + i, 1);
+        }
+        assert_eq!(tracker.abs_changes.len(), 6);
+        assert!(tracker.abs_changes.iter().all(|&d| d == 1));
+
+        let mut wide = StopTracker::new(100_00, 1);
+        for i in 1..=20 {
+            wide.update(100_00 + i, 3);
+        }
+        assert_eq!(wide.abs_changes.len(), 18);
+    }
+
+    #[test]
+    fn stop_config_backtest_holding_longer_than_atr_buffer_completes() {
+        let periods = 10;
+        let weights = vec![vec![(aapl(), 1.0)]; periods];
+        let prices = vec![vec![(aapl(), bar(100_00))]; periods];
+        let options = BacktestBridgeOptions {
+            stop_cfg: Some(BacktestStopConfig {
+                fixed_stop_pct: Some(0.5),
+                trailing_stop_pct: None,
+                atr_multiple: None,
+                atr_period: 1,
+            }),
+            ..Default::default()
+        };
+        let result = run_simple(&weights, &prices, FillPolicy::SignalBarClose, options);
+        assert_eq!(result.returns.len(), periods);
+        assert!(result.stop_events.is_empty());
+        assert!(result.unpriced_holding.is_none());
+    }
+
+    /// NextBarTypical fills at (high + low + close) / 3 of the next bar.
+    #[test]
+    fn next_bar_typical_fill_price_is_exact_hlc3() {
+        let weights = vec![vec![(aapl(), 1.0)]; 2];
+        let prices = vec![
+            vec![(aapl(), bar(10_000))],
+            vec![(
+                aapl(),
+                BarPrices {
+                    open: 10_000,
+                    high: 10_300,
+                    low: 9_700,
+                    close: 10_100,
+                },
+            )],
+        ];
+        let result = run_simple(
+            &weights,
+            &prices,
+            FillPolicy::NextBarTypical,
+            BacktestBridgeOptions::default(),
+        );
+        // fill price (10_300 + 9_700 + 10_100) / 3 = 10_033; whole shares
+        // 100_000_000 / 10_033 = 9_967; cash left 100_000_000 - 9_967 * 10_033
+        assert_eq!(result.final_cash, 1_089);
+    }
+
+    #[test]
+    fn short_side_atr_stop_level_sits_above_the_reference_price() {
+        let tracker = StopTracker {
+            side: -1,
+            entry_price: 5_000,
+            reference_price: 5_000,
+            last_price: 5_000,
+            abs_changes: vec![10, 20, 30],
+        };
+        let cfg = BacktestStopConfig {
+            fixed_stop_pct: None,
+            trailing_stop_pct: None,
+            atr_multiple: Some(2.0),
+            atr_period: 3,
+        };
+        // ATR = (10 + 20 + 30) / 3 = 20; level = 5_000 + 2.0 * 20
+        assert_eq!(effective_stop_level(&cfg, &tracker), Some((5_040, "atr")));
+    }
+
+    #[test]
+    fn sanitize_pct_accepts_only_open_unit_interval() {
+        for bad in [0.0, 1.0, -0.5, 1.5, f64::NAN, f64::INFINITY] {
+            assert_eq!(sanitize_pct(Some(bad)), None, "{bad}");
+        }
+        assert_eq!(sanitize_pct(None), None);
+        assert_eq!(sanitize_pct(Some(0.5)), Some(0.5));
+    }
+
+    #[test]
+    fn sanitize_positive_accepts_only_positive_finite() {
+        for bad in [0.0, -1.0, f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {
+            assert_eq!(sanitize_positive(Some(bad)), None, "{bad}");
+        }
+        assert_eq!(sanitize_positive(None), None);
+        assert_eq!(sanitize_positive(Some(2.0)), Some(2.0));
+    }
+
+    #[test]
+    fn decompose_backtest_skips_symbols_with_no_weight_and_no_contribution() {
+        let a = aapl();
+        let b = msft();
+        let result = decompose_backtest(
+            &[vec![(a, 0.5)], vec![]],
+            &[vec![(a, 0.1), (b, 0.2)], vec![(a, 0.1), (b, 0.2)]],
+        );
+        // b never carries weight: no entry in either period. a exits in
+        // period 1 and still reports its zero contribution that period.
+        assert_eq!(result.contributions.len(), 2);
+        assert_eq!(result.contributions[0].len(), 1);
+        assert_eq!(result.contributions[0][0].0, a);
+        assert!((result.contributions[0][0].1 - 0.05).abs() < 1e-12);
+        assert_eq!(result.contributions[1], vec![(a, 0.0)]);
+        assert_eq!(result.cumulative_contributions.len(), 2);
+        for period in &result.cumulative_contributions {
+            assert_eq!(period.len(), 1);
+            assert_eq!(period[0].0, a);
+            assert!((period[0].1 - 0.05).abs() < 1e-12);
+        }
+        assert_eq!(
+            result.trades,
+            vec![AttributionTrade {
+                symbol: a,
+                entry_index: 0,
+                exit_index: Some(1),
+                entry_weight: 0.5,
+                exit_weight: 0.5,
+            }]
+        );
+    }
+
+    fn held_symbols(result: &BacktestBridgeResult) -> Vec<Vec<&str>> {
+        result
+            .holdings
+            .iter()
+            .map(|period| period.iter().map(|(s, _)| s.as_str()).collect())
+            .collect()
+    }
+
+    /// The per-day trade counter resets when the day ordinal changes.
+    #[test]
+    fn max_trades_per_day_resets_on_new_day_ordinal() {
+        let bars = vec![(sym(0), bar(100_00)), (sym(1), bar(100_00))];
+        let prices = vec![bars.clone(), bars.clone(), bars];
+        let weights = vec![
+            vec![(sym(0), 0.2)],
+            vec![(sym(0), 0.2), (sym(1), 0.2)],
+            vec![(sym(0), 0.2), (sym(1), 0.2)],
+        ];
+        let options = BacktestBridgeOptions {
+            max_trades_per_day: Some(1),
+            period_day_ordinal: Some(vec![1, 1, 2]),
+            ..Default::default()
+        };
+        let result = run_simple(&weights, &prices, FillPolicy::SignalBarClose, options);
+        assert_eq!(
+            held_symbols(&result),
+            vec![vec!["S0"], vec!["S0"], vec!["S0", "S1"]]
+        );
+    }
+
+    /// A day budget without day ordinals, and day ordinals without a day
+    /// budget, are both inert.
+    #[test]
+    fn day_budget_needs_both_the_cap_and_the_ordinals() {
+        let bars = vec![(sym(0), bar(100_00)), (sym(1), bar(100_00))];
+        let prices = vec![bars];
+        let weights = vec![vec![(sym(0), 0.2), (sym(1), 0.2)]];
+
+        let cap_only = BacktestBridgeOptions {
+            max_trades_per_day: Some(1),
+            period_day_ordinal: None,
+            ..Default::default()
+        };
+        let result = run_simple(&weights, &prices, FillPolicy::SignalBarClose, cap_only);
+        assert_eq!(held_symbols(&result), vec![vec!["S0", "S1"]]);
+
+        let ordinals_only = BacktestBridgeOptions {
+            max_trades_per_day: None,
+            period_day_ordinal: Some(vec![1]),
+            ..Default::default()
+        };
+        let result = run_simple(&weights, &prices, FillPolicy::SignalBarClose, ordinals_only);
+        assert_eq!(held_symbols(&result), vec![vec!["S0", "S1"]]);
+    }
+
+    /// A close of 0 gives no return (NaN), not -100% or +inf.
+    #[test]
+    fn symbol_return_is_nan_when_either_close_is_zero() {
+        let closes = [100_00, 0, 100_00, 110_00];
+        let weights = vec![vec![]; closes.len()];
+        let prices: Vec<Vec<(Symbol, BarPrices)>> =
+            closes.iter().map(|&c| vec![(aapl(), bar(c))]).collect();
+        let result = run_simple(
+            &weights,
+            &prices,
+            FillPolicy::SignalBarClose,
+            BacktestBridgeOptions::default(),
+        );
+        assert_eq!(result.symbol_returns.len(), 4);
+        for (period, returns) in result.symbol_returns.iter().take(3).enumerate() {
+            let (s, r) = returns[0];
+            assert_eq!(s, aapl());
+            assert!(r.is_nan(), "period {period}: {r}");
+        }
+        assert!((result.symbol_returns[3][0].1 - 0.1).abs() < 1e-12);
+    }
+
+    #[test]
+    fn valid_inputs_rejects_negative_prices_and_accepts_zero() {
+        let check = |open, high, low, close| {
+            let bp = BarPrices {
+                open,
+                high,
+                low,
+                close,
+            };
+            valid_inputs(&[vec![]], &[vec![(aapl(), bp)]], 1)
+        };
+        assert!(!check(-1, 10, 10, 10), "negative open");
+        assert!(!check(5, 10, -1, 5), "negative low");
+        assert!(!check(10, 10, 10, -1), "negative close");
+        assert!(check(0, 0, 0, 0), "all zero");
+        assert!(check(10, 10, 10, 10), "all positive");
+    }
 }

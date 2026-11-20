@@ -255,4 +255,21 @@ mod tests {
         let weights = strat.compute_weights(0, &[], &Portfolio::new(100_00, CostModel::zero()));
         assert!(weights.is_empty());
     }
+
+    #[test]
+    fn equal_weight_splits_evenly_across_symbols() {
+        let portfolio = Portfolio::new(100_00, CostModel::zero());
+        let two = EqualWeight.compute_weights(
+            0,
+            &[(sym("AAPL"), 150_00), (sym("MSFT"), 300_00)],
+            &portfolio,
+        );
+        assert_eq!(two, vec![(sym("AAPL"), 0.5), (sym("MSFT"), 0.5)]);
+
+        let names = ["A", "B", "C", "D"];
+        let prices: Vec<(Symbol, i64)> = names.iter().map(|n| (sym(n), 10_00)).collect();
+        let four = EqualWeight.compute_weights(0, &prices, &portfolio);
+        assert_eq!(four.len(), 4);
+        assert!(four.iter().all(|&(_, w)| w == 0.25));
+    }
 }
