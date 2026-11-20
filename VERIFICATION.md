@@ -156,13 +156,15 @@ Result on the 0.20.0 code (only changes that compile are counted):
   (5046 changes). A test added for 0.20.0 also pins the order record after a
   self-trade stop (`tests/stp_policy.rs`).
 
-Sorting the surviving changes and writing the tests found twelve bugs, all fixed in
+Sorting the surviving changes and writing the tests found twelve bugs, fixed in
 0.20.0 with a regression test: the ITCH Stock Directory symbol offset; the deflated
-Sharpe ratio formula; IBKR connection-loss codes that never reached their check; IBKR
-reconciliation that ignored the order's side; a Binance websocket that ignored
-`testnet` and a reconnect loop that never gave up; and six in the rebalancer, among
-them close orders priced on the wrong side of mid, an aborted run that exited with
-code 0, and audit limits read as cents instead of dollars. The changelog lists each.
+Sharpe ratio formula; IBKR connection-loss codes dropped before their check (fixed in
+the order loop, but ibapi 2.12 delivers these notices on another stream, see the
+changelog's known issues); IBKR reconciliation that ignored the order's side; a
+Binance websocket that ignored `testnet` and a reconnect loop that never gave up; and
+six in the rebalancer, among them close orders priced on the wrong side of mid, an
+aborted run that exited with code 0, and audit limits read as cents instead of
+dollars. The changelog lists each, and the broker problems still open.
 
 Not covered yet: the statistics, indicator, volatility, scenario and optimisation
 modules (`stats.rs`, `indicators.rs`, `volatility.rs`, `scenarios.rs`,
