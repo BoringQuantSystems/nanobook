@@ -310,3 +310,117 @@ impl BinanceWebSocket {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const EXECUTION_REPORT: &str =
+        r#"{"e":"executionReport","E":5,"s":"BTCUSDT","i":42,"c":"cid-1","X":"FILLED"}"#;
+
+    fn execution_report_event() -> BinanceWebSocketEvent {
+        BinanceWebSocketEvent::ExecutionReport(ExecutionReport {
+            event_time: Some(5),
+            symbol: Some("BTCUSDT".to_string()),
+            order_id: Some(42),
+            client_order_id: Some("cid-1".to_string()),
+            order_status: Some("FILLED".to_string()),
+            raw: serde_json::from_str(EXECUTION_REPORT).unwrap(),
+        })
+    }
+
+    #[test]
+    fn execution_report_fields_are_extracted() {
+        let event = BinanceWebSocket::parse_text_message(EXECUTION_REPORT).unwrap();
+
+        assert_eq!(event, execution_report_event());
+    }
+
+    #[test]
+    fn account_events_become_account_updates() {
+        for kind in ["outboundAccountPosition", "balanceUpdate"] {
+            let text = format!(r#"{{"e":"{kind}","E":7}}"#);
+
+            let event = BinanceWebSocket::parse_text_message(&text).unwrap();
+
+            assert_eq!(
+                event,
+                BinanceWebSocketEvent::AccountUpdate(AccountUpdate {
+                    event_time: Some(7),
+                    raw: serde_json::from_str(&text).unwrap(),
+                }),
+                "{kind}"
+            );
+        }
+    }
+
+    #[test]
+    fn unknown_events_stay_untyped() {
+        let event = BinanceWebSocket::parse_text_message(r#"{"e":"other"}"#).unwrap();
+
+        assert_eq!(
+            event,
+            BinanceWebSocketEvent::Other(serde_json::json!({"e": "other"}))
+        );
+    }
+
+    #[test]
+    fn frames_carry_events_only_for_text_and_binary() {
+        let text = BinanceWebSocket::parse_frame(Message::Text(EXECUTION_REPORT.into())).unwrap();
+        assert_eq!(text, Some(execution_report_event()));
+
+        let binary = BinanceWebSocket::parse_frame(Message::Binary(
+            EXECUTION_REPORT.as_bytes().to_vec().into(),
+        ))
+        .unwrap();
+        assert_eq!(binary, Some(execution_report_event()));
+
+        for message in [
+            Message::Ping(Vec::new().into()),
+            Message::Pong(Vec::new().into()),
+            Message::Close(None),
+        ] {
+            assert_eq!(BinanceWebSocket::parse_frame(message).unwrap(), None);
+        }
+    }
+
+    #[test]
+    fn endpoint_is_the_production_stream() {
+        let ws = BinanceWebSocket::new("key", "secret", false);
+
+        assert_eq!(ws.endpoint(), "wss://stream.binance.com:9443/ws");
+    }
+
+    #[tokio::test]
+    async fn subscribe_checks_the_heartbeat_before_the_connection() {
+        let mut ws = BinanceWebSocket::new("key", "secret", true);
+
+        // No heartbeat yet: reported as a timeout.
+        let err = ws.subscribe_user_data().await.unwrap_err();
+        assert_eq!(err.to_string(), "Heartbeat timeout detected");
+        assert_eq!(ws.state(), ConnectionState::Disconnected);
+
+        // Fresh heartbeat but no socket.
+        ws.update_heartbeat();
+        let err = ws.subscribe_user_data().await.unwrap_err();
+        assert_eq!(err.to_string(), "Binance WebSocket is not connected");
+    }
+
+    #[tokio::test]
+    async fn reconnect_with_zero_attempts_fails_at_once_without_dialling() {
+        let mut ws = BinanceWebSocket::new("key", "secret", true);
+        ws.set_max_reconnect_attempts(0);
+
+        // One attempt would sleep 1 s first; the call must return before that.
+        let result = tokio::time::timeout(Duration::from_millis(500), ws.reconnect_with_backoff())
+            .await
+            .expect("zero attempts must not sleep or dial");
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Failed to reconnect after 0 attempts"
+        );
+        assert_eq!(ws.reconnect_attempts(), 0);
+        assert_eq!(ws.state(), ConnectionState::Disconnected);
+    }
+}

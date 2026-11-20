@@ -82,6 +82,21 @@ impl BinanceClient {
         }
     }
 
+    /// Test-only constructor: points the client at `base_url` (a loopback
+    /// test server) and bypasses any proxy set in the environment.
+    #[cfg(test)]
+    pub(super) fn with_base_url(api_key: &str, secret_key: &str, base_url: &str) -> Self {
+        Self {
+            client: Client::builder()
+                .no_proxy()
+                .build()
+                .expect("build test HTTP client"),
+            api_key: api_key.to_string(),
+            secret_key: secret_key.to_string(),
+            base_url: base_url.to_string(),
+        }
+    }
+
     /// Test connectivity (GET /api/v3/ping).
     pub fn ping(&self) -> Result<(), BrokerError> {
         let url = format!("{}/api/v3/ping", self.base_url);
@@ -252,4 +267,85 @@ fn current_timestamp_ms() -> Result<u64, BrokerError> {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .map_err(|e| BrokerError::Connection(format!("system clock error: {e}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `http://127.0.0.1:<port>` of a loopback port that was just released:
+    /// connecting is refused at once (a fixed port could be filtered and hang).
+    fn refused_base_url() -> String {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        drop(listener);
+        url
+    }
+
+    fn invalid_chars_error(result: Result<(), BrokerError>, name: &str) {
+        match result {
+            Err(BrokerError::Order(message)) => {
+                assert!(
+                    message.contains(&format!("invalid characters in {name}")),
+                    "got {message}"
+                );
+            }
+            other => panic!("expected Order error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn validate_query_param_accepts_safe_values() {
+        for value in ["BTCUSDT", "cid-1_a.b", "a_b", "a.b", "a-b", "0.001", ""] {
+            assert!(
+                validate_query_param(value, "symbol").is_ok(),
+                "{value:?} must be accepted"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_query_param_rejects_injection_characters() {
+        for value in ["BTC&side=SELL", "a b", "a=b", "a?b", "a#b", "a/b", "a%b"] {
+            invalid_chars_error(validate_query_param(value, "symbol"), "symbol");
+        }
+    }
+
+    #[test]
+    fn validate_query_params_names_the_failing_parameter() {
+        assert!(validate_query_params(&[("ok", "a"), ("fine-1", "b")]).is_ok());
+
+        invalid_chars_error(validate_query_params(&[("ok", "a"), ("bad&", "b")]), "b");
+    }
+
+    #[test]
+    fn current_timestamp_is_the_wall_clock_in_milliseconds() {
+        let now_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+
+        let stamp = current_timestamp_ms().unwrap();
+
+        assert!(
+            stamp.abs_diff(now_ms) < 5_000,
+            "stamp {stamp} vs clock {now_ms}"
+        );
+    }
+
+    #[test]
+    fn cancel_order_validates_the_symbol_before_any_request() {
+        // The server is never reached: validation fails first.
+        let client = BinanceClient::with_base_url("key", "secret", &refused_base_url());
+
+        invalid_chars_error(client.cancel_order("A&B", 1), "symbol");
+    }
+
+    #[test]
+    fn ping_reports_a_connection_error_when_the_server_is_unreachable() {
+        // Nothing listens on the port: the TCP connect is refused.
+        let client = BinanceClient::with_base_url("key", "secret", &refused_base_url());
+
+        assert!(matches!(client.ping(), Err(BrokerError::Connection(_))));
+    }
 }

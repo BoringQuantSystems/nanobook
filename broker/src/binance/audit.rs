@@ -184,6 +184,22 @@ mod tests {
     }
 
     #[test]
+    fn test_audit_log_order_filled() {
+        let temp_dir = TempDir::new().unwrap();
+        let log_path = temp_dir.path().join("audit.log");
+
+        log_order_filled(&log_path, OrderId(100), 3);
+
+        let content = std::fs::read_to_string(&log_path).unwrap();
+        assert_eq!(content.lines().count(), 1);
+        let event: serde_json::Value =
+            serde_json::from_str(content.lines().next().unwrap()).unwrap();
+        assert_eq!(event["event_type"], "order_filled");
+        assert_eq!(event["order_id"], 100);
+        assert_eq!(event["sequence"], 3);
+    }
+
+    #[test]
     fn test_audit_log_idempotency_rejection() {
         let temp_dir = TempDir::new().unwrap();
         let log_path = temp_dir.path().join("audit.log");

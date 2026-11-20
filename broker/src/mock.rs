@@ -410,4 +410,89 @@ mod tests {
         assert_eq!(second, OrderId(2));
         assert_eq!(third, OrderId(3));
     }
+
+    fn market_order() -> BrokerOrder {
+        BrokerOrder {
+            symbol: aapl(),
+            side: BrokerSide::Buy,
+            quantity: 1,
+            order_type: BrokerOrderType::Market,
+            client_order_id: None,
+        }
+    }
+
+    #[test]
+    fn with_quote_last_is_the_mid_of_bid_and_ask() {
+        let mut broker = MockBroker::builder()
+            .with_quote(aapl(), 14_950, 15_050)
+            .build();
+        broker.connect().unwrap();
+
+        let quote = broker.quote(&aapl()).unwrap();
+
+        assert_eq!(quote.bid_cents, 14_950);
+        assert_eq!(quote.ask_cents, 15_050);
+        assert_eq!(quote.last_cents, 15_000);
+    }
+
+    #[test]
+    fn partial_fill_remainder_is_the_unfilled_part_of_100() {
+        let mut broker = MockBroker::builder()
+            .fill_mode(FillMode::ImmediatePartial(0.5))
+            .build();
+        broker.connect().unwrap();
+        let id = broker.submit_order(&market_order()).unwrap();
+
+        let status = broker.order_status(id).unwrap();
+        assert_eq!(status.filled_quantity, 50);
+        assert_eq!(status.remaining_quantity, 50);
+
+        let open = broker.open_orders().unwrap();
+        assert_eq!(open.len(), 1);
+        assert_eq!(open[0].id, id);
+        assert_eq!(open[0].status, OrderState::PartiallyFilled);
+        assert_eq!(open[0].filled_quantity, 50);
+        assert_eq!(open[0].remaining_quantity, 50);
+    }
+
+    #[test]
+    fn open_orders_lists_every_submitted_order() {
+        let mut broker = MockBroker::builder().build();
+        assert!(matches!(
+            broker.open_orders(),
+            Err(BrokerError::NotConnected)
+        ));
+
+        broker.connect().unwrap();
+        assert!(broker.open_orders().unwrap().is_empty());
+        broker.submit_order(&market_order()).unwrap();
+        broker.submit_order(&market_order()).unwrap();
+
+        let open = broker.open_orders().unwrap();
+        let ids: Vec<OrderId> = open.iter().map(|o| o.id).collect();
+        assert_eq!(ids, vec![OrderId(1), OrderId(2)]);
+        for order in &open {
+            assert_eq!(order.status, OrderState::Filled);
+            assert_eq!(order.filled_quantity, 100);
+            assert_eq!(order.remaining_quantity, 0);
+        }
+    }
+
+    #[test]
+    fn cancel_order_removes_only_that_order() {
+        let mut broker = MockBroker::builder().build();
+        assert!(matches!(
+            broker.cancel_order(OrderId(1)),
+            Err(BrokerError::NotConnected)
+        ));
+
+        broker.connect().unwrap();
+        broker.submit_order(&market_order()).unwrap();
+        broker.submit_order(&market_order()).unwrap();
+
+        broker.cancel_order(OrderId(1)).unwrap();
+
+        let ids: Vec<OrderId> = broker.open_orders().unwrap().iter().map(|o| o.id).collect();
+        assert_eq!(ids, vec![OrderId(2)]);
+    }
 }

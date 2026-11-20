@@ -5,6 +5,7 @@ mod binance_rest_fallback_tests {
     use std::time::{Duration, SystemTime};
 
     use nanobook::Symbol;
+    use nanobook_broker::BrokerError;
     use nanobook_broker::binance::types::{AccountInfo, BalanceInfo, OrderInfo};
     use nanobook_broker::binance::{BinanceBroker, ConnectionMode};
     use nanobook_broker::types::{BrokerSide, OrderId, OrderState};
@@ -109,5 +110,82 @@ mod binance_rest_fallback_tests {
         assert_eq!(rest.connection_mode(), ConnectionMode::Rest);
         assert_eq!(websocket.connection_mode(), ConnectionMode::WebSocket);
         assert_eq!(auto.connection_mode(), ConnectionMode::Auto);
+    }
+
+    #[test]
+    fn test_poll_account_info_polls_when_due_and_skips_when_recent() {
+        let broker = BinanceBroker::new("api-key", "secret-key", true);
+
+        // No poll recorded yet: a poll is due, and it needs a client.
+        assert!(matches!(
+            broker.poll_account_info(),
+            Err(BrokerError::NotConnected)
+        ));
+
+        // Polled just now: nothing is due, so no client is needed and the
+        // stamp stays as it was.
+        let now = SystemTime::now();
+        broker.set_last_account_poll(Some(now));
+        broker.poll_account_info().unwrap();
+        assert_eq!(broker.last_account_poll(), Some(now));
+    }
+
+    #[test]
+    fn test_poll_open_orders_polls_when_due_and_skips_when_recent() {
+        let broker = BinanceBroker::new("api-key", "secret-key", true);
+
+        assert!(matches!(
+            broker.poll_open_orders(),
+            Err(BrokerError::NotConnected)
+        ));
+
+        let now = SystemTime::now();
+        broker.set_last_orders_poll(Some(now));
+        broker.poll_open_orders().unwrap();
+        assert_eq!(broker.last_orders_poll(), Some(now));
+    }
+
+    #[test]
+    fn test_open_order_side_and_status_mapping() {
+        let order = |order_id: u64, symbol: &str, side: &str, status: &str, qty: &str| OrderInfo {
+            symbol: symbol.to_string(),
+            order_id,
+            status: status.to_string(),
+            side: side.to_string(),
+            orig_qty: qty.to_string(),
+            executed_qty: "0".to_string(),
+        };
+        let info = AccountInfo {
+            balances: Vec::new(),
+            positions: Vec::new(),
+            open_orders: vec![
+                order(1, "BTCUSDT", "SELL", "NEW", "3"),
+                order(2, "ETHUSDT", "BUY", "PARTIALLY_FILLED", "5"),
+                order(3, "SOLUSDT", "BUY", "FILLED", "1"),
+                order(4, "ADAUSDT", "BUY", "CANCELED", "1"),
+                order(5, "DOGEUSDT", "BUY", "REJECTED", "1"),
+                order(6, "XRPUSDT", "BUY", "EXPIRED", "1"),
+            ],
+            can_trade: true,
+        };
+        let broker = BinanceBroker::new("api-key", "secret-key", true);
+
+        broker.update_state_from_account_info(&info).unwrap();
+
+        let expected = [
+            (1, "BTC", BrokerSide::Sell, OrderState::Submitted, 3),
+            (2, "ETH", BrokerSide::Buy, OrderState::PartiallyFilled, 5),
+            (3, "SOL", BrokerSide::Buy, OrderState::Filled, 1),
+            (4, "ADA", BrokerSide::Buy, OrderState::Cancelled, 1),
+            (5, "DOGE", BrokerSide::Buy, OrderState::Rejected, 1),
+            (6, "XRP", BrokerSide::Buy, OrderState::Cancelled, 1),
+        ];
+        for (id, symbol, side, status, quantity) in expected {
+            let cached = broker.get_cached_order(OrderId(id)).unwrap();
+            assert_eq!(cached.symbol, Symbol::new(symbol), "order {id}");
+            assert_eq!(cached.side, side, "order {id}");
+            assert_eq!(cached.status, status, "order {id}");
+            assert_eq!(cached.quantity, quantity, "order {id}");
+        }
     }
 }

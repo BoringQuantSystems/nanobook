@@ -282,3 +282,32 @@ impl Broker for IbkrBroker {
         self.require_client()?.quote(symbol)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_connected_follows_the_connection_state() {
+        let mut broker = IbkrBroker::new("127.0.0.1", 1, 100);
+        assert!(!broker.is_connected());
+
+        broker.connection_state = ConnectionState::Connected;
+        assert!(broker.is_connected());
+
+        broker.connection_state = ConnectionState::Reconnecting;
+        assert!(!broker.is_connected());
+    }
+
+    #[test]
+    fn disconnect_resets_the_connection_state() {
+        let mut broker = IbkrBroker::new("127.0.0.1", 1, 100);
+        broker.connection_state = ConnectionState::Connected;
+
+        broker.disconnect().unwrap();
+
+        assert_eq!(broker.connection_state(), ConnectionState::Disconnected);
+        assert!(!broker.is_connected());
+        assert!(broker.client().is_none());
+    }
+}

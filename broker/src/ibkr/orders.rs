@@ -1182,6 +1182,39 @@ mod tests {
     }
 
     #[test]
+    fn test_reconcile_partial_fill_nothing_filled_and_flat_position_is_failed() {
+        // Nothing filled before the disconnect and the account is still flat
+        // after it: the order did not fill, so it is Failed, not a 0-share
+        // PartialFill.
+        let symbol = nanobook::Symbol::try_new("AAPL").unwrap();
+        let positions = vec![Position {
+            symbol,
+            quantity: 0,
+            avg_cost_cents: 0,
+            market_value_cents: 0,
+            unrealized_pnl_cents: 0,
+        }];
+
+        let result =
+            reconcile_partial_fill(1, symbol, 0, 100, &positions, BrokerSide::Buy).unwrap();
+
+        assert_eq!(result.order_id, 1);
+        assert_eq!(result.filled_shares, 0);
+        assert_eq!(result.status, OrderOutcome::Failed);
+    }
+
+    #[test]
+    fn test_reconcile_partial_fill_nothing_filled_and_no_position_is_failed() {
+        let symbol = nanobook::Symbol::try_new("AAPL").unwrap();
+
+        let result = reconcile_partial_fill(1, symbol, 0, 100, &[], BrokerSide::Buy).unwrap();
+
+        assert_eq!(result.order_id, 1);
+        assert_eq!(result.filled_shares, 0);
+        assert_eq!(result.status, OrderOutcome::Failed);
+    }
+
+    #[test]
     fn test_reconcile_partial_fill_sell_order() {
         // Test reconciliation for sell orders (negative positions)
         let order_id = 12345;
