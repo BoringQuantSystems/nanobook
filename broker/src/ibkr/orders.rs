@@ -1355,4 +1355,510 @@ mod tests {
         assert!(error_string.contains("12345"));
         assert!(error_string.contains("50"));
     }
+
+    // ---- build_limit_order ---------------------------------------------
+
+    #[test]
+    fn limit_order_carries_price_quantity_and_client_order_id() {
+        let cid = ClientOrderId::new("cid-1").unwrap();
+
+        let order = build_limit_order(BrokerSide::Buy, 100, 18_550, Some(&cid));
+
+        assert_eq!(order.order_type, "LMT");
+        assert!(matches!(order.action, IbAction::Buy));
+        assert_eq!(order.total_quantity, 100.0);
+        assert_eq!(order.limit_price, Some(185.5));
+        assert_eq!(order.order_ref, "cid-1");
+    }
+
+    #[test]
+    fn limit_order_sell_without_client_order_id() {
+        let order = build_limit_order(BrokerSide::Sell, 7, 100_00, None);
+
+        assert!(matches!(order.action, IbAction::Sell));
+        assert_eq!(order.total_quantity, 7.0);
+        assert_eq!(order.limit_price, Some(100.0));
+        assert!(order.order_ref.is_empty());
+    }
+
+    // ---- run_place_order_events ----------------------------------------
+
+    const TIMEOUT: Duration = Duration::from_secs(10);
+    const ORDER_ID: i32 = 7;
+
+    fn st(status: &str, filled: f64, remaining: f64, avg: f64) -> PlaceOrder {
+        PlaceOrder::OrderStatus(ibapi::orders::OrderStatus {
+            order_id: ORDER_ID,
+            status: status.to_string(),
+            filled,
+            remaining,
+            average_fill_price: avg,
+            ..Default::default()
+        })
+    }
+
+    fn notice(code: i32, message: &str) -> ibapi::messages::Notice {
+        ibapi::messages::Notice {
+            code,
+            message: message.to_string(),
+            error_time: None,
+        }
+    }
+
+    fn secs(seconds: &[u64]) -> Vec<Duration> {
+        seconds.iter().map(|s| Duration::from_secs(*s)).collect()
+    }
+
+    type Run = (Result<(OrderOutcome, f64, f64, f64), BrokerError>, usize);
+
+    /// Run the event loop. `elapsed` answers successive calls in order and
+    /// repeats its last value; returns the result and the cancel-call count.
+    fn run(
+        events: Vec<PlaceOrder>,
+        elapsed: &[Duration],
+        cancel: fn() -> Result<(), BrokerError>,
+        dedup: Option<&CallbackDedupCache>,
+    ) -> Run {
+        let cancels = std::cell::Cell::new(0usize);
+        let calls = std::cell::Cell::new(0usize);
+        let result = run_place_order_events(
+            events,
+            ORDER_ID,
+            TIMEOUT,
+            || {
+                let i = calls.get().min(elapsed.len() - 1);
+                calls.set(calls.get() + 1);
+                elapsed[i]
+            },
+            || {
+                cancels.set(cancels.get() + 1);
+                cancel()
+            },
+            dedup,
+        )
+        .map(|o| (o.status, o.filled, o.avg_price, o.commission));
+        (result, cancels.get())
+    }
+
+    fn cancel_ok() -> Result<(), BrokerError> {
+        Ok(())
+    }
+
+    fn fresh() -> [Duration; 1] {
+        [Duration::ZERO]
+    }
+
+    #[test]
+    fn events_fill_ends_the_order() {
+        let (result, cancels) = run(
+            vec![
+                st("Submitted", 0.0, 100.0, 0.0),
+                st("Filled", 100.0, 0.0, 185.5),
+            ],
+            &fresh(),
+            cancel_ok,
+            None,
+        );
+
+        assert_eq!(result.unwrap(), (OrderOutcome::Filled, 100.0, 185.5, 0.0));
+        assert_eq!(cancels, 0);
+    }
+
+    #[test]
+    fn events_cancel_after_a_partial_fill_is_a_partial_fill() {
+        let (result, cancels) = run(
+            vec![
+                st("Submitted", 40.0, 60.0, 10.0),
+                st("Cancelled", 40.0, 60.0, 10.0),
+            ],
+            &fresh(),
+            cancel_ok,
+            None,
+        );
+
+        assert_eq!(
+            result.unwrap(),
+            (OrderOutcome::PartialFill, 40.0, 10.0, 0.0)
+        );
+        assert_eq!(cancels, 0);
+    }
+
+    #[test]
+    fn events_cancel_with_nothing_filled_is_cancelled() {
+        let (result, _) = run(
+            vec![st("Cancelled", 0.0, 100.0, 0.0)],
+            &fresh(),
+            cancel_ok,
+            None,
+        );
+
+        assert_eq!(result.unwrap(), (OrderOutcome::Cancelled, 0.0, 0.0, 0.0));
+    }
+
+    #[test]
+    fn events_commission_report_is_returned() {
+        let (result, _) = run(
+            vec![
+                PlaceOrder::CommissionReport(ibapi::orders::CommissionReport {
+                    commission: 1.25,
+                    ..Default::default()
+                }),
+                st("Filled", 100.0, 0.0, 185.5),
+            ],
+            &fresh(),
+            cancel_ok,
+            None,
+        );
+
+        assert_eq!(result.unwrap(), (OrderOutcome::Filled, 100.0, 185.5, 1.25));
+    }
+
+    #[test]
+    fn events_timeout_after_a_partial_fill_cancels_and_reports_partial() {
+        let (result, cancels) = run(
+            vec![
+                st("Submitted", 30.0, 70.0, 10.0),
+                st("Submitted", 30.0, 70.0, 10.0),
+            ],
+            &secs(&[0, 11]),
+            cancel_ok,
+            None,
+        );
+
+        assert_eq!(
+            result.unwrap(),
+            (OrderOutcome::PartialFill, 30.0, 10.0, 0.0)
+        );
+        assert_eq!(cancels, 1);
+    }
+
+    #[test]
+    fn events_timeout_with_nothing_filled_cancels_and_reports_cancelled() {
+        let (result, cancels) = run(
+            vec![st("Submitted", 0.0, 100.0, 0.0)],
+            &secs(&[11]),
+            cancel_ok,
+            None,
+        );
+
+        assert_eq!(result.unwrap(), (OrderOutcome::Cancelled, 0.0, 0.0, 0.0));
+        assert_eq!(cancels, 1);
+    }
+
+    #[test]
+    fn events_exactly_at_the_timeout_do_not_cancel() {
+        let (result, cancels) = run(
+            vec![
+                st("Submitted", 30.0, 70.0, 10.0),
+                st("Filled", 100.0, 0.0, 12.0),
+            ],
+            &secs(&[10]),
+            cancel_ok,
+            None,
+        );
+
+        assert_eq!(result.unwrap(), (OrderOutcome::Filled, 100.0, 12.0, 0.0));
+        assert_eq!(cancels, 0);
+    }
+
+    #[test]
+    fn events_timeout_cancel_rejected_because_filled_reports_filled() {
+        fn rejected() -> Result<(), BrokerError> {
+            Err(BrokerError::CancelReject {
+                order_id: ORDER_ID,
+                reason: "Order already filled".to_string(),
+            })
+        }
+        let (result, cancels) = run(
+            vec![st("Submitted", 0.0, 100.0, 0.0)],
+            &secs(&[11]),
+            rejected,
+            None,
+        );
+
+        assert_eq!(result.unwrap().0, OrderOutcome::Filled);
+        assert_eq!(cancels, 1);
+    }
+
+    #[test]
+    fn events_timeout_with_uncertain_cancel_reject_or_failure_is_not_filled() {
+        fn uncertain() -> Result<(), BrokerError> {
+            Err(BrokerError::CancelReject {
+                order_id: ORDER_ID,
+                reason: "Cannot cancel order at this time".to_string(),
+            })
+        }
+        fn failed() -> Result<(), BrokerError> {
+            Err(BrokerError::Order(
+                "failed to cancel order 7: boom".to_string(),
+            ))
+        }
+        let cancellers: [fn() -> Result<(), BrokerError>; 2] = [uncertain, failed];
+        for cancel in cancellers {
+            let (result, cancels) = run(
+                vec![st("Submitted", 0.0, 100.0, 0.0)],
+                &secs(&[11]),
+                cancel,
+                None,
+            );
+
+            assert_eq!(result.unwrap().0, OrderOutcome::Cancelled);
+            assert_eq!(cancels, 1);
+        }
+    }
+
+    #[test]
+    fn events_end_with_a_fill_is_a_silent_disconnect() {
+        let (result, _) = run(
+            vec![st("Submitted", 30.0, 70.0, 10.0)],
+            &fresh(),
+            cancel_ok,
+            None,
+        );
+
+        assert!(matches!(
+            result,
+            Err(BrokerError::ConnectionLost {
+                order_id: ORDER_ID,
+                filled_quantity: 30
+            })
+        ));
+    }
+
+    #[test]
+    fn events_end_with_nothing_filled_is_failed() {
+        let (result, _) = run(Vec::new(), &fresh(), cancel_ok, None);
+
+        assert_eq!(result.unwrap(), (OrderOutcome::Failed, 0.0, 0.0, 0.0));
+    }
+
+    #[test]
+    fn events_end_at_or_after_the_timeout_is_not_a_disconnect() {
+        for after in [10, 11] {
+            let (result, cancels) = run(
+                vec![st("Submitted", 30.0, 70.0, 10.0)],
+                &secs(&[0, after]),
+                cancel_ok,
+                None,
+            );
+
+            assert_eq!(
+                result.unwrap(),
+                (OrderOutcome::Failed, 30.0, 10.0, 0.0),
+                "elapsed {after} s"
+            );
+            assert_eq!(cancels, 0);
+        }
+    }
+
+    #[test]
+    fn events_dedup_records_each_new_callback_and_drops_old_ones() {
+        let cache = CallbackDedupCache::default();
+        let stale_key = OrderCallbackKey {
+            order_id: 99,
+            status: "Submitted".to_string(),
+            filled_quantity: 0,
+        };
+        let stale_time = Instant::now()
+            .checked_sub(Duration::from_secs(301))
+            .expect("monotonic clock older than 301 s");
+        cache.lock().unwrap().insert(stale_key.clone(), stale_time);
+
+        let (result, _) = run(
+            vec![
+                st("Submitted", 0.0, 100.0, 0.0),
+                st("Submitted", 0.0, 100.0, 0.0),
+                st("Filled", 100.0, 0.0, 185.5),
+            ],
+            &fresh(),
+            cancel_ok,
+            Some(&cache),
+        );
+
+        assert_eq!(result.unwrap().0, OrderOutcome::Filled);
+        let keys = cache.lock().unwrap();
+        assert_eq!(keys.len(), 2);
+        assert!(!keys.contains_key(&stale_key));
+        for (status, filled) in [("Submitted", 0), ("Filled", 100)] {
+            assert!(keys.contains_key(&OrderCallbackKey {
+                order_id: ORDER_ID,
+                status: status.to_string(),
+                filled_quantity: filled,
+            }));
+        }
+    }
+
+    #[test]
+    fn events_duplicate_callback_is_skipped() {
+        let cache = CallbackDedupCache::default();
+        // The repeated callback carries a different average price: skipping
+        // it keeps 10.0; processing it would give 99.0.
+        let (result, _) = run(
+            vec![
+                st("Submitted", 30.0, 70.0, 10.0),
+                st("Submitted", 30.0, 70.0, 99.0),
+                st("Submitted", 31.0, 69.0, 5.0),
+            ],
+            &secs(&[0, 0, 11]),
+            cancel_ok,
+            Some(&cache),
+        );
+
+        assert_eq!(
+            result.unwrap(),
+            (OrderOutcome::PartialFill, 30.0, 10.0, 0.0)
+        );
+    }
+
+    #[test]
+    fn events_ordinary_notices_do_not_abort_the_order() {
+        for code in [2104, 201, 1099, 1103, -1] {
+            let (result, _) = run(
+                vec![
+                    PlaceOrder::Message(notice(code, "notice")),
+                    st("Filled", 100.0, 0.0, 185.5),
+                ],
+                &fresh(),
+                cancel_ok,
+                None,
+            );
+
+            assert_eq!(
+                result.unwrap().0,
+                OrderOutcome::Filled,
+                "code {code} must not abort"
+            );
+        }
+    }
+
+    #[test]
+    fn events_connection_codes_end_the_order_with_connection_lost() {
+        for code in [1100, 1101, 1102] {
+            let (result, _) = run(
+                vec![
+                    st("Submitted", 30.0, 70.0, 10.0),
+                    PlaceOrder::Message(notice(code, "connectivity")),
+                    st("Filled", 100.0, 0.0, 185.5),
+                ],
+                &fresh(),
+                cancel_ok,
+                None,
+            );
+
+            assert!(
+                matches!(
+                    result,
+                    Err(BrokerError::ConnectionLost {
+                        order_id: ORDER_ID,
+                        filled_quantity: 30
+                    })
+                ),
+                "code {code}"
+            );
+        }
+
+        let (result, _) = run(
+            vec![PlaceOrder::Message(notice(1100, "lost"))],
+            &fresh(),
+            cancel_ok,
+            None,
+        );
+        assert!(matches!(
+            result,
+            Err(BrokerError::ConnectionLost {
+                order_id: ORDER_ID,
+                filled_quantity: 0
+            })
+        ));
+    }
+
+    // ---- cancel_from_responses / cancel_request_error ------------------
+
+    fn cancel_status(status: &str) -> CancelOrder {
+        CancelOrder::OrderStatus(ibapi::orders::OrderStatus {
+            status: status.to_string(),
+            ..Default::default()
+        })
+    }
+
+    fn cancel_notice(message: &str) -> CancelOrder {
+        CancelOrder::Notice(notice(202, message))
+    }
+
+    #[test]
+    fn cancel_notice_after_pending_cancel_is_a_reject() {
+        let result = cancel_from_responses(
+            ORDER_ID,
+            vec![
+                cancel_status("PendingCancel"),
+                cancel_notice("Order already filled"),
+            ],
+        );
+
+        match result {
+            Err(BrokerError::CancelReject { order_id, reason }) => {
+                assert_eq!(order_id, ORDER_ID);
+                assert_eq!(reason, "Order already filled");
+            }
+            other => panic!("expected CancelReject, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cancel_confirmed_status_ends_the_cancel_before_later_notices() {
+        for status in ["Cancelled", "Filled"] {
+            let result = cancel_from_responses(
+                ORDER_ID,
+                vec![cancel_status(status), cancel_notice("Cannot cancel")],
+            );
+
+            assert!(result.is_ok(), "status {status}");
+        }
+    }
+
+    #[test]
+    fn cancel_each_rejection_phrase_is_a_reject() {
+        for phrase in [
+            "Cannot cancel order",
+            "ORDER ALREADY FILLED",
+            "order completed",
+            "No such order",
+        ] {
+            let result = cancel_from_responses(ORDER_ID, vec![cancel_notice(phrase)]);
+
+            assert!(
+                matches!(result, Err(BrokerError::CancelReject { .. })),
+                "{phrase}"
+            );
+        }
+    }
+
+    #[test]
+    fn cancel_other_notices_and_empty_responses_are_ok() {
+        assert!(
+            cancel_from_responses(ORDER_ID, vec![cancel_notice("cancel acknowledged")]).is_ok()
+        );
+        assert!(cancel_from_responses(ORDER_ID, Vec::new()).is_ok());
+    }
+
+    #[test]
+    fn cancel_request_error_treats_a_complete_order_as_cancelled() {
+        for message in [
+            "Order already filled",
+            "ORDER COMPLETED",
+            "no such order 42",
+        ] {
+            assert!(cancel_request_error(42, &message).is_ok(), "{message}");
+        }
+    }
+
+    #[test]
+    fn cancel_request_error_reports_other_failures() {
+        match cancel_request_error(42, &"connection reset") {
+            Err(BrokerError::Order(message)) => {
+                assert_eq!(message, "failed to cancel order 42: connection reset");
+            }
+            other => panic!("expected Order error, got {other:?}"),
+        }
+    }
 }
