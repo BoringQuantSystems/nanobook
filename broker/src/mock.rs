@@ -285,6 +285,15 @@ impl Broker for MockBroker {
             .lock()
             .expect("open_orders mutex poisoned")
             .retain(|&oid| oid != id);
+        // Rows set by `set_open_order_statuses` are open orders too.
+        if let Some(rows) = self
+            .open_order_statuses
+            .lock()
+            .expect("open_order_statuses mutex poisoned")
+            .as_mut()
+        {
+            rows.retain(|row| row.id != id);
+        }
         Ok(())
     }
 
@@ -411,11 +420,12 @@ mod tests {
         assert_eq!(third, OrderId(3));
     }
 
+    /// A 100-share order: the mock builds every fill status from 100 shares.
     fn market_order() -> BrokerOrder {
         BrokerOrder {
             symbol: aapl(),
             side: BrokerSide::Buy,
-            quantity: 1,
+            quantity: 100,
             order_type: BrokerOrderType::Market,
             client_order_id: None,
         }
@@ -494,6 +504,25 @@ mod tests {
 
         let ids: Vec<OrderId> = broker.open_orders().unwrap().iter().map(|o| o.id).collect();
         assert_eq!(ids, vec![OrderId(2)]);
+    }
+
+    #[test]
+    fn cancel_order_removes_a_configured_row() {
+        let mut broker = MockBroker::builder().build();
+        broker.connect().unwrap();
+        let row = |id: u64| BrokerOrderStatus {
+            id: OrderId(id),
+            status: OrderState::Submitted,
+            filled_quantity: 0,
+            remaining_quantity: 50,
+            avg_fill_price_cents: 0,
+        };
+        broker.set_open_order_statuses(vec![row(7), row(8)]);
+
+        broker.cancel_order(OrderId(7)).unwrap();
+
+        let ids: Vec<OrderId> = broker.open_orders().unwrap().iter().map(|o| o.id).collect();
+        assert_eq!(ids, vec![OrderId(8)]);
     }
 
     #[test]
